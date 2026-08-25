@@ -2,7 +2,6 @@ package com.notcan.app.recording
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaCodec
@@ -13,20 +12,17 @@ import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import java.io.File
-import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
 /**
- * Captures the microphone exactly once. The same PCM stream is encoded to AAC/M4A locally and,
- * when enabled, forwarded to Gemini Live. This avoids opening the microphone twice.
+ * Captures the microphone exactly once. The same 16-bit PCM stream is encoded to AAC/M4A
+ * locally and, when enabled, forwarded to Gemini Live. Local recording never depends on AI.
  */
 class AacM4aRecorder(
-    private val context: Context,
     private val outputFile: File,
     private val scope: CoroutineScope,
     private val onPcmChunk: (ByteArray) -> Unit = {}
@@ -54,7 +50,6 @@ class AacM4aRecorder(
     fun pause() { paused.set(true) }
     fun resume() { paused.set(false) }
     fun isPaused(): Boolean = paused.get()
-
     fun elapsedMs(): Long = samplesEncoded.get() * 1000L / SAMPLE_RATE
 
     suspend fun stop(): Long {
@@ -99,12 +94,12 @@ class AacM4aRecorder(
     }
 
     private fun captureLoop() {
-        val recorder = audioRecord ?: return
+        val mic = audioRecord ?: return
         val pcm = ByteArray(PCM_BUFFER_BYTES)
         try {
-            recorder.startRecording()
+            mic.startRecording()
             while (running.get()) {
-                val count = recorder.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
+                val count = mic.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
                 if (count <= 0) continue
                 if (paused.get()) continue
                 val chunk = pcm.copyOf(count)
@@ -115,8 +110,8 @@ class AacM4aRecorder(
             queueEndOfStream()
             drainEncoder(endOfStream = true)
         } finally {
-            try { recorder.stop() } catch (_: Throwable) { }
-            try { recorder.release() } catch (_: Throwable) { }
+            try { mic.stop() } catch (_: Throwable) { }
+            try { mic.release() } catch (_: Throwable) { }
             audioRecord = null
             releaseCodecAndMuxer()
         }
@@ -157,9 +152,7 @@ class AacM4aRecorder(
         var idleCount = 0
         while (true) {
             when (val outputIndex = encoder.dequeueOutputBuffer(bufferInfo, if (endOfStream) 10_000 else 0)) {
-                MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    if (!endOfStream || ++idleCount > 50) return
-                }
+                MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream || ++idleCount > 50) return
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     if (muxerStarted) error("El formato AAC cambió dos veces")
                     muxerTrack = muxer!!.addTrack(encoder.outputFormat)
@@ -187,9 +180,7 @@ class AacM4aRecorder(
         try { codec?.stop() } catch (_: Throwable) { }
         try { codec?.release() } catch (_: Throwable) { }
         codec = null
-        if (muxerStarted) {
-            try { muxer?.stop() } catch (_: Throwable) { }
-        }
+        if (muxerStarted) try { muxer?.stop() } catch (_: Throwable) { }
         try { muxer?.release() } catch (_: Throwable) { }
         muxer = null
         muxerStarted = false
@@ -197,7 +188,7 @@ class AacM4aRecorder(
     }
 
     companion object {
-        const val SAMPLE_RATE = 16_000
+        const val SAMPLE_RATE = 24_000
         private const val CHANNEL_COUNT = 1
         private const val BYTES_PER_SAMPLE = 2
         private const val AAC_BIT_RATE = 64_000
