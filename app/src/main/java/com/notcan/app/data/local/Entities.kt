@@ -1,5 +1,6 @@
 package com.notcan.app.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -11,8 +12,8 @@ data class StudyCycleEntity(
     val name: String,
     val isActive: Boolean,
     val createdAtEpochMs: Long,
-    val startEpochDay: Long = 0L,
-    val endEpochDay: Long = 0L
+    @ColumnInfo(defaultValue = "0") val startEpochDay: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val endEpochDay: Long = 0L
 )
 
 @Entity(
@@ -52,7 +53,6 @@ data class SubjectScheduleEntity(
     @PrimaryKey val id: String,
     val subjectId: String,
     val cycleId: String,
-    /** ISO weekday: Monday=1 ... Sunday=7. */
     val weekdayIso: Int,
     val startMinuteOfDay: Int,
     val endMinuteOfDay: Int,
@@ -188,13 +188,11 @@ data class PdfInkStrokeEntity(
 
 @Entity(
     tableName = "transcripts",
-    foreignKeys = [
-        ForeignKey(
-            entity = ClassSessionEntity::class,
-            parentColumns = ["id"], childColumns = ["classSessionId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = ClassSessionEntity::class,
+        parentColumns = ["id"], childColumns = ["classSessionId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("classSessionId"), Index("audioId")]
 )
 data class TranscriptEntity(
