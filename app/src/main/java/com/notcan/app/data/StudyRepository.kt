@@ -2,7 +2,9 @@ package com.notcan.app.data
 
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
+import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.ImportantMomentEntity
+import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.NotCanDao
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
@@ -23,6 +25,12 @@ class StudyRepository(
 
     fun observeImportantMoments(classSessionId: String): Flow<List<ImportantMomentEntity>> =
         dao.observeImportantMoments(classSessionId)
+
+    fun observeNotePages(classSessionId: String): Flow<List<NotePageEntity>> =
+        dao.observeNotePages(classSessionId)
+
+    fun observeDocuments(classSessionId: String): Flow<List<DocumentResourceEntity>> =
+        dao.observeDocuments(classSessionId)
 
     suspend fun createCycle(name: String, makeActive: Boolean = true): StudyCycleEntity {
         val now = System.currentTimeMillis()
@@ -62,6 +70,24 @@ class StudyRepository(
         dao.insertClassSession(classSession)
         return classSession
     }
+
+    suspend fun createNotePage(classSessionId: String, title: String): NotePageEntity {
+        val now = System.currentTimeMillis()
+        val note = NotePageEntity(
+            id = UUID.randomUUID().toString(),
+            classSessionId = classSessionId,
+            title = title.trim().ifBlank { "Apuntes" },
+            body = "",
+            createdAtEpochMs = now,
+            updatedAtEpochMs = now
+        )
+        dao.insertNotePage(note)
+        return note
+    }
+
+    suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)
+
+    suspend fun saveDocument(document: DocumentResourceEntity) = dao.insertDocument(document)
 
     suspend fun saveAudioRecording(audioRecording: AudioRecordingEntity) =
         dao.insertAudioRecording(audioRecording)
