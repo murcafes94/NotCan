@@ -7,9 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
@@ -42,7 +42,6 @@ import com.notcan.app.data.local.SubjectScheduleEntity
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
-import com.notcan.app.ui.theme.NotCanRed
 import com.notcan.app.ui.theme.NotCanSurface
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -128,11 +127,7 @@ private fun PlannedClassBanner(
         ) {
             Icon(Icons.Default.Schedule, contentDescription = null, tint = NotCanBlue)
             Column(Modifier.weight(1f)) {
-                Text(
-                    occurrence.subject.name,
-                    color = NotCanOffWhite,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text(occurrence.subject.name, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                 Text(
                     "Prevista ${AcademicSchedule.formatMinutes(occurrence.schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(occurrence.schedule.endMinuteOfDay)} · aún no se ha creado",
                     color = NotCanGray,
