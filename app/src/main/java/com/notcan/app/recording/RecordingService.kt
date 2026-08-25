@@ -144,14 +144,13 @@ class RecordingService : Service() {
                     liveSenderJob = launch {
                         for (pcm in channel) {
                             if (!isActive) break
-                            transcriber.sendPcm16Khz(pcm)
+                            transcriber.sendPcmRealtime(pcm)
                         }
                     }
                 }
             }
 
             val engine = AacM4aRecorder(
-                context = this,
                 outputFile = file,
                 scope = serviceScope,
                 onPcmChunk = { pcm -> pcmChannel?.trySend(pcm) }
@@ -324,11 +323,8 @@ class RecordingService : Service() {
         val delayMs = (target - System.currentTimeMillis()).coerceAtLeast(0L)
         scheduleEndJob = serviceScope.launch {
             delay(delayMs)
-            if (autoStopMode == AUTO_STOP_AUTO) {
-                stopRecording()
-            } else if (autoStopMode == AUTO_STOP_ASK) {
-                notifyScheduleEnded()
-            }
+            if (autoStopMode == AUTO_STOP_AUTO) stopRecording()
+            else if (autoStopMode == AUTO_STOP_ASK) notifyScheduleEnded()
         }
     }
 
