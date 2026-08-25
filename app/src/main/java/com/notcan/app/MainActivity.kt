@@ -15,7 +15,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notcan.app.calendar.CalendarSync
-import com.notcan.app.calendar.PlannedClassOccurrence
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.ui.NotCanViewModel
@@ -101,9 +100,7 @@ class MainActivity : ComponentActivity() {
                     cycle = selectedCycle,
                     subjects = subjects,
                     schedules = schedules,
-                    onOpenPlannedClass = { occurrence ->
-                        studyViewModel.materializeOccurrence(occurrence)
-                    },
+                    onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                     onRecordPlannedClass = { occurrence ->
                         studyViewModel.materializeOccurrence(occurrence) { session ->
                             requestPermissionsAndStart(
@@ -163,7 +160,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onDeleteSchedule = studyViewModel::deleteSchedule,
                             onSyncScheduleToCalendar = ::requestCalendarSync,
-                            onOpenOccurrence = studyViewModel::materializeOccurrence,
+                            onOpenOccurrence = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                             onRecordOccurrence = { occurrence ->
                                 studyViewModel.materializeOccurrence(occurrence) { session ->
                                     requestPermissionsAndStart(
