@@ -25,6 +25,12 @@ interface NotCanDao {
     @Query("SELECT * FROM important_moments WHERE classSessionId = :classSessionId ORDER BY offsetMs ASC")
     fun observeImportantMoments(classSessionId: String): Flow<List<ImportantMomentEntity>>
 
+    @Query("SELECT * FROM note_pages WHERE classSessionId = :classSessionId ORDER BY updatedAtEpochMs DESC")
+    fun observeNotePages(classSessionId: String): Flow<List<NotePageEntity>>
+
+    @Query("SELECT * FROM document_resources WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs DESC")
+    fun observeDocuments(classSessionId: String): Flow<List<DocumentResourceEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCycle(cycle: StudyCycleEntity)
 
@@ -40,6 +46,12 @@ interface NotCanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertImportantMoment(moment: ImportantMomentEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotePage(notePage: NotePageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDocument(document: DocumentResourceEntity)
+
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
 
@@ -54,4 +66,10 @@ interface NotCanDao {
 
     @Query("DELETE FROM audio_recordings WHERE id = :audioId")
     suspend fun deleteAudioRecording(audioId: String)
+
+    @Query("DELETE FROM note_pages WHERE id = :noteId")
+    suspend fun deleteNotePage(noteId: String)
+
+    @Query("DELETE FROM document_resources WHERE id = :documentId")
+    suspend fun deleteDocument(documentId: String)
 }
