@@ -1,0 +1,97 @@
+package com.notcan.app.data.local
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "study_cycles")
+data class StudyCycleEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val isActive: Boolean,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "subjects",
+    foreignKeys = [
+        ForeignKey(
+            entity = StudyCycleEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["cycleId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("cycleId")]
+)
+data class SubjectEntity(
+    @PrimaryKey val id: String,
+    val cycleId: String,
+    val name: String,
+    val colorHex: String? = null,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "class_sessions",
+    foreignKeys = [
+        ForeignKey(
+            entity = SubjectEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["subjectId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("subjectId")]
+)
+data class ClassSessionEntity(
+    @PrimaryKey val id: String,
+    val subjectId: String,
+    val title: String,
+    val startedAtEpochMs: Long,
+    val endedAtEpochMs: Long? = null,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "audio_recordings",
+    foreignKeys = [
+        ForeignKey(
+            entity = ClassSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["classSessionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("classSessionId")]
+)
+data class AudioRecordingEntity(
+    @PrimaryKey val id: String,
+    val classSessionId: String,
+    val localPath: String,
+    val durationMs: Long,
+    val createdAtEpochMs: Long,
+    val backupState: String = "PENDING"
+)
+
+@Entity(
+    tableName = "important_moments",
+    foreignKeys = [
+        ForeignKey(
+            entity = ClassSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["classSessionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("classSessionId"), Index("audioId")]
+)
+data class ImportantMomentEntity(
+    @PrimaryKey val id: String,
+    val classSessionId: String,
+    val audioId: String,
+    val offsetMs: Long,
+    val note: String? = null,
+    val createdAtEpochMs: Long
+)
