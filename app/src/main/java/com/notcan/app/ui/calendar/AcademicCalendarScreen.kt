@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -72,10 +73,7 @@ fun AcademicCalendarScreen(
         mutableStateOf(cycle?.endEpochDay?.takeIf { it > 0 }?.let { LocalDate.ofEpochDay(it).format(formatter) }.orEmpty())
     }
     var dateError by remember { mutableStateOf<String?>(null) }
-
-    var subjectId by remember(subjects, selectedSubjectId) {
-        mutableStateOf(selectedSubjectId ?: subjects.firstOrNull()?.id)
-    }
+    var subjectId by remember(subjects, selectedSubjectId) { mutableStateOf(selectedSubjectId ?: subjects.firstOrNull()?.id) }
     var weekday by remember { mutableIntStateOf(1) }
     var startTime by remember { mutableStateOf("08:15") }
     var endTime by remember { mutableStateOf("09:45") }
@@ -92,9 +90,7 @@ fun AcademicCalendarScreen(
     }.orEmpty()
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(18.dp),
+        modifier = Modifier.fillMaxSize().padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
@@ -156,11 +152,7 @@ fun AcademicCalendarScreen(
                     Text("Materia", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(subjects, key = { it.id }) { subject ->
-                            FilterChip(
-                                selected = subjectId == subject.id,
-                                onClick = { subjectId = subject.id },
-                                label = { Text(subject.name) }
-                            )
+                            FilterChip(selected = subjectId == subject.id, onClick = { subjectId = subject.id }, label = { Text(subject.name) })
                         }
                     }
                     Text("Día", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
@@ -191,27 +183,9 @@ fun AcademicCalendarScreen(
                     }
                     Text("Al terminar el horario", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        item {
-                            FilterChip(
-                                selected = autoStopMode == RecordingService.AUTO_STOP_ASK,
-                                onClick = { autoStopMode = RecordingService.AUTO_STOP_ASK },
-                                label = { Text("Preguntar") }
-                            )
-                        }
-                        item {
-                            FilterChip(
-                                selected = autoStopMode == RecordingService.AUTO_STOP_AUTO,
-                                onClick = { autoStopMode = RecordingService.AUTO_STOP_AUTO },
-                                label = { Text("Detener automático") }
-                            )
-                        }
-                        item {
-                            FilterChip(
-                                selected = autoStopMode == RecordingService.AUTO_STOP_CONTINUE,
-                                onClick = { autoStopMode = RecordingService.AUTO_STOP_CONTINUE },
-                                label = { Text("Continuar") }
-                            )
-                        }
+                        item { FilterChip(selected = autoStopMode == RecordingService.AUTO_STOP_ASK, onClick = { autoStopMode = RecordingService.AUTO_STOP_ASK }, label = { Text("Preguntar") }) }
+                        item { FilterChip(selected = autoStopMode == RecordingService.AUTO_STOP_AUTO, onClick = { autoStopMode = RecordingService.AUTO_STOP_AUTO }, label = { Text("Detener automático") }) }
+                        item { FilterChip(selected = autoStopMode == RecordingService.AUTO_STOP_CONTINUE, onClick = { autoStopMode = RecordingService.AUTO_STOP_CONTINUE }, label = { Text("Continuar") }) }
                     }
                     if (autoStopMode == RecordingService.AUTO_STOP_AUTO) {
                         OutlinedTextField(
@@ -229,14 +203,7 @@ fun AcademicCalendarScreen(
                                 val start = parseTime(startTime)
                                 val end = parseTime(endTime)
                                 require(end > start) { "La hora final debe ser posterior" }
-                                onAddSchedule(
-                                    subjectId!!,
-                                    weekday,
-                                    start,
-                                    end,
-                                    autoStopMode,
-                                    graceText.toIntOrNull()?.coerceIn(0, 60) ?: 5
-                                )
+                                onAddSchedule(subjectId!!, weekday, start, end, autoStopMode, graceText.toIntOrNull()?.coerceIn(0, 60) ?: 5)
                                 scheduleError = null
                             } catch (t: Throwable) {
                                 scheduleError = t.message ?: "Revisa el horario"
@@ -247,9 +214,7 @@ fun AcademicCalendarScreen(
             }
         }
 
-        item {
-            Text("Horario semanal", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        }
+        item { Text("Horario semanal", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
 
         if (schedules.isEmpty()) {
             item { Text("Todavía no has añadido horarios.", color = NotCanGray) }
@@ -257,10 +222,7 @@ fun AcademicCalendarScreen(
             items(schedules, key = { it.id }) { schedule ->
                 val subject = subjects.firstOrNull { it.id == schedule.subjectId }
                 Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(14.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(subject?.name ?: "Materia", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
                             Text(
@@ -280,9 +242,7 @@ fun AcademicCalendarScreen(
             }
         }
 
-        item {
-            Text("Clases previstas hoy", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        }
+        item { Text("Clases previstas hoy", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
 
         if (todayOccurrences.isEmpty()) {
             item { Text("No hay materias programadas para hoy.", color = NotCanGray) }
