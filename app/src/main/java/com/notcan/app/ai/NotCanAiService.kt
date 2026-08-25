@@ -47,12 +47,8 @@ class NotCanAiService(private val context: Context) {
         val prompt = buildString {
             appendLine("Eres el asistente académico de NotCan. Responde en español claro y preciso.")
             subjectName?.let { appendLine("Materia: $it") }
-            if (notes.isNotBlank()) {
-                appendLine("\nAPUNTES DEL USUARIO:\n$notes")
-            }
-            if (transcript.isNotBlank()) {
-                appendLine("\nTRANSCRIPCIÓN DE CLASE:\n$transcript")
-            }
+            if (notes.isNotBlank()) appendLine("\nAPUNTES DEL USUARIO:\n$notes")
+            if (transcript.isNotBlank()) appendLine("\nTRANSCRIPCIÓN DE CLASE:\n$transcript")
             appendLine("\nSOLICITUD:\n$question")
             appendLine("No inventes datos que no estén en el material. Señala cuando una respuesta sea una inferencia.")
         }
@@ -62,10 +58,10 @@ class NotCanAiService(private val context: Context) {
     suspend fun transcribeAudio(file: File): String {
         ensureFirebase()
         require(file.exists()) { "El audio local no existe." }
-        // Firebase AI Logic inline requests have a 20 MB total request limit. Base64 adds overhead,
-        // so we keep a conservative ceiling and rely on live transcription for long classes.
+        // Las solicitudes inline de Firebase AI Logic tienen un límite total; dejamos margen
+        // para la codificación y reservamos Gemini Live para las clases largas.
         require(file.length() <= SAFE_INLINE_AUDIO_BYTES) {
-            "Este audio es demasiado grande para transcripción final en línea directa. Usa la transcripción en vivo o divide la grabación."
+            "Este audio es demasiado grande para transcripción final directa. Usa la transcripción en vivo o divide la grabación."
         }
         val bytes = file.readBytes()
         val model = Firebase.ai(backend = GenerativeBackend.googleAI())
@@ -135,9 +131,9 @@ class GeminiLiveTranscriber(
         }
     }
 
-    suspend fun sendPcm16Khz(bytes: ByteArray) {
+    suspend fun sendPcmRealtime(bytes: ByteArray) {
         try {
-            session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=16000"))
+            session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=24000"))
         } catch (t: Throwable) {
             onStatus("Gemini Live sin conexión: ${t.message ?: "error"}")
         }
