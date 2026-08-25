@@ -13,19 +13,36 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.notcan.app.MainActivity
 import com.notcan.app.R
+import com.notcan.app.data.local.AudioRecordingEntity
+import com.notcan.app.data.local.ImportantMomentEntity
+import com.notcan.app.data.local.NotCanDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 class RecordingService : Service() {
 
     private var recorder: MediaRecorder? = null
     private var outputFile: File? = null
     private var startedAtEpochMs: Long = 0L
+    private var pausedAtEpochMs: Long? = null
+    private var totalPausedMs: Long = 0L
+    private var currentClassSessionId: String? = null
+    private var currentAudioId: String? = null
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val dao by lazy { NotCanDatabase.getInstance(this).dao() }
 
     override fun onCreate() {
         super.onCreate()
@@ -34,7 +51,7 @@ class RecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action ?: ACTION_START) {
-            ACTION_START -> startRecording()
+            ACTION_START -> startRecording(intent?.getStringExtra(EXTRA_CLASS_SESSION_ID))
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
             ACTION_STOP -> stopRecording()
@@ -47,17 +64,28 @@ class RecordingService : Service() {
 
     override fun onDestroy() {
         releaseRecorder()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
-    private fun startRecording() {
+    private fun startRecording(classSessionId: String?) {
         if (recorder != null) return
+        if (classSessionId.isNullOrBlank()) {
+            _state.value = RecordingState.Error("Selecciona una clase antes de comenzar a grabar")
+            stopSelf()
+            return
+        }
 
         try {
             val recordingsDir = File(filesDir, "recordings").apply { mkdirs() }
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val audioId = UUID.randomUUID().toString()
             outputFile = File(recordingsDir, "notcan_$stamp.m4a")
             startedAtEpochMs = System.currentTimeMillis()
+            pausedAtEpochMs = null
+            totalPausedMs = 0L
+            currentClassSessionId = classSessionId
+            currentAudioId = audioId
 
             recorder = createMediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -72,12 +100,16 @@ class RecordingService : Service() {
 
             _state.value = RecordingState.Recording(
                 startedAtEpochMs = startedAtEpochMs,
-                outputPath = outputFile!!.absolutePath
+                outputPath = outputFile!!.absolutePath,
+                classSessionId = classSessionId,
+                audioId = audioId
             )
             startForeground(NOTIFICATION_ID, buildNotification(isPaused = false))
         } catch (t: Throwable) {
             _state.value = RecordingState.Error(t.message ?: "No se pudo iniciar la grabación")
+            outputFile?.delete()
             releaseRecorder()
+            clearSessionState()
             stopSelf()
         }
     }
@@ -88,7 +120,13 @@ class RecordingService : Service() {
 
         try {
             recorder?.pause()
-            _state.value = RecordingState.Paused(current.startedAtEpochMs, current.outputPath)
+            pausedAtEpochMs = System.currentTimeMillis()
+            _state.value = RecordingState.Paused(
+                current.startedAtEpochMs,
+                current.outputPath,
+                current.classSessionId,
+                current.audioId
+            )
             notifyState(isPaused = true)
         } catch (t: Throwable) {
             _state.value = RecordingState.Error(t.message ?: "No se pudo pausar")
@@ -101,7 +139,15 @@ class RecordingService : Service() {
 
         try {
             recorder?.resume()
-            _state.value = RecordingState.Recording(current.startedAtEpochMs, current.outputPath)
+            val now = System.currentTimeMillis()
+            pausedAtEpochMs?.let { totalPausedMs += (now - it).coerceAtLeast(0L) }
+            pausedAtEpochMs = null
+            _state.value = RecordingState.Recording(
+                current.startedAtEpochMs,
+                current.outputPath,
+                current.classSessionId,
+                current.audioId
+            )
             notifyState(isPaused = false)
         } catch (t: Throwable) {
             _state.value = RecordingState.Error(t.message ?: "No se pudo reanudar")
@@ -110,34 +156,105 @@ class RecordingService : Service() {
 
     private fun stopRecording() {
         val path = outputFile?.absolutePath
+        val classSessionId = currentClassSessionId
+        val audioId = currentAudioId
+        val durationMs = recordedElapsedMs()
+
         try {
             recorder?.stop()
         } catch (_: Throwable) {
-            // Si Android rechaza stop por una grabación demasiado corta, se libera igualmente.
+            // Android puede rechazar stop si la grabación fue extremadamente corta.
         } finally {
             releaseRecorder()
         }
 
-        if (path != null) {
-            _state.value = RecordingState.Finished(path)
-        } else {
+        if (path == null || classSessionId == null || audioId == null) {
             _state.value = RecordingState.Idle
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            clearSessionState()
+            stopSelf()
+            return
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+
+        val createdAt = startedAtEpochMs
+        serviceScope.launch {
+            dao.insertAudioRecording(
+                AudioRecordingEntity(
+                    id = audioId,
+                    classSessionId = classSessionId,
+                    localPath = path,
+                    durationMs = durationMs,
+                    createdAtEpochMs = createdAt
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                _state.value = RecordingState.Finished(
+                    outputPath = path,
+                    classSessionId = classSessionId,
+                    audioId = audioId,
+                    durationMs = durationMs
+                )
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                clearSessionState()
+                stopSelf()
+            }
+        }
     }
 
     private fun markMoment() {
         val current = _state.value
-        val outputPath = when (current) {
-            is RecordingState.Recording -> current.outputPath
-            is RecordingState.Paused -> current.outputPath
+        val classSessionId: String
+        val audioId: String
+        val outputPath: String
+
+        when (current) {
+            is RecordingState.Recording -> {
+                classSessionId = current.classSessionId
+                audioId = current.audioId
+                outputPath = current.outputPath
+            }
+            is RecordingState.Paused -> {
+                classSessionId = current.classSessionId
+                audioId = current.audioId
+                outputPath = current.outputPath
+            }
             else -> return
         }
 
-        val elapsedMs = (System.currentTimeMillis() - startedAtEpochMs).coerceAtLeast(0L)
-        val markerFile = File("$outputPath.markers.csv")
-        markerFile.appendText("$elapsedMs,${System.currentTimeMillis()}\n")
+        val offsetMs = recordedElapsedMs()
+        val createdAt = System.currentTimeMillis()
+        val momentId = UUID.randomUUID().toString()
+
+        // CSV mínimo como mecanismo de recuperación si la base local se dañara.
+        File("$outputPath.markers.csv").appendText("$momentId,$offsetMs,$createdAt\n")
+
+        serviceScope.launch {
+            dao.insertImportantMoment(
+                ImportantMomentEntity(
+                    id = momentId,
+                    classSessionId = classSessionId,
+                    audioId = audioId,
+                    offsetMs = offsetMs,
+                    createdAtEpochMs = createdAt
+                )
+            )
+        }
+    }
+
+    private fun recordedElapsedMs(now: Long = System.currentTimeMillis()): Long {
+        if (startedAtEpochMs == 0L) return 0L
+        val effectiveNow = pausedAtEpochMs ?: now
+        return (effectiveNow - startedAtEpochMs - totalPausedMs).coerceAtLeast(0L)
+    }
+
+    private fun clearSessionState() {
+        outputFile = null
+        startedAtEpochMs = 0L
+        pausedAtEpochMs = null
+        totalPausedMs = 0L
+        currentClassSessionId = null
+        currentAudioId = null
     }
 
     private fun releaseRecorder() {
@@ -231,6 +348,7 @@ class RecordingService : Service() {
         const val ACTION_RESUME = "com.notcan.app.recording.RESUME"
         const val ACTION_STOP = "com.notcan.app.recording.STOP"
         const val ACTION_MARK = "com.notcan.app.recording.MARK"
+        const val EXTRA_CLASS_SESSION_ID = "class_session_id"
 
         private const val CHANNEL_ID = "notcan_recording"
         private const val NOTIFICATION_ID = 2201
