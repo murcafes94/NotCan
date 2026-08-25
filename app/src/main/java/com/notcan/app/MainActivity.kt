@@ -14,44 +14,56 @@ import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.notcan.app.calendar.CalendarSync
+import com.notcan.app.calendar.PlannedClassOccurrence
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.ui.NotCanViewModel
+import com.notcan.app.ui.ai.NotCanAiScreen
+import com.notcan.app.ui.calendar.AcademicCalendarScreen
 import com.notcan.app.ui.home.NotCanHomeScreen
+import com.notcan.app.ui.home.NotCanRootV5
 import com.notcan.app.ui.theme.NotCanTheme
 import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     private val studyViewModel: NotCanViewModel by viewModels()
-    private var pendingClassSessionId: String? = null
+    private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
+    private var pendingCalendarScheduleId: String? = null
 
-    private val permissionLauncher = registerForActivityResult(
+    private val microphonePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-
-        val classSessionId = pendingClassSessionId
-        pendingClassSessionId = null
-
-        if (microphoneGranted && classSessionId != null) {
-            startRecordingService(classSessionId)
-        }
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val request = pendingRecording
+        pendingRecording = null
+        if (microphoneGranted && request != null) startRecordingService(request)
     }
+
+    private val calendarPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val scheduleId = pendingCalendarScheduleId
+        pendingCalendarScheduleId = null
+        val readGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        val writeGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        if (readGranted && writeGranted && scheduleId != null) performCalendarSync(scheduleId)
+        else if (scheduleId != null) Toast.makeText(this, "NotCan necesita acceso al calendario para sincronizar el horario", Toast.LENGTH_LONG).show()
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     private val documentLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         val classSessionId = pendingDocumentClassId
         pendingDocumentClassId = null
-        if (uri != null && classSessionId != null) {
-            studyViewModel.importDocument(classSessionId, uri)
-        }
+        if (uri != null && classSessionId != null) studyViewModel.importDocument(classSessionId, uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,92 +72,219 @@ class MainActivity : ComponentActivity() {
         setContent {
             NotCanTheme {
                 val recordingState = RecordingService.state.collectAsStateWithLifecycle().value
+                val liveTranscript = RecordingService.liveTranscript.collectAsStateWithLifecycle().value
+                val liveAiStatus = RecordingService.aiStatus.collectAsStateWithLifecycle().value
                 val cycles = studyViewModel.cycles.collectAsStateWithLifecycle().value
                 val subjects = studyViewModel.subjects.collectAsStateWithLifecycle().value
+                val schedules = studyViewModel.schedules.collectAsStateWithLifecycle().value
                 val classes = studyViewModel.classes.collectAsStateWithLifecycle().value
                 val audioRecordings = studyViewModel.audioRecordings.collectAsStateWithLifecycle().value
                 val importantMoments = studyViewModel.importantMoments.collectAsStateWithLifecycle().value
                 val notePages = studyViewModel.notePages.collectAsStateWithLifecycle().value
                 val documents = studyViewModel.documents.collectAsStateWithLifecycle().value
                 val pdfInkStrokes = studyViewModel.pdfInkStrokes.collectAsStateWithLifecycle().value
+                val transcripts = studyViewModel.transcripts.collectAsStateWithLifecycle().value
                 val selectedCycleId = studyViewModel.selectedCycleId.collectAsStateWithLifecycle().value
                 val selectedSubjectId = studyViewModel.selectedSubjectId.collectAsStateWithLifecycle().value
                 val selectedClassId = studyViewModel.selectedClassId.collectAsStateWithLifecycle().value
                 val selectedNoteId = studyViewModel.selectedNoteId.collectAsStateWithLifecycle().value
+                val aiConfigured = studyViewModel.aiConfigured.collectAsStateWithLifecycle().value
+                val aiBusy = studyViewModel.aiBusy.collectAsStateWithLifecycle().value
+                val aiError = studyViewModel.aiError.collectAsStateWithLifecycle().value
+                val aiResult = studyViewModel.aiResult.collectAsStateWithLifecycle().value
 
-                NotCanHomeScreen(
-                    recordingState = recordingState,
-                    cycles = cycles,
+                val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
+                val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
+                val selectedClass = classes.firstOrNull { it.id == selectedClassId }
+
+                NotCanRootV5(
+                    cycle = selectedCycle,
                     subjects = subjects,
-                    classes = classes,
-                    audioRecordings = audioRecordings,
-                    importantMoments = importantMoments,
-                    notePages = notePages,
-                    documents = documents,
-                    pdfInkStrokes = pdfInkStrokes,
-                    selectedCycleId = selectedCycleId,
-                    selectedSubjectId = selectedSubjectId,
-                    selectedClassId = selectedClassId,
-                    selectedNoteId = selectedNoteId,
-                    onSelectCycle = studyViewModel::selectCycle,
-                    onSelectSubject = studyViewModel::selectSubject,
-                    onSelectClass = studyViewModel::selectClass,
-                    onSelectNote = studyViewModel::selectNote,
-                    onCreateCycle = studyViewModel::createCycle,
-                    onCreateSubject = studyViewModel::createSubject,
-                    onCreateClass = studyViewModel::createClass,
-                    onCreateNote = studyViewModel::createNotePage,
-                    onUpdateNote = studyViewModel::updateNotePage,
-                    onImportDocument = ::requestDocumentImport,
-                    onOpenDocument = ::openDocument,
-                    onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
-                    onDeletePdfInkStroke = studyViewModel::deletePdfInkStroke,
-                    onClearPdfInkPage = studyViewModel::clearPdfInkPage,
-                    onStartRecording = ::requestPermissionsAndStart,
-                    onPauseRecording = { sendRecordingAction(RecordingService.ACTION_PAUSE) },
-                    onResumeRecording = { sendRecordingAction(RecordingService.ACTION_RESUME) },
-                    onStopRecording = { sendRecordingAction(RecordingService.ACTION_STOP) },
-                    onMarkMoment = { sendRecordingAction(RecordingService.ACTION_MARK) }
+                    schedules = schedules,
+                    onOpenPlannedClass = { occurrence ->
+                        studyViewModel.materializeOccurrence(occurrence)
+                    },
+                    onRecordPlannedClass = { occurrence ->
+                        studyViewModel.materializeOccurrence(occurrence) { session ->
+                            requestPermissionsAndStart(
+                                classSessionId = session.id,
+                                plannedEndEpochMs = occurrence.endEpochMs,
+                                autoStopMode = occurrence.schedule.autoStopMode,
+                                graceMinutes = occurrence.schedule.autoStopGraceMinutes
+                            )
+                        }
+                    },
+                    classContent = {
+                        NotCanHomeScreen(
+                            recordingState = recordingState,
+                            cycles = cycles,
+                            subjects = subjects,
+                            classes = classes,
+                            audioRecordings = audioRecordings,
+                            importantMoments = importantMoments,
+                            notePages = notePages,
+                            documents = documents,
+                            pdfInkStrokes = pdfInkStrokes,
+                            selectedCycleId = selectedCycleId,
+                            selectedSubjectId = selectedSubjectId,
+                            selectedClassId = selectedClassId,
+                            selectedNoteId = selectedNoteId,
+                            onSelectCycle = studyViewModel::selectCycle,
+                            onSelectSubject = studyViewModel::selectSubject,
+                            onSelectClass = studyViewModel::selectClass,
+                            onSelectNote = studyViewModel::selectNote,
+                            onCreateCycle = studyViewModel::createCycle,
+                            onCreateSubject = studyViewModel::createSubject,
+                            onCreateClass = studyViewModel::createClass,
+                            onCreateNote = studyViewModel::createNotePage,
+                            onUpdateNote = studyViewModel::updateNotePage,
+                            onImportDocument = ::requestDocumentImport,
+                            onOpenDocument = ::openDocument,
+                            onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
+                            onDeletePdfInkStroke = studyViewModel::deletePdfInkStroke,
+                            onClearPdfInkPage = studyViewModel::clearPdfInkPage,
+                            onStartRecording = { classId -> requestPermissionsAndStart(classId) },
+                            onPauseRecording = { sendRecordingAction(RecordingService.ACTION_PAUSE) },
+                            onResumeRecording = { sendRecordingAction(RecordingService.ACTION_RESUME) },
+                            onStopRecording = { sendRecordingAction(RecordingService.ACTION_STOP) },
+                            onMarkMoment = { sendRecordingAction(RecordingService.ACTION_MARK) }
+                        )
+                    },
+                    calendarContent = {
+                        AcademicCalendarScreen(
+                            cycle = selectedCycle,
+                            subjects = subjects,
+                            schedules = schedules,
+                            selectedSubjectId = selectedSubjectId,
+                            onSaveCycleDates = studyViewModel::updateCycleDates,
+                            onAddSchedule = { subjectId, weekday, startMinute, endMinute, mode, grace ->
+                                studyViewModel.addSchedule(subjectId, weekday, startMinute, endMinute, mode, grace)
+                                requestNotificationPermissionIfNeeded()
+                            },
+                            onDeleteSchedule = studyViewModel::deleteSchedule,
+                            onSyncScheduleToCalendar = ::requestCalendarSync,
+                            onOpenOccurrence = studyViewModel::materializeOccurrence,
+                            onRecordOccurrence = { occurrence ->
+                                studyViewModel.materializeOccurrence(occurrence) { session ->
+                                    requestPermissionsAndStart(
+                                        classSessionId = session.id,
+                                        plannedEndEpochMs = occurrence.endEpochMs,
+                                        autoStopMode = occurrence.schedule.autoStopMode,
+                                        graceMinutes = occurrence.schedule.autoStopGraceMinutes
+                                    )
+                                }
+                            }
+                        )
+                    },
+                    aiContent = {
+                        NotCanAiScreen(
+                            subjectName = selectedSubject?.name,
+                            classTitle = selectedClass?.title,
+                            configured = aiConfigured,
+                            busy = aiBusy,
+                            error = aiError,
+                            result = aiResult,
+                            transcripts = transcripts,
+                            audioRecordings = audioRecordings,
+                            liveTranscript = liveTranscript,
+                            liveStatus = liveAiStatus,
+                            onAsk = studyViewModel::askAi,
+                            onTranscribeAudio = studyViewModel::transcribeAudio,
+                            onClear = studyViewModel::clearAiMessage
+                        )
+                    }
                 )
             }
         }
     }
 
-    private fun requestPermissionsAndStart(classSessionId: String) {
-        pendingClassSessionId = classSessionId
-
-        val microphoneGranted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-
+    private fun requestPermissionsAndStart(
+        classSessionId: String,
+        plannedEndEpochMs: Long? = null,
+        autoStopMode: String? = null,
+        graceMinutes: Int? = null
+    ) {
+        val resolved = resolveRecordingPlan(classSessionId, plannedEndEpochMs, autoStopMode, graceMinutes)
+        pendingRecording = resolved
+        val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (microphoneGranted) {
-            pendingClassSessionId = null
-            startRecordingService(classSessionId)
+            pendingRecording = null
+            startRecordingService(resolved)
             return
         }
-
         val permissions = buildList {
             add(Manifest.permission.RECORD_AUDIO)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }.toTypedArray()
-
-        permissionLauncher.launch(permissions)
+        microphonePermissionLauncher.launch(permissions)
     }
 
-    private fun startRecordingService(classSessionId: String) {
+    private fun resolveRecordingPlan(
+        classSessionId: String,
+        plannedEndEpochMs: Long?,
+        autoStopMode: String?,
+        graceMinutes: Int?
+    ): PendingRecording {
+        val session = studyViewModel.classes.value.firstOrNull { it.id == classSessionId }
+        val schedule = session?.scheduleId?.let { id -> studyViewModel.schedules.value.firstOrNull { it.id == id } }
+        return PendingRecording(
+            classSessionId = classSessionId,
+            plannedEndEpochMs = plannedEndEpochMs ?: session?.plannedEndEpochMs,
+            autoStopMode = autoStopMode ?: schedule?.autoStopMode ?: RecordingService.AUTO_STOP_ASK,
+            graceMinutes = graceMinutes ?: schedule?.autoStopGraceMinutes ?: 5
+        )
+    }
+
+    private fun startRecordingService(request: PendingRecording) {
         val intent = Intent(this, RecordingService::class.java)
             .setAction(RecordingService.ACTION_START)
-            .putExtra(RecordingService.EXTRA_CLASS_SESSION_ID, classSessionId)
+            .putExtra(RecordingService.EXTRA_CLASS_SESSION_ID, request.classSessionId)
+            .putExtra(RecordingService.EXTRA_AUTO_STOP_MODE, request.autoStopMode)
+            .putExtra(RecordingService.EXTRA_AUTO_STOP_GRACE_MINUTES, request.graceMinutes)
+            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
+        request.plannedEndEpochMs?.let { intent.putExtra(RecordingService.EXTRA_PLANNED_END_EPOCH_MS, it) }
         ContextCompat.startForegroundService(this, intent)
     }
 
     private fun sendRecordingAction(action: String) {
-        startService(
-            Intent(this, RecordingService::class.java).setAction(action)
-        )
+        startService(Intent(this, RecordingService::class.java).setAction(action))
+    }
+
+    private fun requestCalendarSync(scheduleId: String) {
+        pendingCalendarScheduleId = scheduleId
+        val readGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        val writeGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        if (readGranted && writeGranted) {
+            pendingCalendarScheduleId = null
+            performCalendarSync(scheduleId)
+        } else {
+            calendarPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
+        }
+    }
+
+    private fun performCalendarSync(scheduleId: String) {
+        val schedule = studyViewModel.schedules.value.firstOrNull { it.id == scheduleId } ?: return
+        val cycle = studyViewModel.cycles.value.firstOrNull { it.id == schedule.cycleId } ?: return
+        val subject = studyViewModel.subjects.value.firstOrNull { it.id == schedule.subjectId } ?: return
+        try {
+            val eventId = CalendarSync.syncSchedule(this, cycle, subject, schedule)
+            if (eventId != null) {
+                studyViewModel.setScheduleCalendarEvent(schedule.id, eventId)
+                Toast.makeText(this, "${subject.name} sincronizada con el calendario", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "No encontré un calendario editable en el dispositivo", Toast.LENGTH_LONG).show()
+            }
+        } catch (t: Throwable) {
+            Toast.makeText(this, "No se pudo sincronizar: ${t.message ?: "error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     private fun requestDocumentImport(classSessionId: String) {
@@ -166,16 +305,21 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "El archivo local ya no existe", Toast.LENGTH_SHORT).show()
             return
         }
-
         val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, document.mimeType)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-
         try {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, "No hay una aplicación compatible para abrir este archivo", Toast.LENGTH_SHORT).show()
         }
     }
+
+    private data class PendingRecording(
+        val classSessionId: String,
+        val plannedEndEpochMs: Long?,
+        val autoStopMode: String,
+        val graceMinutes: Int
+    )
 }
