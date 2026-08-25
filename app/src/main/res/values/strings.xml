@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NotCan</string>
+    <string name="recording_channel_name">Grabación de clase</string>
+    <string name="recording_notification_title">NotCan está grabando</string>
+</resources>
