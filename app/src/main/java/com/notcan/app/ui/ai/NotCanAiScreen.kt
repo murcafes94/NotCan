@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -107,17 +108,10 @@ fun NotCanAiScreen(
                 }
                 if (transcripts.isNotEmpty()) {
                     Text("Guardada en esta clase", color = NotCanBlue, style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        transcripts.first().body.take(5000),
-                        color = NotCanOffWhite,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text(transcripts.first().body.take(5000), color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (latestAudio != null) {
-                    OutlinedButton(
-                        enabled = !busy && configured,
-                        onClick = { onTranscribeAudio(latestAudio.id) }
-                    ) {
+                    OutlinedButton(enabled = !busy && configured, onClick = { onTranscribeAudio(latestAudio.id) }) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text("Revisar último audio con Gemini")
@@ -142,10 +136,7 @@ fun NotCanAiScreen(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3
                 )
-                Button(
-                    enabled = configured && !busy && question.isNotBlank(),
-                    onClick = { onAsk(question) }
-                ) {
+                Button(enabled = configured && !busy && question.isNotBlank(), onClick = { onAsk(question) }) {
                     if (busy) {
                         CircularProgressIndicator(modifier = Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
