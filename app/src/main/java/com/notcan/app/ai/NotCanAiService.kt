@@ -58,8 +58,6 @@ class NotCanAiService(private val context: Context) {
     suspend fun transcribeAudio(file: File): String {
         ensureFirebase()
         require(file.exists()) { "El audio local no existe." }
-        // Las solicitudes inline de Firebase AI Logic tienen un límite total; dejamos margen
-        // para la codificación y reservamos Gemini Live para las clases largas.
         require(file.length() <= SAFE_INLINE_AUDIO_BYTES) {
             "Este audio es demasiado grande para transcripción final directa. Usa la transcripción en vivo o divide la grabación."
         }
@@ -133,7 +131,7 @@ class GeminiLiveTranscriber(
 
     suspend fun sendPcmRealtime(bytes: ByteArray) {
         try {
-            session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=24000"))
+            session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=16000"))
         } catch (t: Throwable) {
             onStatus("Gemini Live sin conexión: ${t.message ?: "error"}")
         }
