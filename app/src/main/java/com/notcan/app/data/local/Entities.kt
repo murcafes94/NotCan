@@ -15,14 +15,11 @@ data class StudyCycleEntity(
 
 @Entity(
     tableName = "subjects",
-    foreignKeys = [
-        ForeignKey(
-            entity = StudyCycleEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["cycleId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = StudyCycleEntity::class,
+        parentColumns = ["id"], childColumns = ["cycleId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("cycleId")]
 )
 data class SubjectEntity(
@@ -35,14 +32,11 @@ data class SubjectEntity(
 
 @Entity(
     tableName = "class_sessions",
-    foreignKeys = [
-        ForeignKey(
-            entity = SubjectEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["subjectId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = SubjectEntity::class,
+        parentColumns = ["id"], childColumns = ["subjectId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("subjectId")]
 )
 data class ClassSessionEntity(
@@ -56,14 +50,11 @@ data class ClassSessionEntity(
 
 @Entity(
     tableName = "audio_recordings",
-    foreignKeys = [
-        ForeignKey(
-            entity = ClassSessionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["classSessionId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = ClassSessionEntity::class,
+        parentColumns = ["id"], childColumns = ["classSessionId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("classSessionId")]
 )
 data class AudioRecordingEntity(
@@ -77,14 +68,11 @@ data class AudioRecordingEntity(
 
 @Entity(
     tableName = "important_moments",
-    foreignKeys = [
-        ForeignKey(
-            entity = ClassSessionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["classSessionId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = ClassSessionEntity::class,
+        parentColumns = ["id"], childColumns = ["classSessionId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("classSessionId"), Index("audioId")]
 )
 data class ImportantMomentEntity(
@@ -98,14 +86,11 @@ data class ImportantMomentEntity(
 
 @Entity(
     tableName = "note_pages",
-    foreignKeys = [
-        ForeignKey(
-            entity = ClassSessionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["classSessionId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = ClassSessionEntity::class,
+        parentColumns = ["id"], childColumns = ["classSessionId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("classSessionId")]
 )
 data class NotePageEntity(
@@ -119,14 +104,11 @@ data class NotePageEntity(
 
 @Entity(
     tableName = "document_resources",
-    foreignKeys = [
-        ForeignKey(
-            entity = ClassSessionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["classSessionId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
+    foreignKeys = [ForeignKey(
+        entity = ClassSessionEntity::class,
+        parentColumns = ["id"], childColumns = ["classSessionId"],
+        onDelete = ForeignKey.CASCADE
+    )],
     indices = [Index("classSessionId"), Index("documentType")]
 )
 data class DocumentResourceEntity(
@@ -136,5 +118,33 @@ data class DocumentResourceEntity(
     val localPath: String,
     val mimeType: String,
     val documentType: String,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "pdf_ink_strokes",
+    foreignKeys = [
+        ForeignKey(
+            entity = ClassSessionEntity::class,
+            parentColumns = ["id"], childColumns = ["classSessionId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = DocumentResourceEntity::class,
+            parentColumns = ["id"], childColumns = ["documentId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("classSessionId"), Index("documentId"), Index(value = ["documentId", "pageIndex"])]
+)
+data class PdfInkStrokeEntity(
+    @PrimaryKey val id: String,
+    val classSessionId: String,
+    val documentId: String,
+    val pageIndex: Int,
+    val tool: String,
+    val colorArgb: Long,
+    val baseWidth: Float,
+    val pointsData: String,
     val createdAtEpochMs: Long
 )
