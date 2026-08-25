@@ -37,9 +37,10 @@ object CalendarSync {
         cycle: StudyCycleEntity,
         subject: SubjectEntity,
         schedule: SubjectScheduleEntity,
-        calendarId: Long = findWritableCalendarId(context) ?: return null
+        calendarId: Long? = null
     ): Long? {
         if (cycle.startEpochDay <= 0 || cycle.endEpochDay < cycle.startEpochDay) return null
+        val resolvedCalendarId = calendarId ?: findWritableCalendarId(context) ?: return null
         val first = AcademicSchedule.allOccurrences(cycle, listOf(subject), listOf(schedule)).firstOrNull() ?: return null
         schedule.calendarEventId?.let { removeEvent(context, it) }
 
@@ -53,7 +54,7 @@ object CalendarSync {
         val durationMinutes = schedule.endMinuteOfDay - schedule.startMinuteOfDay
 
         val values = ContentValues().apply {
-            put(CalendarContract.Events.CALENDAR_ID, calendarId)
+            put(CalendarContract.Events.CALENDAR_ID, resolvedCalendarId)
             put(CalendarContract.Events.TITLE, subject.name)
             put(CalendarContract.Events.DESCRIPTION, "Horario académico sincronizado por NotCan")
             put(CalendarContract.Events.DTSTART, first.startEpochMs)
