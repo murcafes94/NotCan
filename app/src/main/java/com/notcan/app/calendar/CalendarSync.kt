@@ -50,13 +50,14 @@ object CalendarSync {
             .minusSeconds(1)
             .withZoneSameInstant(ZoneId.of("UTC"))
             .format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"))
+        val durationMinutes = schedule.endMinuteOfDay - schedule.startMinuteOfDay
 
         val values = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.TITLE, subject.name)
             put(CalendarContract.Events.DESCRIPTION, "Horario académico sincronizado por NotCan")
             put(CalendarContract.Events.DTSTART, first.startEpochMs)
-            put(CalendarContract.Events.DTEND, first.endEpochMs)
+            put(CalendarContract.Events.DURATION, "PT${durationMinutes}M")
             put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
             put(CalendarContract.Events.RRULE, "FREQ=WEEKLY;UNTIL=$until")
             put(CalendarContract.Events.HAS_ALARM, 1)
