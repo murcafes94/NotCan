@@ -95,3 +95,46 @@ data class ImportantMomentEntity(
     val note: String? = null,
     val createdAtEpochMs: Long
 )
+
+@Entity(
+    tableName = "note_pages",
+    foreignKeys = [
+        ForeignKey(
+            entity = ClassSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["classSessionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("classSessionId")]
+)
+data class NotePageEntity(
+    @PrimaryKey val id: String,
+    val classSessionId: String,
+    val title: String,
+    val body: String,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "document_resources",
+    foreignKeys = [
+        ForeignKey(
+            entity = ClassSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["classSessionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("classSessionId"), Index("documentType")]
+)
+data class DocumentResourceEntity(
+    @PrimaryKey val id: String,
+    val classSessionId: String,
+    val displayName: String,
+    val localPath: String,
+    val mimeType: String,
+    val documentType: String,
+    val createdAtEpochMs: Long
+)
