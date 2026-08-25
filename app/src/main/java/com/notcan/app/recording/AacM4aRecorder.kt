@@ -188,7 +188,7 @@ class AacM4aRecorder(
     }
 
     companion object {
-        const val SAMPLE_RATE = 24_000
+        const val SAMPLE_RATE = 16_000
         private const val CHANNEL_COUNT = 1
         private const val BYTES_PER_SAMPLE = 2
         private const val AAC_BIT_RATE = 64_000
