@@ -1,5 +1,6 @@
 package com.notcan.app.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -10,7 +11,9 @@ data class StudyCycleEntity(
     @PrimaryKey val id: String,
     val name: String,
     val isActive: Boolean,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    @ColumnInfo(defaultValue = "0") val startEpochDay: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val endEpochDay: Long = 0L
 )
 
 @Entity(
@@ -31,13 +34,44 @@ data class SubjectEntity(
 )
 
 @Entity(
+    tableName = "subject_schedules",
+    foreignKeys = [
+        ForeignKey(
+            entity = SubjectEntity::class,
+            parentColumns = ["id"], childColumns = ["subjectId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = StudyCycleEntity::class,
+            parentColumns = ["id"], childColumns = ["cycleId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("subjectId"), Index("cycleId"), Index(value = ["weekdayIso", "startMinuteOfDay"])]
+)
+data class SubjectScheduleEntity(
+    @PrimaryKey val id: String,
+    val subjectId: String,
+    val cycleId: String,
+    val weekdayIso: Int,
+    val startMinuteOfDay: Int,
+    val endMinuteOfDay: Int,
+    val reminderMinutesBefore: Int = 1440,
+    val previewMinutesBefore: Int = 10,
+    val autoStopMode: String = "ASK",
+    val autoStopGraceMinutes: Int = 5,
+    val calendarEventId: Long? = null,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
     tableName = "class_sessions",
     foreignKeys = [ForeignKey(
         entity = SubjectEntity::class,
         parentColumns = ["id"], childColumns = ["subjectId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index("subjectId")]
+    indices = [Index("subjectId"), Index("scheduleId")]
 )
 data class ClassSessionEntity(
     @PrimaryKey val id: String,
@@ -45,7 +79,10 @@ data class ClassSessionEntity(
     val title: String,
     val startedAtEpochMs: Long,
     val endedAtEpochMs: Long? = null,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    val scheduleId: String? = null,
+    val plannedStartEpochMs: Long? = null,
+    val plannedEndEpochMs: Long? = null
 )
 
 @Entity(
@@ -147,4 +184,24 @@ data class PdfInkStrokeEntity(
     val baseWidth: Float,
     val pointsData: String,
     val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "transcripts",
+    foreignKeys = [ForeignKey(
+        entity = ClassSessionEntity::class,
+        parentColumns = ["id"], childColumns = ["classSessionId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("classSessionId"), Index("audioId")]
+)
+data class TranscriptEntity(
+    @PrimaryKey val id: String,
+    val classSessionId: String,
+    val audioId: String?,
+    val body: String,
+    val status: String = "FINAL",
+    val modelName: String? = null,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long
 )

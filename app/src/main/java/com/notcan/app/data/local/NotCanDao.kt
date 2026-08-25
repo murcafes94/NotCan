@@ -15,6 +15,9 @@ interface NotCanDao {
     @Query("SELECT * FROM subjects WHERE cycleId = :cycleId ORDER BY name COLLATE NOCASE ASC")
     fun observeSubjects(cycleId: String): Flow<List<SubjectEntity>>
 
+    @Query("SELECT * FROM subject_schedules WHERE cycleId = :cycleId ORDER BY weekdayIso, startMinuteOfDay")
+    fun observeSchedules(cycleId: String): Flow<List<SubjectScheduleEntity>>
+
     @Query("SELECT * FROM class_sessions WHERE subjectId = :subjectId ORDER BY startedAtEpochMs DESC")
     fun observeClasses(subjectId: String): Flow<List<ClassSessionEntity>>
 
@@ -33,11 +36,26 @@ interface NotCanDao {
     @Query("SELECT * FROM pdf_ink_strokes WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs ASC")
     fun observePdfInkStrokes(classSessionId: String): Flow<List<PdfInkStrokeEntity>>
 
+    @Query("SELECT * FROM transcripts WHERE classSessionId = :classSessionId ORDER BY updatedAtEpochMs DESC")
+    fun observeTranscripts(classSessionId: String): Flow<List<TranscriptEntity>>
+
+    @Query("SELECT * FROM class_sessions WHERE subjectId = :subjectId AND plannedStartEpochMs = :plannedStart LIMIT 1")
+    suspend fun findMaterializedSession(subjectId: String, plannedStart: Long): ClassSessionEntity?
+
+    @Query("SELECT * FROM study_cycles WHERE id = :cycleId LIMIT 1")
+    suspend fun getCycle(cycleId: String): StudyCycleEntity?
+
+    @Query("SELECT * FROM subjects WHERE id = :subjectId LIMIT 1")
+    suspend fun getSubject(subjectId: String): SubjectEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCycle(cycle: StudyCycleEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubject(subject: SubjectEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSchedule(schedule: SubjectScheduleEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertClassSession(classSession: ClassSessionEntity)
@@ -57,17 +75,29 @@ interface NotCanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPdfInkStroke(stroke: PdfInkStrokeEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTranscript(transcript: TranscriptEntity)
+
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
 
     @Query("UPDATE study_cycles SET isActive = 1 WHERE id = :cycleId")
     suspend fun activateCycle(cycleId: String)
 
+    @Query("UPDATE study_cycles SET startEpochDay = :startEpochDay, endEpochDay = :endEpochDay WHERE id = :cycleId")
+    suspend fun updateCycleDates(cycleId: String, startEpochDay: Long, endEpochDay: Long)
+
+    @Query("UPDATE subject_schedules SET calendarEventId = :eventId WHERE id = :scheduleId")
+    suspend fun setScheduleCalendarEvent(scheduleId: String, eventId: Long?)
+
     @Transaction
     suspend fun setActiveCycle(cycleId: String) {
         deactivateAllCycles()
         activateCycle(cycleId)
     }
+
+    @Query("DELETE FROM subject_schedules WHERE id = :scheduleId")
+    suspend fun deleteSchedule(scheduleId: String)
 
     @Query("DELETE FROM audio_recordings WHERE id = :audioId")
     suspend fun deleteAudioRecording(audioId: String)
