@@ -22,6 +22,7 @@ import com.notcan.app.data.local.ClassSessionEntity
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotePageEntity
+import com.notcan.app.data.local.PdfInkStrokeEntity
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.recording.RecordingState
@@ -36,6 +37,7 @@ fun NotCanHomeScreen(
     importantMoments: List<ImportantMomentEntity>,
     notePages: List<NotePageEntity>,
     documents: List<DocumentResourceEntity>,
+    pdfInkStrokes: List<PdfInkStrokeEntity>,
     selectedCycleId: String?,
     selectedSubjectId: String?,
     selectedClassId: String?,
@@ -51,6 +53,9 @@ fun NotCanHomeScreen(
     onUpdateNote: (String, String, String) -> Unit,
     onImportDocument: (String) -> Unit,
     onOpenDocument: (DocumentResourceEntity) -> Unit,
+    onSavePdfInkStroke: (String, Int, String, Long, Float, String) -> Unit,
+    onDeletePdfInkStroke: (String) -> Unit,
+    onClearPdfInkPage: (String, Int) -> Unit,
     onStartRecording: (String) -> Unit,
     onPauseRecording: () -> Unit,
     onResumeRecording: () -> Unit,
@@ -92,7 +97,7 @@ fun NotCanHomeScreen(
                         onAddClass = { createDialog = CreateDialog.Class }
                     )
 
-                    NotCanClassWorkspace(
+                    NotCanClassWorkspaceV4(
                         modifier = Modifier.weight(1f),
                         cycleName = selectedCycle?.name,
                         subject = selectedSubject,
@@ -102,12 +107,16 @@ fun NotCanHomeScreen(
                         notePages = notePages,
                         selectedNoteId = selectedNoteId,
                         documents = documents,
+                        pdfInkStrokes = pdfInkStrokes,
                         recordingState = recordingState,
                         onSelectNote = onSelectNote,
                         onCreateNote = onCreateNote,
                         onUpdateNote = onUpdateNote,
                         onImportDocument = onImportDocument,
                         onOpenDocument = onOpenDocument,
+                        onSavePdfInkStroke = onSavePdfInkStroke,
+                        onDeletePdfInkStroke = onDeletePdfInkStroke,
+                        onClearPdfInkPage = onClearPdfInkPage,
                         onStartRecording = onStartRecording,
                         onPauseRecording = onPauseRecording,
                         onResumeRecording = onResumeRecording,
@@ -137,7 +146,7 @@ fun NotCanHomeScreen(
                             onAddClass = { createDialog = CreateDialog.Class }
                         )
 
-                        NotCanClassWorkspace(
+                        NotCanClassWorkspaceV4(
                             modifier = Modifier.weight(1f),
                             cycleName = selectedCycle?.name,
                             subject = selectedSubject,
@@ -147,12 +156,16 @@ fun NotCanHomeScreen(
                             notePages = notePages,
                             selectedNoteId = selectedNoteId,
                             documents = documents,
+                            pdfInkStrokes = pdfInkStrokes,
                             recordingState = recordingState,
                             onSelectNote = onSelectNote,
                             onCreateNote = onCreateNote,
                             onUpdateNote = onUpdateNote,
                             onImportDocument = onImportDocument,
                             onOpenDocument = onOpenDocument,
+                            onSavePdfInkStroke = onSavePdfInkStroke,
+                            onDeletePdfInkStroke = onDeletePdfInkStroke,
+                            onClearPdfInkPage = onClearPdfInkPage,
                             onStartRecording = onStartRecording,
                             onPauseRecording = onPauseRecording,
                             onResumeRecording = onResumeRecording,

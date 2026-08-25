@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface NotCanDao {
-
     @Query("SELECT * FROM study_cycles ORDER BY isActive DESC, createdAtEpochMs DESC")
     fun observeCycles(): Flow<List<StudyCycleEntity>>
 
@@ -30,6 +29,9 @@ interface NotCanDao {
 
     @Query("SELECT * FROM document_resources WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs DESC")
     fun observeDocuments(classSessionId: String): Flow<List<DocumentResourceEntity>>
+
+    @Query("SELECT * FROM pdf_ink_strokes WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs ASC")
+    fun observePdfInkStrokes(classSessionId: String): Flow<List<PdfInkStrokeEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCycle(cycle: StudyCycleEntity)
@@ -52,6 +54,9 @@ interface NotCanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDocument(document: DocumentResourceEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPdfInkStroke(stroke: PdfInkStrokeEntity)
+
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
 
@@ -72,4 +77,10 @@ interface NotCanDao {
 
     @Query("DELETE FROM document_resources WHERE id = :documentId")
     suspend fun deleteDocument(documentId: String)
+
+    @Query("DELETE FROM pdf_ink_strokes WHERE id = :strokeId")
+    suspend fun deletePdfInkStroke(strokeId: String)
+
+    @Query("DELETE FROM pdf_ink_strokes WHERE documentId = :documentId AND pageIndex = :pageIndex")
+    suspend fun clearPdfInkPage(documentId: String, pageIndex: Int)
 }
