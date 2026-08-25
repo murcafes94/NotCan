@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 val importantMoments = studyViewModel.importantMoments.collectAsStateWithLifecycle().value
                 val notePages = studyViewModel.notePages.collectAsStateWithLifecycle().value
                 val documents = studyViewModel.documents.collectAsStateWithLifecycle().value
+                val pdfInkStrokes = studyViewModel.pdfInkStrokes.collectAsStateWithLifecycle().value
                 val selectedCycleId = studyViewModel.selectedCycleId.collectAsStateWithLifecycle().value
                 val selectedSubjectId = studyViewModel.selectedSubjectId.collectAsStateWithLifecycle().value
                 val selectedClassId = studyViewModel.selectedClassId.collectAsStateWithLifecycle().value
@@ -81,6 +82,7 @@ class MainActivity : ComponentActivity() {
                     importantMoments = importantMoments,
                     notePages = notePages,
                     documents = documents,
+                    pdfInkStrokes = pdfInkStrokes,
                     selectedCycleId = selectedCycleId,
                     selectedSubjectId = selectedSubjectId,
                     selectedClassId = selectedClassId,
@@ -96,6 +98,9 @@ class MainActivity : ComponentActivity() {
                     onUpdateNote = studyViewModel::updateNotePage,
                     onImportDocument = ::requestDocumentImport,
                     onOpenDocument = ::openDocument,
+                    onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
+                    onDeletePdfInkStroke = studyViewModel::deletePdfInkStroke,
+                    onClearPdfInkPage = studyViewModel::clearPdfInkPage,
                     onStartRecording = ::requestPermissionsAndStart,
                     onPauseRecording = { sendRecordingAction(RecordingService.ACTION_PAUSE) },
                     onResumeRecording = { sendRecordingAction(RecordingService.ACTION_RESUME) },
