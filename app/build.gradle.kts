@@ -13,8 +13,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
     }
 
     buildTypes {
@@ -68,6 +68,13 @@ dependencies {
 
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
+    // Local-first transcription. The model itself is downloaded separately (~1.5 GiB).
+    implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
+
+    // WYSIWYG notes editor, Apache-2.0. rc10 matches Kotlin 2.0.21 / Compose 1.7.x.
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
+
+    // Kept only as an optional cloud study assistant. Local transcription never depends on it.
     implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
     implementation("com.google.firebase:firebase-ai")
     implementation("com.google.firebase:firebase-appcheck-debug")
