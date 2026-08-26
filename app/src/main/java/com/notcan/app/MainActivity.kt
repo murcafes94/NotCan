@@ -15,7 +15,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notcan.app.calendar.CalendarSync
+import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DocumentResourceEntity
+import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.ui.NotCanViewModel
 import com.notcan.app.ui.ai.NotCanAiScreen
@@ -30,11 +32,10 @@ class MainActivity : ComponentActivity() {
     private val studyViewModel: NotCanViewModel by viewModels()
     private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
+    private var pendingNoteClassId: String? = null
     private var pendingCalendarScheduleId: String? = null
 
-    private val microphonePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
+    private val microphonePermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val request = pendingRecording
@@ -42,9 +43,7 @@ class MainActivity : ComponentActivity() {
         if (microphoneGranted && request != null) startRecordingService(request)
     }
 
-    private val calendarPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    private val calendarPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val scheduleId = pendingCalendarScheduleId
         pendingCalendarScheduleId = null
         val readGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
@@ -53,16 +52,18 @@ class MainActivity : ComponentActivity() {
         else if (scheduleId != null) Toast.makeText(this, "NotCan necesita acceso al calendario para sincronizar el horario", Toast.LENGTH_LONG).show()
     }
 
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    private val documentLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
+    private val documentLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val classSessionId = pendingDocumentClassId
         pendingDocumentClassId = null
         if (uri != null && classSessionId != null) studyViewModel.importDocument(classSessionId, uri)
+    }
+
+    private val noteLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val classSessionId = pendingNoteClassId
+        pendingNoteClassId = null
+        if (uri != null && classSessionId != null) studyViewModel.importNoteText(classSessionId, uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,8 +72,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             NotCanTheme {
                 val recordingState = RecordingService.state.collectAsStateWithLifecycle().value
-                val liveTranscript = RecordingService.liveTranscript.collectAsStateWithLifecycle().value
-                val liveAiStatus = RecordingService.aiStatus.collectAsStateWithLifecycle().value
                 val cycles = studyViewModel.cycles.collectAsStateWithLifecycle().value
                 val subjects = studyViewModel.subjects.collectAsStateWithLifecycle().value
                 val schedules = studyViewModel.schedules.collectAsStateWithLifecycle().value
@@ -91,6 +90,10 @@ class MainActivity : ComponentActivity() {
                 val aiBusy = studyViewModel.aiBusy.collectAsStateWithLifecycle().value
                 val aiError = studyViewModel.aiError.collectAsStateWithLifecycle().value
                 val aiResult = studyViewModel.aiResult.collectAsStateWithLifecycle().value
+                val whisperModelState = studyViewModel.whisperModelState.collectAsStateWithLifecycle().value
+                val whisperModelProgress = studyViewModel.whisperModelProgress.collectAsStateWithLifecycle().value
+                val localWhisperBusy = studyViewModel.localWhisperBusy.collectAsStateWithLifecycle().value
+                val localWhisperError = studyViewModel.localWhisperError.collectAsStateWithLifecycle().value
 
                 val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
                 val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
@@ -103,12 +106,7 @@ class MainActivity : ComponentActivity() {
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                     onRecordPlannedClass = { occurrence ->
                         studyViewModel.materializeOccurrence(occurrence) { session ->
-                            requestPermissionsAndStart(
-                                classSessionId = session.id,
-                                plannedEndEpochMs = occurrence.endEpochMs,
-                                autoStopMode = occurrence.schedule.autoStopMode,
-                                graceMinutes = occurrence.schedule.autoStopGraceMinutes
-                            )
+                            requestPermissionsAndStart(session.id, occurrence.endEpochMs, occurrence.schedule.autoStopMode, occurrence.schedule.autoStopGraceMinutes)
                         }
                     },
                     classContent = {
@@ -122,6 +120,10 @@ class MainActivity : ComponentActivity() {
                             notePages = notePages,
                             documents = documents,
                             pdfInkStrokes = pdfInkStrokes,
+                            transcripts = transcripts,
+                            whisperModelState = whisperModelState,
+                            localWhisperBusy = localWhisperBusy,
+                            localWhisperError = localWhisperError,
                             selectedCycleId = selectedCycleId,
                             selectedSubjectId = selectedSubjectId,
                             selectedClassId = selectedClassId,
@@ -135,6 +137,11 @@ class MainActivity : ComponentActivity() {
                             onCreateClass = studyViewModel::createClass,
                             onCreateNote = studyViewModel::createNotePage,
                             onUpdateNote = studyViewModel::updateNotePage,
+                            onImportNote = ::requestNoteImport,
+                            onShareNote = ::shareNote,
+                            onShareAudio = ::shareAudio,
+                            onDeleteAudio = studyViewModel::deleteAudio,
+                            onTranscribeLocal = studyViewModel::transcribeAudioLocal,
                             onImportDocument = ::requestDocumentImport,
                             onOpenDocument = ::openDocument,
                             onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
@@ -163,12 +170,7 @@ class MainActivity : ComponentActivity() {
                             onOpenOccurrence = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                             onRecordOccurrence = { occurrence ->
                                 studyViewModel.materializeOccurrence(occurrence) { session ->
-                                    requestPermissionsAndStart(
-                                        classSessionId = session.id,
-                                        plannedEndEpochMs = occurrence.endEpochMs,
-                                        autoStopMode = occurrence.schedule.autoStopMode,
-                                        graceMinutes = occurrence.schedule.autoStopGraceMinutes
-                                    )
+                                    requestPermissionsAndStart(session.id, occurrence.endEpochMs, occurrence.schedule.autoStopMode, occurrence.schedule.autoStopGraceMinutes)
                                 }
                             }
                         )
@@ -183,10 +185,14 @@ class MainActivity : ComponentActivity() {
                             result = aiResult,
                             transcripts = transcripts,
                             audioRecordings = audioRecordings,
-                            liveTranscript = liveTranscript,
-                            liveStatus = liveAiStatus,
+                            whisperModelState = whisperModelState,
+                            whisperModelProgress = whisperModelProgress,
+                            localWhisperBusy = localWhisperBusy,
+                            localWhisperError = localWhisperError,
+                            onDownloadWhisperModel = studyViewModel::downloadWhisperModel,
+                            onRemoveWhisperModel = studyViewModel::removeWhisperModel,
+                            onTranscribeLocal = studyViewModel::transcribeAudioLocal,
                             onAsk = studyViewModel::askAi,
-                            onTranscribeAudio = studyViewModel::transcribeAudio,
                             onClear = studyViewModel::clearAiMessage
                         )
                     }
@@ -195,12 +201,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestPermissionsAndStart(
-        classSessionId: String,
-        plannedEndEpochMs: Long? = null,
-        autoStopMode: String? = null,
-        graceMinutes: Int? = null
-    ) {
+    private fun requestPermissionsAndStart(classSessionId: String, plannedEndEpochMs: Long? = null, autoStopMode: String? = null, graceMinutes: Int? = null) {
         val resolved = resolveRecordingPlan(classSessionId, plannedEndEpochMs, autoStopMode, graceMinutes)
         pendingRecording = resolved
         val microphoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -216,12 +217,7 @@ class MainActivity : ComponentActivity() {
         microphonePermissionLauncher.launch(permissions)
     }
 
-    private fun resolveRecordingPlan(
-        classSessionId: String,
-        plannedEndEpochMs: Long?,
-        autoStopMode: String?,
-        graceMinutes: Int?
-    ): PendingRecording {
+    private fun resolveRecordingPlan(classSessionId: String, plannedEndEpochMs: Long?, autoStopMode: String?, graceMinutes: Int?): PendingRecording {
         val session = studyViewModel.classes.value.firstOrNull { it.id == classSessionId }
         val schedule = session?.scheduleId?.let { id -> studyViewModel.schedules.value.firstOrNull { it.id == id } }
         return PendingRecording(
@@ -238,13 +234,46 @@ class MainActivity : ComponentActivity() {
             .putExtra(RecordingService.EXTRA_CLASS_SESSION_ID, request.classSessionId)
             .putExtra(RecordingService.EXTRA_AUTO_STOP_MODE, request.autoStopMode)
             .putExtra(RecordingService.EXTRA_AUTO_STOP_GRACE_MINUTES, request.graceMinutes)
-            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
+            // v0.6: recording never streams continuously to Gemini. Local M4A remains the source.
+            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, false)
         request.plannedEndEpochMs?.let { intent.putExtra(RecordingService.EXTRA_PLANNED_END_EPOCH_MS, it) }
         ContextCompat.startForegroundService(this, intent)
     }
 
     private fun sendRecordingAction(action: String) {
         startService(Intent(this, RecordingService::class.java).setAction(action))
+    }
+
+    private fun requestNoteImport(classSessionId: String) {
+        pendingNoteClassId = classSessionId
+        noteLauncher.launch(arrayOf("text/plain", "text/markdown", "text/*"))
+    }
+
+    private fun shareNote(note: NotePageEntity) {
+        val text = buildString {
+            appendLine(note.title.ifBlank { "Apuntes" })
+            appendLine()
+            append(markdownToPlainText(note.body))
+        }
+        val intent = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, note.title)
+            .putExtra(Intent.EXTRA_TEXT, text)
+        startActivity(Intent.createChooser(intent, "Compartir apuntes"))
+    }
+
+    private fun shareAudio(audio: AudioRecordingEntity) {
+        val file = File(audio.localPath)
+        if (!file.exists()) {
+            Toast.makeText(this, "El audio ya no existe", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+        val intent = Intent(Intent.ACTION_SEND)
+            .setType("audio/mp4")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivity(Intent.createChooser(intent, "Compartir audio"))
     }
 
     private fun requestCalendarSync(scheduleId: String) {
@@ -268,32 +297,22 @@ class MainActivity : ComponentActivity() {
             if (eventId != null) {
                 studyViewModel.setScheduleCalendarEvent(schedule.id, eventId)
                 Toast.makeText(this, "${subject.name} sincronizada con el calendario", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "No encontré un calendario editable en el dispositivo", Toast.LENGTH_LONG).show()
-            }
+            } else Toast.makeText(this, "No encontré un calendario editable en el dispositivo", Toast.LENGTH_LONG).show()
         } catch (t: Throwable) {
             Toast.makeText(this, "No se pudo sincronizar: ${t.message ?: "error"}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
+    // Kept temporarily for migrations/imported data created by v0.3-v0.5. New UI no longer exposes document viewers.
     private fun requestDocumentImport(classSessionId: String) {
         pendingDocumentClassId = classSessionId
-        documentLauncher.launch(
-            arrayOf(
-                "application/pdf",
-                "application/epub+zip",
-                "application/msword",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
-        )
+        documentLauncher.launch(arrayOf("application/pdf", "application/epub+zip", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
     }
 
     private fun openDocument(document: DocumentResourceEntity) {
@@ -303,15 +322,18 @@ class MainActivity : ComponentActivity() {
             return
         }
         val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
-        val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, document.mimeType)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        try {
-            startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, "No hay una aplicación compatible para abrir este archivo", Toast.LENGTH_SHORT).show()
-        }
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, document.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try { startActivity(intent) }
+        catch (_: ActivityNotFoundException) { Toast.makeText(this, "No hay una aplicación compatible para abrir este archivo", Toast.LENGTH_SHORT).show() }
     }
+
+    private fun markdownToPlainText(value: String): String = value
+        .replace(Regex("(?m)^#{1,6}\\s*"), "")
+        .replace("**", "")
+        .replace("__", "")
+        .replace("*", "")
+        .replace("_", "")
+        .replace(Regex("(?m)^\\s*[-*+]\\s+"), "• ")
 
     private data class PendingRecording(
         val classSessionId: String,

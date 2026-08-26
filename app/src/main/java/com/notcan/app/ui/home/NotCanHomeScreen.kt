@@ -25,6 +25,8 @@ import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.PdfInkStrokeEntity
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
+import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.recording.RecordingState
 
 @Composable
@@ -38,6 +40,10 @@ fun NotCanHomeScreen(
     notePages: List<NotePageEntity>,
     documents: List<DocumentResourceEntity>,
     pdfInkStrokes: List<PdfInkStrokeEntity>,
+    transcripts: List<TranscriptEntity>,
+    whisperModelState: WhisperModelState,
+    localWhisperBusy: Boolean,
+    localWhisperError: String?,
     selectedCycleId: String?,
     selectedSubjectId: String?,
     selectedClassId: String?,
@@ -51,6 +57,11 @@ fun NotCanHomeScreen(
     onCreateClass: (String) -> Unit,
     onCreateNote: (String) -> Unit,
     onUpdateNote: (String, String, String) -> Unit,
+    onImportNote: (String) -> Unit,
+    onShareNote: (NotePageEntity) -> Unit,
+    onShareAudio: (AudioRecordingEntity) -> Unit,
+    onDeleteAudio: (String) -> Unit,
+    onTranscribeLocal: (String) -> Unit,
     onImportDocument: (String) -> Unit,
     onOpenDocument: (DocumentResourceEntity) -> Unit,
     onSavePdfInkStroke: (String, Int, String, Long, Float, String) -> Unit,
@@ -69,11 +80,7 @@ fun NotCanHomeScreen(
     val selectedClass = classes.firstOrNull { it.id == selectedClassId }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 900.dp
 
             if (wide) {
@@ -84,7 +91,6 @@ fun NotCanHomeScreen(
                         onSelectCycle = onSelectCycle,
                         onAddCycle = { createDialog = CreateDialog.Cycle }
                     )
-
                     StudyNavigator(
                         modifier = Modifier.width(292.dp),
                         subjects = subjects,
@@ -96,7 +102,6 @@ fun NotCanHomeScreen(
                         onAddSubject = { createDialog = CreateDialog.Subject },
                         onAddClass = { createDialog = CreateDialog.Class }
                     )
-
                     NotCanClassWorkspaceV4(
                         modifier = Modifier.weight(1f),
                         cycleName = selectedCycle?.name,
@@ -108,10 +113,19 @@ fun NotCanHomeScreen(
                         selectedNoteId = selectedNoteId,
                         documents = documents,
                         pdfInkStrokes = pdfInkStrokes,
+                        transcripts = transcripts,
                         recordingState = recordingState,
+                        whisperModelState = whisperModelState,
+                        localWhisperBusy = localWhisperBusy,
+                        localWhisperError = localWhisperError,
                         onSelectNote = onSelectNote,
                         onCreateNote = onCreateNote,
                         onUpdateNote = onUpdateNote,
+                        onImportNote = onImportNote,
+                        onShareNote = onShareNote,
+                        onShareAudio = onShareAudio,
+                        onDeleteAudio = onDeleteAudio,
+                        onTranscribeLocal = onTranscribeLocal,
                         onImportDocument = onImportDocument,
                         onOpenDocument = onOpenDocument,
                         onSavePdfInkStroke = onSavePdfInkStroke,
@@ -130,12 +144,9 @@ fun NotCanHomeScreen(
                         hasCycle = selectedCycleId != null,
                         onAddCycle = { createDialog = CreateDialog.Cycle }
                     )
-
                     Column(Modifier.weight(1f)) {
                         StudyNavigator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(265.dp),
+                            modifier = Modifier.fillMaxWidth().height(265.dp),
                             subjects = subjects,
                             classes = classes,
                             selectedSubjectId = selectedSubjectId,
@@ -145,7 +156,6 @@ fun NotCanHomeScreen(
                             onAddSubject = { createDialog = CreateDialog.Subject },
                             onAddClass = { createDialog = CreateDialog.Class }
                         )
-
                         NotCanClassWorkspaceV4(
                             modifier = Modifier.weight(1f),
                             cycleName = selectedCycle?.name,
@@ -157,10 +167,19 @@ fun NotCanHomeScreen(
                             selectedNoteId = selectedNoteId,
                             documents = documents,
                             pdfInkStrokes = pdfInkStrokes,
+                            transcripts = transcripts,
                             recordingState = recordingState,
+                            whisperModelState = whisperModelState,
+                            localWhisperBusy = localWhisperBusy,
+                            localWhisperError = localWhisperError,
                             onSelectNote = onSelectNote,
                             onCreateNote = onCreateNote,
                             onUpdateNote = onUpdateNote,
+                            onImportNote = onImportNote,
+                            onShareNote = onShareNote,
+                            onShareAudio = onShareAudio,
+                            onDeleteAudio = onDeleteAudio,
+                            onTranscribeLocal = onTranscribeLocal,
                             onImportDocument = onImportDocument,
                             onOpenDocument = onOpenDocument,
                             onSavePdfInkStroke = onSavePdfInkStroke,
@@ -184,26 +203,13 @@ fun NotCanHomeScreen(
             CreateDialog.Subject -> selectedCycleId != null
             CreateDialog.Class -> selectedSubjectId != null
         }
-
         NameEntryDialog(
-            title = when (dialog) {
-                CreateDialog.Cycle -> "Nuevo ciclo"
-                CreateDialog.Subject -> "Nueva materia"
-                CreateDialog.Class -> "Nueva clase"
-            },
-            label = when (dialog) {
-                CreateDialog.Cycle -> "Ej. 2026 · Segundo semestre"
-                CreateDialog.Subject -> "Nombre de la materia"
-                CreateDialog.Class -> "Título de la clase"
-            },
+            title = when (dialog) { CreateDialog.Cycle -> "Nuevo ciclo"; CreateDialog.Subject -> "Nueva materia"; CreateDialog.Class -> "Nueva clase" },
+            label = when (dialog) { CreateDialog.Cycle -> "Ej. 2026 · Segundo semestre"; CreateDialog.Subject -> "Nombre de la materia"; CreateDialog.Class -> "Título de la clase" },
             enabled = enabled,
             onDismiss = { createDialog = null },
             onConfirm = { name ->
-                when (dialog) {
-                    CreateDialog.Cycle -> onCreateCycle(name)
-                    CreateDialog.Subject -> onCreateSubject(name)
-                    CreateDialog.Class -> onCreateClass(name)
-                }
+                when (dialog) { CreateDialog.Cycle -> onCreateCycle(name); CreateDialog.Subject -> onCreateSubject(name); CreateDialog.Class -> onCreateClass(name) }
                 createDialog = null
             }
         )

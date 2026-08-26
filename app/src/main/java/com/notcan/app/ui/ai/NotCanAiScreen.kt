@@ -14,8 +14,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.localai.WhisperModelSpec
+import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
@@ -51,77 +55,106 @@ fun NotCanAiScreen(
     result: String,
     transcripts: List<TranscriptEntity>,
     audioRecordings: List<AudioRecordingEntity>,
-    liveTranscript: String,
-    liveStatus: String,
+    whisperModelState: WhisperModelState,
+    whisperModelProgress: Int?,
+    localWhisperBusy: Boolean,
+    localWhisperError: String?,
+    onDownloadWhisperModel: () -> Unit,
+    onRemoveWhisperModel: () -> Unit,
+    onTranscribeLocal: (String) -> Unit,
     onAsk: (String) -> Unit,
-    onTranscribeAudio: (String) -> Unit,
     onClear: () -> Unit
 ) {
     var question by remember(classTitle) { mutableStateOf("") }
     val latestAudio = audioRecordings.firstOrNull()
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = NotCanBlue)
             Spacer(Modifier.width(8.dp))
             Column {
-                Text("IA de NotCan", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Selecciona una clase para darle contexto" },
-                    color = NotCanGray
-                )
-            }
-        }
-
-        if (!configured) {
-            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Gemini preparado, falta vincular Firebase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        "La app sigue funcionando offline. Para activar Gemini hay que registrar com.notcan.app en Firebase AI Logic y añadir la configuración de Firebase/App Check.",
-                        color = NotCanGray,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                Text("IA y transcripción", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Selecciona una clase" }, color = NotCanGray)
             }
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Transcripción", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.GraphicEq, contentDescription = null, tint = NotCanBlue)
                     Spacer(Modifier.width(8.dp))
-                    Text(liveStatus, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-                }
-                if (liveTranscript.isNotBlank()) {
-                    Text("En vivo", color = NotCanBlue, style = MaterialTheme.typography.labelLarge)
-                    Text(liveTranscript.takeLast(4000), color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (transcripts.isNotEmpty()) {
-                    Text("Guardada en esta clase", color = NotCanBlue, style = MaterialTheme.typography.labelLarge)
-                    Text(transcripts.first().body.take(5000), color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (latestAudio != null) {
-                    OutlinedButton(enabled = !busy && configured, onClick = { onTranscribeAudio(latestAudio.id) }) {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Revisar último audio con Gemini")
+                    Column {
+                        Text("${WhisperModelSpec.DISPLAY_NAME} · local", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text("~1,5 GB · sin tokens · sin subir el audio", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                     }
+                }
+
+                when (whisperModelState) {
+                    WhisperModelState.NOT_INSTALLED -> {
+                        Text("El modelo se descarga una sola vez y queda guardado en la tablet.", color = NotCanGray)
+                        Button(onClick = onDownloadWhisperModel) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Descargar modelo por Wi‑Fi")
+                        }
+                    }
+                    WhisperModelState.DOWNLOADING -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.height(22.dp).width(22.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                whisperModelProgress?.let { "Descargando… $it%" } ?: "Descargando modelo…",
+                                color = NotCanGray
+                            )
+                        }
+                    }
+                    WhisperModelState.INSTALLED -> {
+                        Text("Modelo listo para transcribir clases completamente offline.", color = NotCanGray)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                enabled = latestAudio != null && !localWhisperBusy,
+                                onClick = { latestAudio?.let { onTranscribeLocal(it.id) } }
+                            ) {
+                                Text(if (localWhisperBusy) "Transcribiendo…" else "Transcribir último audio")
+                            }
+                            OutlinedButton(onClick = onRemoveWhisperModel, enabled = !localWhisperBusy) {
+                                Icon(Icons.Default.Delete, contentDescription = null)
+                                Spacer(Modifier.width(5.dp))
+                                Text("Eliminar modelo")
+                            }
+                        }
+                    }
+                }
+                localWhisperError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+
+        if (transcripts.isNotEmpty()) {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Última transcripción", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(transcripts.first().body.take(5000), color = NotCanOffWhite)
                 }
             }
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Estudiar esta clase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Cloud, contentDescription = null, tint = NotCanBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("IA generativa en nube · opcional", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text("Solo se usa cuando tú la solicitas y puede consumir cuota de Gemini.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (!configured) {
+                    Text("Gemini no está configurado. NotCan puede grabar, transcribir y editar apuntes sin él.", color = NotCanGray)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     OutlinedButton(onClick = { question = "Haz un resumen estructurado de esta clase con las ideas principales." }) { Text("Resumen") }
                     OutlinedButton(onClick = { question = "Crea preguntas de examen con sus respuestas basadas en esta clase." }) { Text("Examen") }
@@ -131,7 +164,7 @@ fun NotCanAiScreen(
                 OutlinedTextField(
                     value = question,
                     onValueChange = { question = it },
-                    label = { Text("Pregunta o instrucción para Gemini") },
+                    label = { Text("Pregunta o instrucción") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3
                 )
@@ -140,7 +173,7 @@ fun NotCanAiScreen(
                         CircularProgressIndicator(modifier = Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text("Preguntar a Gemini")
+                    Text("Usar Gemini")
                 }
             }
         }
