@@ -99,11 +99,6 @@ class StudyRepository(private val dao: NotCanDao) {
         return classSession
     }
 
-    /**
-     * Turns a calculated timetable occurrence into a real class only when the user
-     * actually records, writes, imports or explicitly opens it. Empty timetable
-     * occurrences therefore never create database clutter.
-     */
     suspend fun materializeScheduledSession(
         schedule: SubjectScheduleEntity,
         subject: SubjectEntity,
@@ -146,6 +141,7 @@ class StudyRepository(private val dao: NotCanDao) {
     suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)
     suspend fun saveDocument(document: DocumentResourceEntity) = dao.insertDocument(document)
     suspend fun saveAudioRecording(audioRecording: AudioRecordingEntity) = dao.insertAudioRecording(audioRecording)
+    suspend fun deleteAudio(audioId: String) = dao.deleteAudioAndMoments(audioId)
     suspend fun saveImportantMoment(moment: ImportantMomentEntity) = dao.insertImportantMoment(moment)
     suspend fun savePdfInkStroke(stroke: PdfInkStrokeEntity) = dao.insertPdfInkStroke(stroke)
     suspend fun deletePdfInkStroke(strokeId: String) = dao.deletePdfInkStroke(strokeId)
