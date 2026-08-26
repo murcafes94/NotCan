@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/local-whisper-v0.6" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
