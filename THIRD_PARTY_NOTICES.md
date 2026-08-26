@@ -11,6 +11,7 @@ NotCan se desarrolla con una política explícita de procedencia y licencias.
 - Uso en NotCan: transcripción de archivos completamente local en Android.
 - El modelo `ggml-large-v3-turbo.bin` no se empaqueta en la APK; el usuario lo descarga por separado desde el repositorio de modelos de whisper.cpp/Hugging Face.
 - NotCan no incorpora código de NotelyVoice para esta función.
+- Verificación de esta integración: compilación Android CI de la versión 0.6.x antes de fusionar.
 
 ### Compose Rich Editor
 - Artefacto: `com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10`.
