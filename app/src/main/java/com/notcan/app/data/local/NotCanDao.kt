@@ -102,6 +102,15 @@ interface NotCanDao {
     @Query("DELETE FROM audio_recordings WHERE id = :audioId")
     suspend fun deleteAudioRecording(audioId: String)
 
+    @Query("DELETE FROM important_moments WHERE audioId = :audioId")
+    suspend fun deleteImportantMomentsForAudio(audioId: String)
+
+    @Transaction
+    suspend fun deleteAudioAndMoments(audioId: String) {
+        deleteImportantMomentsForAudio(audioId)
+        deleteAudioRecording(audioId)
+    }
+
     @Query("DELETE FROM note_pages WHERE id = :noteId")
     suspend fun deleteNotePage(noteId: String)
 
