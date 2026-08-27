@@ -5,6 +5,7 @@ import App from './App'
 import './styles.css'
 import './editor-account.css'
 import './features.css'
+import './tablet-responsive.css'
 
 registerSW({ immediate: true })
 
