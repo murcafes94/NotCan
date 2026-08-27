@@ -11,8 +11,8 @@ if(DEFINED ANDROID_ABI)
     message(STATUS "Detected Android ABI: ${ANDROID_ABI}")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(GGML_SYSTEM_ARCH "ARM")
-        # v0.7.1 portability: avoid KleidiAI/runtime-specific ARM extensions that may
-        # crash on otherwise-supported arm64 Android devices.
+        # Portable Android configuration: one generic ARM64 CPU backend, without runtime-specific
+        # extensions that can crash on otherwise supported devices.
         set(GGML_CPU_KLEIDIAI OFF)
         set(GGML_OPENMP OFF)
     else()
@@ -23,11 +23,14 @@ endif()
 set(LLAMA_SRC ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/llama.cpp)
 add_subdirectory(${LLAMA_SRC} build-llama)
 
-# Keep the pinned official JNI bridge, but replace only its Android 30 logger
-# include with NotCan's API-26-compatible logger at configure time.
+# Keep the pinned official JNI bridge, but replace its API-30 logger and tune context/batch sizes
+# for a tablet-class Android device. 4k context + 256 batch substantially lowers transient RAM
+# while keeping enough room for focused class sources.
 set(UPSTREAM_AI_CHAT ${LLAMA_SRC}/examples/llama.android/lib/src/main/cpp/ai_chat.cpp)
 file(READ ${UPSTREAM_AI_CHAT} AI_CHAT_SOURCE)
 string(REPLACE "#include \"logging.h\"" "#include \"logging_compat.h\"" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
+string(REPLACE "constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;" "constexpr int   DEFAULT_CONTEXT_SIZE    = 4096;" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
+string(REPLACE "constexpr int   BATCH_SIZE              = 512;" "constexpr int   BATCH_SIZE              = 256;" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
 set(PATCHED_AI_CHAT ${CMAKE_CURRENT_BINARY_DIR}/ai_chat_compat.cpp)
 file(WRITE ${PATCHED_AI_CHAT} "${AI_CHAT_SOURCE}")
 
