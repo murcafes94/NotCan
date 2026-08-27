@@ -7,14 +7,13 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-
 jobs:
-  build:
+  cleanup-artifacts:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Keep only the newest previous APK artifact
         continue-on-error: true
@@ -36,6 +35,14 @@ jobs:
             done
           fi
 
+  build:
+    needs: cleanup-artifacts
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -57,7 +64,6 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload debug APK artifact
-        id: upload_artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -65,18 +71,3 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
-
-      - name: Publish rolling private test prerelease
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TEST_TAG: notcan-v0.7-test
-        shell: bash
-        run: |
-          gh release delete "$TEST_TAG" --cleanup-tag -y >/dev/null 2>&1 || true
-          gh release create "$TEST_TAG" \
-            "app/build/outputs/apk/debug/app-debug.apk#NotCan-v0.7.0-test.apk" \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "NotCan v0.7.0 · prueba" \
-            --notes "APK privada de prueba. Incluye la experiencia académica v0.7, IA local, transcripción local y herramientas de estudio centradas en fuentes."
