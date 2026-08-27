@@ -88,7 +88,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     <>
       <div className="account-strip">
         <span>☁ {session.user.email}</span>
-        <button className="text-button" onClick={() => void supabase.auth.signOut()}>Cerrar sesión</button>
+        <button className="text-button" onClick={() => void supabase?.auth.signOut()}>Cerrar sesión</button>
       </div>
       {children}
     </>
