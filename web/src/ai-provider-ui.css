@@ -1,0 +1,90 @@
+.ai-provider-panel {
+  margin: 18px 0 22px;
+  padding: 16px;
+  border: 1px solid rgba(125, 145, 190, 0.18);
+  border-radius: 16px;
+  background: rgba(15, 28, 52, 0.58);
+}
+
+.ai-provider-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ai-provider-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ai-provider-heading small,
+.ai-provider-help,
+.ai-local-settings small {
+  color: var(--muted, #94a3b8);
+}
+
+.ai-provider-select,
+.ai-local-settings input {
+  min-height: 42px;
+  border: 1px solid rgba(125, 145, 190, 0.22);
+  border-radius: 12px;
+  background: rgba(8, 18, 38, 0.88);
+  color: inherit;
+  padding: 0 12px;
+}
+
+.ai-provider-select {
+  min-width: 180px;
+}
+
+.ai-provider-help {
+  margin: 12px 0 0;
+  font-size: .9rem;
+  line-height: 1.45;
+}
+
+.ai-local-settings {
+  display: none;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(125, 145, 190, 0.14);
+}
+
+.ai-local-settings.visible {
+  display: grid;
+}
+
+.ai-local-settings label {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-local-settings label span {
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+.ai-local-settings small {
+  grid-column: 1 / -1;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .ai-provider-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-provider-select {
+    width: 100%;
+  }
+
+  .ai-local-settings,
+  .ai-local-settings.visible {
+    grid-template-columns: 1fr;
+  }
+}
