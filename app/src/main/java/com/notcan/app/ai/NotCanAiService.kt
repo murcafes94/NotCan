@@ -13,6 +13,7 @@ import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.type.ResponseModality
 import com.google.firebase.ai.type.content
 import com.google.firebase.ai.type.liveGenerationConfig
+import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
@@ -26,16 +27,14 @@ class NotCanAiService(private val context: Context) {
 
     private fun ensureFirebase() {
         if (!isConfigured()) {
-            error("Gemini aún no está configurado. Vincula NotCan con Firebase AI Logic para activar la IA.")
+            error("Gemini aún no está configurado. Vincula NotCan con Firebase AI Logic para activar la IA generativa.")
         }
     }
 
     suspend fun ask(prompt: String): String {
         ensureFirebase()
-        val model = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(TEXT_MODEL)
-        return model.generateContent(prompt).text?.trim().orEmpty()
-            .ifBlank { "Gemini no devolvió texto." }
+        val model = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(TEXT_MODEL)
+        return model.generateContent(prompt).text?.trim().orEmpty().ifBlank { "La IA no devolvió texto." }
     }
 
     suspend fun studyAssistant(
@@ -44,13 +43,16 @@ class NotCanAiService(private val context: Context) {
         transcript: String,
         question: String
     ): String {
+        val preferences = NotCanPreferences(context)
         val prompt = buildString {
-            appendLine("Eres el asistente académico de NotCan. Responde en español claro y preciso.")
+            appendLine("Eres ${preferences.assistantName}, el asistente académico personal de NotCan.")
+            appendLine("Preferencias del usuario: ${preferences.aiInstructions}")
+            appendLine("Nivel de detalle solicitado: ${preferences.aiDetail}.")
             subjectName?.let { appendLine("Materia: $it") }
-            if (notes.isNotBlank()) appendLine("\nAPUNTES DEL USUARIO:\n$notes")
-            if (transcript.isNotBlank()) appendLine("\nTRANSCRIPCIÓN DE CLASE:\n$transcript")
+            if (notes.isNotBlank()) appendLine("\nFUENTES · APUNTES DEL USUARIO:\n$notes")
+            if (transcript.isNotBlank()) appendLine("\nFUENTES · TRANSCRIPCIÓN DE CLASE:\n$transcript")
             appendLine("\nSOLICITUD:\n$question")
-            appendLine("No inventes datos que no estén en el material. Señala cuando una respuesta sea una inferencia.")
+            appendLine("Usa primero las fuentes proporcionadas. No inventes datos y señala claramente cualquier inferencia o conocimiento externo.")
         }
         return ask(prompt)
     }
@@ -59,20 +61,15 @@ class NotCanAiService(private val context: Context) {
         ensureFirebase()
         require(file.exists()) { "El audio local no existe." }
         require(file.length() <= SAFE_INLINE_AUDIO_BYTES) {
-            "Este audio es demasiado grande para transcripción final directa. Usa la transcripción en vivo o divide la grabación."
+            "Este audio es demasiado grande para transcripción directa. Usa Whisper local."
         }
         val bytes = file.readBytes()
-        val model = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(TEXT_MODEL)
+        val model = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(TEXT_MODEL)
         val prompt = content {
             inlineData(bytes, "audio/m4a")
-            text(
-                "Transcribe fielmente esta clase en español. Conserva el orden, separa párrafos, " +
-                    "marca cambios de hablante cuando sean evidentes y no resumas."
-            )
+            text("Transcribe fielmente esta clase en español. Conserva el orden, separa párrafos, marca cambios de hablante cuando sean evidentes y no resumas.")
         }
-        return model.generateContent(prompt).text?.trim().orEmpty()
-            .ifBlank { "No se obtuvo una transcripción." }
+        return model.generateContent(prompt).text?.trim().orEmpty().ifBlank { "No se obtuvo una transcripción." }
     }
 
     companion object {
@@ -112,9 +109,7 @@ class GeminiLiveTranscriber(
                 try {
                     connected.receive().collect { message ->
                         if (message is LiveServerContent) {
-                            message.inputTranscription?.text
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let(onTranscriptChunk)
+                            message.inputTranscription?.text?.takeIf { it.isNotBlank() }?.let(onTranscriptChunk)
                         }
                     }
                 } catch (t: Throwable) {
@@ -130,16 +125,12 @@ class GeminiLiveTranscriber(
     }
 
     suspend fun sendPcmRealtime(bytes: ByteArray) {
-        try {
-            session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=16000"))
-        } catch (t: Throwable) {
-            onStatus("Gemini Live sin conexión: ${t.message ?: "error"}")
-        }
+        try { session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=16000")) }
+        catch (t: Throwable) { onStatus("Gemini Live sin conexión: ${t.message ?: "error"}") }
     }
 
     suspend fun close() {
-        receiveJob?.cancel()
-        receiveJob = null
+        receiveJob?.cancel(); receiveJob = null
         try { session?.close() } catch (_: Throwable) { }
         session = null
         onStatus("Transcripción en vivo detenida")
