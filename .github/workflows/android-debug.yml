@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/v0.7-focus-background", "fix/v0.7.1-crashes" ]
+    branches: [ "main", "feature/**", "fix/**" ]
   workflow_dispatch:
 
 jobs:
@@ -36,10 +36,6 @@ jobs:
               gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
             done
           fi
-
-          echo "Artifacts kept before new build:"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | "\(.id)  \(.created_at)  \(.name)"' || true
 
   build:
     needs: cleanup-artifacts
@@ -83,12 +79,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.1-test"
+          TAG="v0.7.2-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.1-test.apk" \
+            "$APK#NotCan-v0.7.2-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.1 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.1. Corrige el compartido de audio y usa un backend ARM64 más compatible para la IA local."
+            --title "NotCan v0.7.2 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.2. Añade escritorio de clase centrado en apuntes, transcripción provisional visible, editor HTML tipo Writer, icono corregido y ajustes de memoria/compatibilidad de la IA local."
