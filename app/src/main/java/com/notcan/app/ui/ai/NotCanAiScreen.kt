@@ -1,5 +1,7 @@
 package com.notcan.app.ui.ai
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Quiz
@@ -44,16 +47,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.notcan.app.ai.NotCanAiService
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.localai.StudyModelManager
 import com.notcan.app.localai.StudyModelSpec
 import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelSpec
@@ -62,6 +68,9 @@ import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanSurface
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun NotCanAiScreen(
@@ -89,6 +98,39 @@ fun NotCanAiScreen(
     onClear: () -> Unit
 ) {
     var section by remember { mutableIntStateOf(1) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var importedStudyModel by remember { mutableStateOf(false) }
+    var importingStudyModel by remember { mutableStateOf(false) }
+    var importMessage by remember { mutableStateOf<String?>(null) }
+
+    val importStudyModelLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !importingStudyModel) {
+            importingStudyModel = true
+            importMessage = "Importando el modelo que ya tienes…"
+            scope.launch {
+                val outcome = runCatching {
+                    withContext(Dispatchers.IO) {
+                        StudyModelManager(context.applicationContext).importExistingModel(uri)
+                    }
+                }
+                importingStudyModel = false
+                if (outcome.isSuccess) {
+                    importedStudyModel = true
+                    importMessage = "Modelo reutilizado · no se descargó de Internet"
+                } else {
+                    importMessage = outcome.exceptionOrNull()?.message ?: "No se pudo importar el modelo"
+                }
+            }
+        }
+    }
+
+    val effectiveConfigured = configured || importedStudyModel
+    val effectiveStudyModelState = if (importedStudyModel) StudyModelState.INSTALLED else studyModelState
+    val onImportExistingModel = {
+        importStudyModelLauncher.launch(arrayOf("application/octet-stream", "application/*", "*/*"))
+    }
+
     Column(Modifier.fillMaxSize()) {
         when (section) {
             0 -> AiSources(
@@ -97,21 +139,41 @@ fun NotCanAiScreen(
                 transcripts = transcripts,
                 audioRecordings = audioRecordings,
                 detectedCues = detectedCues,
-                studyModelState = studyModelState,
+                studyModelState = effectiveStudyModelState,
                 studyModelProgress = studyModelProgress,
                 whisperModelState = whisperModelState,
                 whisperModelProgress = whisperModelProgress,
                 localWhisperBusy = localWhisperBusy,
                 localWhisperError = localWhisperError,
+                importingStudyModel = importingStudyModel,
+                importMessage = importMessage,
                 onDownloadStudyModel = onDownloadStudyModel,
-                onRemoveStudyModel = onRemoveStudyModel,
+                onImportStudyModel = onImportExistingModel,
+                onRemoveStudyModel = {
+                    importedStudyModel = false
+                    importMessage = null
+                    onRemoveStudyModel()
+                },
                 onDownloadWhisperModel = onDownloadWhisperModel,
                 onRemoveWhisperModel = onRemoveWhisperModel,
                 onTranscribeLocal = onTranscribeLocal
             )
-            1 -> AiChat(subjectName, classTitle, configured, busy, error, result, onAsk, onClear, onDownloadStudyModel)
+            1 -> AiChat(
+                subjectName,
+                classTitle,
+                effectiveConfigured,
+                busy,
+                error,
+                result,
+                onAsk,
+                onClear,
+                onDownloadStudyModel,
+                onImportExistingModel,
+                importingStudyModel,
+                importMessage
+            )
             else -> AiStudio(
-                configured = configured,
+                configured = effectiveConfigured,
                 busy = busy,
                 onAsk = { prompt ->
                     onAsk(prompt)
@@ -141,7 +203,10 @@ private fun AiSources(
     whisperModelProgress: Int?,
     localWhisperBusy: Boolean,
     localWhisperError: String?,
+    importingStudyModel: Boolean,
+    importMessage: String?,
     onDownloadStudyModel: () -> Unit,
+    onImportStudyModel: () -> Unit,
     onRemoveStudyModel: () -> Unit,
     onDownloadWhisperModel: () -> Unit,
     onRemoveWhisperModel: () -> Unit,
@@ -170,13 +235,16 @@ private fun AiSources(
                 title = StudyModelSpec.DISPLAY_NAME,
                 subtitle = "Tutor, resúmenes, cuestionarios y material de estudio · ~1,1 GB",
                 stateLabel = when (studyModelState) {
-                    StudyModelState.NOT_INSTALLED -> "No descargado"
+                    StudyModelState.NOT_INSTALLED -> "No encontrado dentro de NotCan"
                     StudyModelState.DOWNLOADING -> studyModelProgress?.let { "Descargando… $it%" } ?: "Descargando en segundo plano…"
                     StudyModelState.INSTALLED -> "Instalado · listo offline"
                 },
                 installed = studyModelState == StudyModelState.INSTALLED,
                 downloading = studyModelState == StudyModelState.DOWNLOADING,
+                importing = importingStudyModel,
+                message = importMessage,
                 onDownload = onDownloadStudyModel,
+                onImport = onImportStudyModel,
                 onRemove = onRemoveStudyModel
             )
         }
@@ -235,7 +303,10 @@ private fun ModelCard(
     stateLabel: String,
     installed: Boolean,
     downloading: Boolean,
+    importing: Boolean,
+    message: String?,
     onDownload: () -> Unit,
+    onImport: () -> Unit,
     onRemove: () -> Unit
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
@@ -250,13 +321,24 @@ private fun ModelCard(
             }
             Text(stateLabel, color = if (installed) NotCanBlue else NotCanGray)
             when {
+                importing -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp)); Text("Copiando tu GGUF al espacio local de NotCan…", color = NotCanGray)
+                }
                 downloading -> Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp)); Text("Puedes cerrar NotCan; Android continuará la descarga.", color = NotCanGray)
                 }
                 installed -> OutlinedButton(onClick = onRemove) { Icon(Icons.Default.Delete, null); Spacer(Modifier.width(5.dp)); Text("Eliminar modelo") }
-                else -> Button(onClick = onDownload) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar") }
+                else -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onDownload) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar") }
+                        OutlinedButton(onClick = onImport) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Usar .gguf existente") }
+                    }
+                    Text("Si conservas el archivo de una instalación anterior, selecciónalo aquí y NotCan lo reutilizará sin volver a descargarlo.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                }
             }
+            message?.let { Text(it, color = if (installed || it.startsWith("Modelo reutilizado")) NotCanBlue else NotCanGray, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
@@ -282,7 +364,10 @@ private fun AiChat(
     result: String,
     onAsk: (String) -> Unit,
     onClear: () -> Unit,
-    onDownloadModel: () -> Unit
+    onDownloadModel: () -> Unit,
+    onImportModel: () -> Unit,
+    importingModel: Boolean,
+    importMessage: String?
 ) {
     var question by remember(classTitle) { mutableStateOf("") }
     var sourceOnly by remember(classTitle) { mutableStateOf(true) }
@@ -337,6 +422,14 @@ private fun AiChat(
                     )
                     Text("El modelo se ejecuta en tu dispositivo. Puedes personalizar nombre, profundidad y estilo desde Configuración.", color = NotCanGray)
                 } else Text(result, color = NotCanOffWhite)
+                if (busy) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Cargando y generando respuesta local…", color = NotCanGray)
+                    }
+                }
                 error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }
@@ -344,9 +437,13 @@ private fun AiChat(
         if (!configured) {
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.75f))) {
                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("NotCan AI aún no está descargada", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                    Text("Descarga DeepSeek R1 1.5B (~1,1 GB) una sola vez. Después funciona offline y sin tokens.", color = NotCanGray)
-                    Button(onClick = onDownloadModel) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar IA local") }
+                    Text("NotCan AI no encuentra el modelo", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                    Text("Si ya conservas el .gguf de la versión anterior, no necesitas descargarlo otra vez.", color = NotCanGray)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onDownloadModel, enabled = !importingModel) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar") }
+                        OutlinedButton(onClick = onImportModel, enabled = !importingModel) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Usar archivo existente") }
+                    }
+                    importMessage?.let { Text(it, color = NotCanGray, style = MaterialTheme.typography.bodySmall) }
                 }
             }
         }
@@ -477,6 +574,6 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
                 }
             }
         }
-        if (!configured) item { Text("Descarga NotCan AI para activar estas herramientas. No requiere cuenta ni API.", color = NotCanGray) }
+        if (!configured) item { Text("Descarga o reutiliza NotCan AI para activar estas herramientas. No requiere cuenta ni API.", color = NotCanGray) }
     }
 }

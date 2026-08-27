@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.2-test"
+          TAG="v0.7.3-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.2-test.apk" \
+            "$APK#NotCan-v0.7.3-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.2 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.2. Añade escritorio de clase centrado en apuntes, transcripción provisional visible, editor HTML tipo Writer, icono corregido, ajustes de memoria/compatibilidad de la IA local y una firma de prueba persistente para futuras actualizaciones."
+            --title "NotCan v0.7.3 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.3. Corrige el icono Android con un recurso adaptativo válido, permite reutilizar un GGUF ya descargado sin volver a bajarlo, mantiene la firma de prueba estable y preserva el contrato de datos para la futura sincronización Android ↔ PWA."
