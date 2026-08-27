@@ -7,6 +7,7 @@ import './styles.css'
 import './editor-account.css'
 import './features.css'
 import './tablet-responsive.css'
+import './rich-editor-ai.css'
 
 registerSW({ immediate: true })
 
