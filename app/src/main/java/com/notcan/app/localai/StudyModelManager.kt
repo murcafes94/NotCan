@@ -32,7 +32,7 @@ class StudyModelManager(private val context: Context) {
 
     fun state(): StudyModelState {
         val file = modelFile()
-        if (file.exists() && file.length() >= StudyModelSpec.MIN_VALID_BYTES) return StudyModelState.INSTALLED
+        if (isValidModel(file)) return StudyModelState.INSTALLED
 
         val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (id > 0L) {
@@ -63,6 +63,57 @@ class StudyModelManager(private val context: Context) {
         return manager.enqueue(request).also { id -> prefs.edit().putLong(KEY_DOWNLOAD_ID, id).apply() }
     }
 
+    /**
+     * Reuses a GGUF that already exists on the device. This is intentionally a copy into
+     * NotCan's local model directory because llama.cpp needs a real filesystem path rather
+     * than an Android content:// URI. No network transfer is performed.
+     */
+    fun importExistingModel(uri: Uri): Boolean {
+        val destination = modelFile()
+        val staging = File(destination.parentFile, "${destination.name}.importing")
+        staging.delete()
+
+        val input = context.contentResolver.openInputStream(uri)
+            ?: throw IllegalArgumentException("No se pudo abrir el archivo seleccionado")
+
+        try {
+            input.buffered().use { source ->
+                staging.outputStream().buffered().use { output -> source.copyTo(output) }
+            }
+
+            if (!isValidModel(staging)) {
+                throw IllegalArgumentException(
+                    "El archivo no parece ser el modelo GGUF de NotCan AI o está incompleto"
+                )
+            }
+
+            if (destination.exists() && !destination.delete()) {
+                throw IllegalStateException("No se pudo reemplazar el modelo local anterior")
+            }
+            if (!staging.renameTo(destination)) {
+                staging.copyTo(destination, overwrite = true)
+                staging.delete()
+            }
+            if (!isValidModel(destination)) {
+                destination.delete()
+                throw IllegalStateException("El modelo importado no pudo validarse")
+            }
+
+            val downloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+            if (downloadId > 0L) {
+                runCatching {
+                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    manager.remove(downloadId)
+                }
+            }
+            prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
+            return true
+        } catch (t: Throwable) {
+            staging.delete()
+            throw t
+        }
+    }
+
     fun progressPercent(): Int? {
         val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (id <= 0L) return null
@@ -88,6 +139,16 @@ class StudyModelManager(private val context: Context) {
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
         val file = modelFile()
         return !file.exists() || file.delete()
+    }
+
+    private fun isValidModel(file: File): Boolean {
+        if (!file.exists() || file.length() < StudyModelSpec.MIN_VALID_BYTES) return false
+        return runCatching {
+            file.inputStream().buffered().use { input ->
+                val header = ByteArray(4)
+                input.read(header) == 4 && header.contentEquals(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+            }
+        }.getOrDefault(false)
     }
 
     companion object {
