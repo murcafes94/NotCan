@@ -1,0 +1,150 @@
+name: Apply v0.7.4 note controls patch
+
+on:
+  push:
+    branches: [ "fix/v0.7.4-note-controls" ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v0.7.4-note-controls
+
+      - name: Wire delete-note flow and bump version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit(f"Pattern not found in {path}: {old[:100]!r}")
+              p.write_text(s.replace(old, new, 1))
+
+          # Repository exposes the DAO deletion already present in Room.
+          replace_once(
+              'app/src/main/java/com/notcan/app/data/StudyRepository.kt',
+              '    suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)\n',
+              '    suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)\n    suspend fun deleteNotePage(noteId: String) = dao.deleteNotePage(noteId)\n'
+          )
+
+          # ViewModel deletes locally and lets the existing notePages collector select another page.
+          replace_once(
+              'app/src/main/java/com/notcan/app/ui/NotCanViewModel.kt',
+              '\n    fun importNoteText(classSessionId: String, uri: Uri) {',
+              '''\n    fun deleteNotePage(noteId: String) {\n        if (_selectedNoteId.value == noteId) _selectedNoteId.value = null\n        viewModelScope.launch(Dispatchers.IO) { repository.deleteNotePage(noteId) }\n    }\n\n    fun importNoteText(classSessionId: String, uri: Uri) {'''
+          )
+
+          # Root activity wires the callback.
+          replace_once(
+              'app/src/main/java/com/notcan/app/MainActivity.kt',
+              '                            onUpdateNote = studyViewModel::updateNotePage,\n                            onImportNote = ::requestNoteImport,',
+              '                            onUpdateNote = studyViewModel::updateNotePage,\n                            onDeleteNote = studyViewModel::deleteNotePage,\n                            onImportNote = ::requestNoteImport,'
+          )
+
+          # Home screen forwards deletion to the focused workspace.
+          replace_once(
+              'app/src/main/java/com/notcan/app/ui/home/NotCanHomeScreen.kt',
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onImportNote: (String) -> Unit,',
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onDeleteNote: (String) -> Unit,\n    onImportNote: (String) -> Unit,'
+          )
+          replace_once(
+              'app/src/main/java/com/notcan/app/ui/home/NotCanHomeScreen.kt',
+              '                    onUpdateNote = onUpdateNote,\n                    onImportNote = onImportNote,',
+              '                    onUpdateNote = onUpdateNote,\n                    onDeleteNote = onDeleteNote,\n                    onImportNote = onImportNote,'
+          )
+
+          # Compatibility wrapper forwards the callback to V5.
+          replace_once(
+              'app/src/main/java/com/notcan/app/ui/home/ClassWorkspaceV4.kt',
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onImportNote: (String) -> Unit,',
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onDeleteNote: (String) -> Unit,\n    onImportNote: (String) -> Unit,'
+          )
+          replace_once(
+              'app/src/main/java/com/notcan/app/ui/home/ClassWorkspaceV4.kt',
+              '        onUpdateNote = onUpdateNote,\n        onImportNote = onImportNote,',
+              '        onUpdateNote = onUpdateNote,\n        onDeleteNote = onDeleteNote,\n        onImportNote = onImportNote,'
+          )
+
+          # V5 forwards deletion through recording mode and normal notes mode.
+          p = Path('app/src/main/java/com/notcan/app/ui/home/ClassWorkspaceV5.kt')
+          s = p.read_text()
+          s = s.replace(
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onImportNote: (String) -> Unit,',
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onDeleteNote: (String) -> Unit,\n    onImportNote: (String) -> Unit,'
+          )
+          # FocusedRecordingDesk has no import callback, so patch its signature separately.
+          s = s.replace(
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onShareNote: (NotePageEntity) -> Unit,\n    modifier: Modifier = Modifier\n) {',
+              '    onUpdateNote: (String, String, String) -> Unit,\n    onDeleteNote: (String) -> Unit,\n    onShareNote: (NotePageEntity) -> Unit,\n    modifier: Modifier = Modifier\n) {',
+              1
+          )
+          s = s.replace(
+              '                        onUpdateNote = onUpdateNote,\n                        onShareNote = onShareNote,',
+              '                        onUpdateNote = onUpdateNote,\n                        onDeleteNote = onDeleteNote,\n                        onShareNote = onShareNote,',
+              1
+          )
+          s = s.replace(
+              '                        onUpdateNote = onUpdateNote,\n                        onImportNote = onImportNote,',
+              '                        onUpdateNote = onUpdateNote,\n                        onDeleteNote = onDeleteNote,\n                        onImportNote = onImportNote,',
+              1
+          )
+          # NormalClassTabs -> NotesContentV5.
+          s = s.replace(
+              '                2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onImportNote, onShareNote)',
+              '                2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)'
+          )
+          # Writer editor instances: wide/narrow normal mode and recording mode.
+          s = s.replace(
+              'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(0.70f))',
+              'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(0.70f))'
+          )
+          s = s.replace(
+              'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))',
+              'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))'
+          )
+          # There can be two Modifier.weight(1f) occurrences; apply remaining one if present.
+          s = s.replace(
+              'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))',
+              'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))'
+          )
+          if 'WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier' in s:
+              raise SystemExit('A WriterNoteEditor call was not wired for deletion')
+          p.write_text(s)
+
+          # Bump the app version.
+          replace_once(
+              'app/build.gradle.kts',
+              '        versionCode = 10\n        versionName = "0.7.3"',
+              '        versionCode = 11\n        versionName = "0.7.4"'
+          )
+
+          # Prepare rolling release metadata for when the branch is merged to main.
+          p = Path('.github/workflows/android-debug.yml')
+          s = p.read_text()
+          s = s.replace('TAG="v0.7.3-test"', 'TAG="v0.7.4-test"')
+          s = s.replace('NotCan-v0.7.3-test.apk', 'NotCan-v0.7.4-test.apk')
+          s = s.replace('NotCan v0.7.3 · prueba', 'NotCan v0.7.4 · prueba')
+          s = s.replace(
+              'APK de prueba de NotCan v0.7.3. Corrige el icono Android con un recurso adaptativo válido, permite reutilizar un GGUF ya descargado sin volver a bajarlo, mantiene la firma de prueba estable y preserva el contrato de datos para la futura sincronización Android ↔ PWA.',
+              'APK de prueba de NotCan v0.7.4. Añade eliminación segura de páginas de apuntes, control explícito para quitar formato y mejora la claridad del subrayado, conservando la firma estable y las correcciones de v0.7.3.'
+          )
+          p.write_text(s)
+
+          # This workflow is one-shot; remove it from the resulting commit.
+          Path('.github/workflows/patch-v074-note-controls.yml').unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v0.7.4: improve note formatting and deletion"
+          git push origin HEAD:fix/v0.7.4-note-controls
