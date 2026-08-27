@@ -14,12 +14,14 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.notcan.app.MainActivity
 import com.notcan.app.R
-import com.notcan.app.ai.GeminiLiveTranscriber
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.BackgroundTranscriptionManager
+import com.notcan.app.localai.LiveTranscriptionModelManager
+import com.notcan.app.localai.LiveTranscriptionModelState
+import com.notcan.app.localai.LocalLiveTranscriber
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.settings.NotCanPreferences
@@ -49,7 +51,7 @@ class RecordingService : Service() {
     private var currentClassSessionId: String? = null
     private var currentClassTitle: String = "Clase"
     private var currentAudioId: String? = null
-    private var liveTranscriber: GeminiLiveTranscriber? = null
+    private var liveTranscriber: LocalLiveTranscriber? = null
     private var pcmChannel: Channel<ByteArray>? = null
     private var liveSenderJob: Job? = null
     private var scheduleEndJob: Job? = null
@@ -83,6 +85,7 @@ class RecordingService : Service() {
         scheduleEndJob?.cancel()
         liveSenderJob?.cancel()
         pcmChannel?.close()
+        runCatching { liveTranscriber?.close() }
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -115,16 +118,17 @@ class RecordingService : Service() {
             autoStopGraceMinutes = intent.getIntExtra(EXTRA_AUTO_STOP_GRACE_MINUTES, 5).coerceIn(0, 60)
             stopping.set(false)
             _liveTranscript.value = ""
-            _aiStatus.value = if (intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, false)) "Conectando transcripción en vivo…" else "Transcripción en vivo local pendiente"
 
-            val liveEnabled = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, false)
+            val requestedLive = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
+            val liveManager = LiveTranscriptionModelManager(this)
+            val liveEnabled = requestedLive && liveManager.state() == LiveTranscriptionModelState.INSTALLED
+            _aiStatus.value = if (liveEnabled) "Iniciando transcripción provisional local…" else "Grabando sin transcripción provisional"
             val channel = if (liveEnabled) Channel<ByteArray>(capacity = 64) else null
             pcmChannel = channel
 
             if (liveEnabled && channel != null) {
-                val transcriber = GeminiLiveTranscriber(
-                    context = this,
-                    scope = serviceScope,
+                val transcriber = LocalLiveTranscriber(
+                    modelManager = liveManager,
                     onTranscriptChunk = { chunk ->
                         _liveTranscript.update { current -> if (current.isBlank()) chunk.trim() else "$current ${chunk.trim()}" }
                     },
@@ -133,11 +137,14 @@ class RecordingService : Service() {
                 liveTranscriber = transcriber
                 serviceScope.launch {
                     val active = transcriber.start()
-                    if (!active) { channel.close(); return@launch }
+                    if (!active) {
+                        channel.close()
+                        return@launch
+                    }
                     liveSenderJob = launch {
                         for (pcm in channel) {
                             if (!isActive) break
-                            transcriber.sendPcmRealtime(pcm)
+                            transcriber.acceptPcm16k(pcm)
                         }
                     }
                 }
@@ -207,7 +214,7 @@ class RecordingService : Service() {
                 if (liveText.isNotBlank()) {
                     val now = System.currentTimeMillis()
                     dao.insertTranscript(
-                        TranscriptEntity(UUID.randomUUID().toString(), classSessionId, audioId, liveText, "LIVE_CAPTURE", "gemini-live", createdAt, now)
+                        TranscriptEntity(UUID.randomUUID().toString(), classSessionId, audioId, liveText, "LIVE_LOCAL_PROVISIONAL", "moonshine-base-es", createdAt, now)
                     )
                 }
 
@@ -373,7 +380,7 @@ class RecordingService : Service() {
         val state: StateFlow<RecordingState> = _state.asStateFlow()
         private val _liveTranscript = MutableStateFlow("")
         val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
-        private val _aiStatus = MutableStateFlow("IA inactiva")
+        private val _aiStatus = MutableStateFlow("Transcripción local inactiva")
         val aiStatus: StateFlow<String> = _aiStatus.asStateFlow()
     }
 }
