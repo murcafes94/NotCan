@@ -11,9 +11,9 @@ if(DEFINED ANDROID_ABI)
     message(STATUS "Detected Android ABI: ${ANDROID_ABI}")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(GGML_SYSTEM_ARCH "ARM")
-        set(GGML_CPU_KLEIDIAI ON)
-        # Avoid an extra OpenMP runtime in the first test APK. llama.cpp still
-        # uses its own thread pool and the local 1.5B model remains multi-threaded.
+        # First test build: use the portable ARM64 CPU path. This keeps the native
+        # runtime small and makes it compatible with a wider range of ARM64 phones/tablets.
+        set(GGML_CPU_KLEIDIAI OFF)
         set(GGML_OPENMP OFF)
     else()
         message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}")
