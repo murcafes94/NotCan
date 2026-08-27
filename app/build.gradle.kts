@@ -44,8 +44,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.7.1"
+        versionCode = 9
+        versionName = "0.7.2"
     }
 
     buildTypes {
@@ -109,6 +109,7 @@ dependencies {
     // Local generative study assistant powered by the pinned llama.cpp Android runtime.
     implementation(project(":llama-android"))
 
+    // Kept temporarily for legacy note pages while v0.7.2 migrates active editing to HTML/WebView.
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
