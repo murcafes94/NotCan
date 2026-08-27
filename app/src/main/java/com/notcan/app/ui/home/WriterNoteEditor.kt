@@ -1,8 +1,11 @@
 package com.notcan.app.ui.home
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.text.Html
 import android.text.TextUtils
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -18,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,8 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
@@ -73,7 +75,7 @@ import kotlinx.coroutines.delay
 internal fun WriterNoteEditor(
     note: NotePageEntity,
     onUpdateNote: (String, String, String) -> Unit,
-    onShare: () -> Unit,
+    onShareFallback: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -102,11 +104,8 @@ internal fun WriterNoteEditor(
 
     fun command(name: String, value: String? = null) {
         val safeValue = value?.replace("\\", "\\\\")?.replace("'", "\\'")
-        val js = if (safeValue == null) {
-            "window.notcanCommand('$name', null);"
-        } else {
-            "window.notcanCommand('$name', '$safeValue');"
-        }
+        val js = if (safeValue == null) "window.notcanCommand('$name', null);"
+        else "window.notcanCommand('$name', '$safeValue');"
         webView?.evaluateJavascript(js, null)
     }
 
@@ -124,7 +123,10 @@ internal fun WriterNoteEditor(
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onShare) {
+                IconButton(onClick = {
+                    runCatching { shareHtmlNote(context, title.ifBlank { "Apuntes" }, html) }
+                        .onFailure { onShareFallback() }
+                }) {
                     Icon(Icons.Default.Share, "Compartir apuntes", tint = NotCanBlue)
                 }
             }
@@ -180,9 +182,7 @@ internal fun WriterNoteEditor(
                         webView = this
                     }
                 },
-                update = { view ->
-                    if (webView !== view) webView = view
-                }
+                update = { view -> if (webView !== view) webView = view }
             )
 
             Spacer(Modifier.height(4.dp))
@@ -197,11 +197,7 @@ internal fun WriterNoteEditor(
 
 @Composable
 private fun WriterColorButton(color: Color, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.size(28.dp).clickable(onClick = onClick),
-        color = color,
-        shape = RoundedCornerShape(5.dp)
-    ) { }
+    Surface(modifier = Modifier.size(28.dp).clickable(onClick = onClick), color = color, shape = RoundedCornerShape(5.dp)) { }
 }
 
 @Composable
@@ -216,6 +212,19 @@ private class NoteBridge(private val onChanged: (String) -> Unit) {
     fun onContentChanged(value: String) {
         main.post { onChanged(value) }
     }
+}
+
+private fun shareHtmlNote(context: Context, title: String, html: String) {
+    val plain = Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+    val intent = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_SUBJECT, title)
+        .putExtra(Intent.EXTRA_TEXT, buildString {
+            appendLine(title)
+            appendLine()
+            append(plain)
+        })
+    context.startActivity(Intent.createChooser(intent, "Compartir apuntes"))
 }
 
 private fun normalizeStoredBody(value: String): String {
@@ -263,9 +272,7 @@ html, body { margin:0; padding:0; background:transparent; color:#F3F4F6; font-fa
 
   function saveSelection() {
     const s = window.getSelection();
-    if (s && s.rangeCount > 0 && selectionInsideEditor()) {
-      savedRange = s.getRangeAt(0).cloneRange();
-    }
+    if (s && s.rangeCount > 0 && selectionInsideEditor()) savedRange = s.getRangeAt(0).cloneRange();
   }
 
   function restoreSelection() {
@@ -276,9 +283,7 @@ html, body { margin:0; padding:0; background:transparent; color:#F3F4F6; font-fa
   }
 
   function notifyAndroid() {
-    if (window.NotCanBridge) {
-      window.NotCanBridge.onContentChanged(editor.innerHTML);
-    }
+    if (window.NotCanBridge) window.NotCanBridge.onContentChanged(editor.innerHTML);
   }
 
   window.notcanCommand = function(command, value) {
@@ -289,9 +294,7 @@ html, body { margin:0; padding:0; background:transparent; color:#F3F4F6; font-fa
     notifyAndroid();
   };
 
-  document.addEventListener('selectionchange', function() {
-    if (selectionInsideEditor()) saveSelection();
-  });
+  document.addEventListener('selectionchange', function() { if (selectionInsideEditor()) saveSelection(); });
   editor.addEventListener('keyup', saveSelection);
   editor.addEventListener('mouseup', saveSelection);
   editor.addEventListener('touchend', function() { setTimeout(saveSelection, 0); });
