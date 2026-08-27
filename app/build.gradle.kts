@@ -1,5 +1,6 @@
 import java.net.URI
 import java.security.MessageDigest
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -32,8 +33,24 @@ val fetchSherpaAar by tasks.registering {
     }
 }
 
+// Public TEST key only. It exists to keep GitHub Actions debug APKs update-compatible
+// across ephemeral runners. Never reuse this key for a production/Play Store build.
+val testKeystorePayload = rootProject.file("ci/notcan-test.keystore.b64")
+val testKeystoreFile = layout.buildDirectory.file("signing/notcan-test.keystore").get().asFile
+val prepareTestKeystore by tasks.registering {
+    inputs.file(testKeystorePayload)
+    outputs.file(testKeystoreFile)
+    doLast {
+        testKeystoreFile.parentFile.mkdirs()
+        testKeystoreFile.writeBytes(Base64.getMimeDecoder().decode(testKeystorePayload.readText().trim()))
+    }
+}
+
 tasks.matching { it.name == "preDebugBuild" || it.name == "preReleaseBuild" }.configureEach {
     dependsOn(fetchSherpaAar)
+}
+tasks.matching { it.name == "preDebugBuild" }.configureEach {
+    dependsOn(prepareTestKeystore)
 }
 
 android {
@@ -48,8 +65,25 @@ android {
         versionName = "0.7.2"
     }
 
+    signingConfigs {
+        create("notcanTest") {
+            storeFile = testKeystoreFile
+            storePassword = "notcan-test"
+            keyAlias = "notcan-test"
+            keyPassword = "notcan-test"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("notcanTest")
+        }
         release {
+            // Production/release signing intentionally remains separate from the public test key.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
