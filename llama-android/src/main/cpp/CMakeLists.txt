@@ -21,7 +21,9 @@ endif()
 set(LLAMA_SRC ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/llama.cpp)
 add_subdirectory(${LLAMA_SRC} build-llama)
 
-add_library(${CMAKE_PROJECT_NAME} SHARED ai_chat.cpp)
+# Use the official Android JNI bridge from the pinned llama.cpp submodule.
+add_library(${CMAKE_PROJECT_NAME} SHARED
+        ${LLAMA_SRC}/examples/llama.android/lib/src/main/cpp/ai_chat.cpp)
 
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
         GGML_SYSTEM_ARCH=${GGML_SYSTEM_ARCH}
@@ -30,6 +32,7 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${LLAMA_SRC}/examples/llama.android/lib/src/main/cpp
         ${LLAMA_SRC}
         ${LLAMA_SRC}/common
         ${LLAMA_SRC}/include
