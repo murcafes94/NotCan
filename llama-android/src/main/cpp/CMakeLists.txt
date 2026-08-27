@@ -12,7 +12,9 @@ if(DEFINED ANDROID_ABI)
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(GGML_SYSTEM_ARCH "ARM")
         set(GGML_CPU_KLEIDIAI ON)
-        set(GGML_OPENMP ON)
+        # Avoid an extra OpenMP runtime in the first test APK. llama.cpp still
+        # uses its own thread pool and the local 1.5B model remains multi-threaded.
+        set(GGML_OPENMP OFF)
     else()
         message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}")
     endif()
