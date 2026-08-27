@@ -11,7 +11,7 @@ type SyncResult =
   | { state: 'unauthenticated' }
   | { state: 'error'; message: string }
 
-function toRemote(entity: SyncEntity, payload: Record<string, unknown>, userId: string) {
+function toRemote(entity: SyncEntity, payload: Record<string, unknown>, userId: string): Record<string, unknown> {
   const common = {
     id: payload.id,
     user_id: userId,
@@ -104,13 +104,13 @@ export async function syncNow(): Promise<SyncResult> {
     let pushed = 0
 
     for (const item of pending) {
+      const remoteTable = supabase.from(item.entity) as any
       if (item.operation === 'UPSERT') {
         const row = toRemote(item.entity, item.payload as Record<string, unknown>, user.id)
-        const { error } = await supabase.from(item.entity).upsert(row, { onConflict: 'id' })
+        const { error } = await remoteTable.upsert(row, { onConflict: 'id' })
         if (error) throw error
       } else {
-        const { error } = await supabase
-          .from(item.entity)
+        const { error } = await remoteTable
           .update({ deleted_at: new Date(item.changedAtEpochMs).toISOString(), device_id: 'web' })
           .eq('id', item.entityId)
         if (error) throw error
@@ -125,7 +125,8 @@ export async function syncNow(): Promise<SyncResult> {
     let pulled = 0
 
     for (const table of tables) {
-      const { data, error } = await supabase.from(table).select('*').gt('updated_at', since).order('updated_at')
+      const remoteTable = supabase.from(table) as any
+      const { data, error } = await remoteTable.select('*').gt('updated_at', since).order('updated_at')
       if (error) throw error
       for (const row of data ?? []) {
         await applyRemote(table, row as Record<string, unknown>)
