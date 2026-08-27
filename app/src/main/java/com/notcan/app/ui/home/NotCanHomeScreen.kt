@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
+import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotePageEntity
@@ -68,6 +69,7 @@ fun NotCanHomeScreen(
     documents: List<DocumentResourceEntity>,
     pdfInkStrokes: List<PdfInkStrokeEntity>,
     transcripts: List<TranscriptEntity>,
+    detectedCues: List<DetectedCueEntity> = emptyList(),
     whisperModelState: WhisperModelState,
     localWhisperBusy: Boolean,
     localWhisperError: String?,
@@ -149,16 +151,11 @@ fun NotCanHomeScreen(
                             }
                             DropdownMenu(expanded = classMenu, onDismissRequest = { classMenu = false }) {
                                 classes.forEach { item ->
-                                    DropdownMenuItem(
-                                        text = { Text(item.title) },
-                                        onClick = { onSelectClass(item.id); classMenu = false }
-                                    )
+                                    DropdownMenuItem(text = { Text(item.title) }, onClick = { onSelectClass(item.id); classMenu = false })
                                 }
                             }
                         }
-                        IconButton(onClick = { createDialog = CreateDialog.Class }) {
-                            Icon(Icons.Default.Add, contentDescription = "Nueva clase", tint = NotCanBlue)
-                        }
+                        IconButton(onClick = { createDialog = CreateDialog.Class }) { Icon(Icons.Default.Add, contentDescription = "Nueva clase", tint = NotCanBlue) }
                     }
                 }
 
@@ -174,6 +171,7 @@ fun NotCanHomeScreen(
                     documents = documents,
                     pdfInkStrokes = pdfInkStrokes,
                     transcripts = transcripts,
+                    detectedCues = detectedCues,
                     recordingState = recordingState,
                     whisperModelState = whisperModelState,
                     localWhisperBusy = localWhisperBusy,
@@ -202,22 +200,14 @@ fun NotCanHomeScreen(
     }
 
     createDialog?.let { dialog ->
-        val enabled = when (dialog) {
-            CreateDialog.Cycle -> true
-            CreateDialog.Subject -> selectedCycleId != null
-            CreateDialog.Class -> selectedSubjectId != null
-        }
+        val enabled = when (dialog) { CreateDialog.Cycle -> true; CreateDialog.Subject -> selectedCycleId != null; CreateDialog.Class -> selectedSubjectId != null }
         NameEntryDialog(
             title = when (dialog) { CreateDialog.Cycle -> "Nuevo ciclo"; CreateDialog.Subject -> "Nueva materia"; CreateDialog.Class -> "Nueva clase" },
             label = when (dialog) { CreateDialog.Cycle -> "Ej. 2026 · Segundo semestre"; CreateDialog.Subject -> "Nombre de la materia"; CreateDialog.Class -> "Opcional · se numerará automáticamente" },
             enabled = enabled,
             onDismiss = { createDialog = null },
             onConfirm = { name ->
-                when (dialog) {
-                    CreateDialog.Cycle -> onCreateCycle(name)
-                    CreateDialog.Subject -> onCreateSubject(name)
-                    CreateDialog.Class -> onCreateClass(name)
-                }
+                when (dialog) { CreateDialog.Cycle -> onCreateCycle(name); CreateDialog.Subject -> onCreateSubject(name); CreateDialog.Class -> onCreateClass(name) }
                 createDialog = null
             }
         )
