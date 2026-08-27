@@ -1,0 +1,418 @@
+/* Tablet/touch adaptation for NotCan Web */
+
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    width: 78px;
+    padding: 18px 10px;
+    align-items: stretch;
+  }
+
+  .brand-row {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .brand-row > div:last-child,
+  .nav-group > p {
+    display: none;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .nav-group {
+    border-top: 0;
+    padding: 6px 0;
+  }
+
+  .nav-item {
+    min-height: 48px;
+    justify-content: center;
+    padding: 10px;
+    gap: 0;
+    font-size: 0;
+    border-radius: 12px;
+  }
+
+  .nav-item > span {
+    width: auto;
+    font-size: 19px;
+  }
+
+  .sidebar-bottom .nav-item .dot {
+    position: absolute;
+    right: 6px;
+    bottom: 7px;
+    width: 7px;
+    height: 7px;
+  }
+
+  .global-topbar {
+    height: 72px;
+    padding: 11px 18px;
+    gap: 12px;
+  }
+
+  .search-box {
+    width: min(500px, 58vw);
+    height: 46px;
+  }
+
+  .search-box kbd {
+    display: none;
+  }
+
+  .sync-status {
+    min-width: 44px;
+    height: 44px;
+    justify-content: center;
+    padding: 0 12px;
+  }
+
+  .sync-status > span:last-child {
+    display: none;
+  }
+
+  .new-button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 0;
+    border-radius: 12px;
+  }
+
+  .new-button::after {
+    content: '+';
+    font-size: 25px;
+    line-height: 1;
+  }
+
+  .avatar-button {
+    width: 42px;
+    height: 42px;
+  }
+
+  .main-area {
+    width: min(100% - 28px, 980px);
+    padding-top: 24px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .right-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-card {
+    grid-column: 1 / -1;
+  }
+
+  .subject-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .continue-card {
+    min-height: 225px;
+  }
+
+  .continue-copy {
+    width: 73%;
+    padding: 26px 22px;
+  }
+
+  .hero-art {
+    opacity: .25;
+  }
+
+  .open-note {
+    right: 16px;
+    bottom: 16px;
+  }
+
+  /* In the editor, use the whole tablet canvas. */
+  .app-shell:has(.note-editor-page) {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell:has(.note-editor-page) .sidebar {
+    display: none;
+  }
+
+  .app-shell:has(.note-editor-page) .global-topbar {
+    display: none;
+  }
+
+  .note-editor-page {
+    width: 100%;
+    max-width: none;
+    padding: 12px 14px 28px;
+  }
+
+  .editor-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    margin: 0 -14px 12px;
+    padding: 10px 14px;
+    background: rgba(10,15,24,.94);
+    border-bottom: 1px solid #1e293a;
+    backdrop-filter: blur(12px);
+  }
+
+  .back-editor,
+  .editor-more {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .editor-save-state {
+    margin-left: auto;
+    padding: 7px 10px;
+    border: 1px solid #263249;
+    background: #101824;
+    border-radius: 999px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .editor-sheet {
+    min-height: 0;
+    padding: 26px 28px 20px;
+    border-radius: 14px;
+  }
+
+  .editor-title-input {
+    font-size: clamp(30px, 5vw, 44px);
+  }
+
+  .format-bar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    padding: 8px 2px 11px;
+  }
+
+  .format-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .format-bar button {
+    min-height: 42px;
+    min-width: 42px;
+    padding: 8px 11px;
+    flex: 0 0 auto;
+    touch-action: manipulation;
+  }
+
+  .editor-body-input {
+    min-height: 330px;
+    height: auto;
+    font-size: 17px;
+    line-height: 1.7;
+    overflow-y: hidden;
+    field-sizing: content;
+  }
+
+  .editor-footer {
+    align-items: center;
+    padding-top: 11px;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    height: 66px;
+    padding: 7px 10px;
+    z-index: 40;
+    border-right: 0;
+    border-top: 1px solid #1d2635;
+    background: rgba(10,15,24,.97);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .brand-row,
+  .nav-group:nth-of-type(2),
+  .nav-group:nth-of-type(3),
+  .sidebar-bottom {
+    display: none;
+  }
+
+  .nav-group:first-of-type {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 0;
+  }
+
+  .nav-group:first-of-type .nav-item {
+    min-height: 50px;
+  }
+
+  .page-area {
+    padding-bottom: 68px;
+  }
+
+  .global-topbar {
+    height: 64px;
+    padding: 9px 10px;
+  }
+
+  .search-box {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sync-status {
+    display: none;
+  }
+
+  .avatar-button {
+    display: none;
+  }
+
+  .main-area {
+    width: calc(100% - 20px);
+    padding-top: 18px;
+  }
+
+  .welcome {
+    gap: 11px;
+    margin-bottom: 18px;
+  }
+
+  .welcome h1 {
+    font-size: 29px;
+  }
+
+  .welcome p {
+    font-size: 14px;
+  }
+
+  .sparkle {
+    font-size: 25px;
+  }
+
+  .continue-card {
+    min-height: 260px;
+  }
+
+  .continue-copy {
+    width: 100%;
+    padding: 22px 18px 74px;
+  }
+
+  .hero-art {
+    display: none;
+  }
+
+  .progress-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .progress {
+    width: 100%;
+  }
+
+  .subject-grid,
+  .recent-grid,
+  .right-column {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-card {
+    grid-column: auto;
+  }
+
+  .app-shell:has(.note-editor-page) .sidebar {
+    display: none;
+  }
+
+  .app-shell:has(.note-editor-page) .page-area {
+    padding-bottom: 0;
+  }
+
+  .note-editor-page {
+    padding: 0 8px 20px;
+  }
+
+  .editor-toolbar {
+    margin: 0 -8px 8px;
+    padding: 8px 10px;
+  }
+
+  .editor-save-state {
+    max-width: 48vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .editor-sheet {
+    border-radius: 10px;
+    padding: 20px 16px 14px;
+  }
+
+  .editor-meta-row {
+    margin-bottom: 16px;
+  }
+
+  .editor-title-input {
+    font-size: 31px;
+    margin-bottom: 12px;
+  }
+
+  .editor-body-input {
+    min-height: 280px;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  .editor-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  select,
+  .recent-item,
+  .course-card {
+    touch-action: manipulation;
+  }
+
+  .section-heading-row > button,
+  .quick-card > button,
+  .task-row button {
+    min-height: 42px;
+  }
+}
