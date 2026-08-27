@@ -49,11 +49,14 @@ class WhisperModelManager(private val context: Context) {
     }
 
     fun enqueueDownload(): Long {
+        // The lightweight Spanish live model is started in parallel. Both downloads are owned
+        // by Android DownloadManager, so they continue even when NotCan is closed.
+        runCatching { LiveTranscriptionModelManager(context).enqueueDownload() }
         if (state() == WhisperModelState.INSTALLED) return -1L
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(WhisperModelSpec.DOWNLOAD_URL))
             .setTitle("NotCan · ${WhisperModelSpec.DISPLAY_NAME}")
-            .setDescription("Modelo local de transcripción · aproximadamente 1,5 GB")
+            .setDescription("Modelo local de transcripción final · aproximadamente 1,5 GB")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverRoaming(false)
             .setAllowedOverMetered(false)
