@@ -2,7 +2,7 @@ name: Deploy NotCan Web
 
 on:
   push:
-    branches: [ "feature/web-pwa-sync-foundation" ]
+    branches: [ "main" ]
     paths:
       - "web/**"
       - ".github/workflows/web-pages.yml"
@@ -26,8 +26,6 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
