@@ -24,13 +24,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatClear
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
@@ -76,6 +79,7 @@ internal fun WriterNoteEditor(
     note: NotePageEntity,
     onUpdateNote: (String, String, String) -> Unit,
     onShareFallback: () -> Unit,
+    onDeleteNote: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -84,6 +88,7 @@ internal fun WriterNoteEditor(
     var lastSavedTitle by remember(note.id) { mutableStateOf(note.title) }
     var lastSavedHtml by remember(note.id) { mutableStateOf(note.body) }
     var webView by remember(note.id) { mutableStateOf<WebView?>(null) }
+    var confirmDelete by remember(note.id) { mutableStateOf(false) }
 
     LaunchedEffect(note.id, title, html) {
         delay(500)
@@ -129,6 +134,9 @@ internal fun WriterNoteEditor(
                 }) {
                     Icon(Icons.Default.Share, "Compartir apuntes", tint = NotCanBlue)
                 }
+                IconButton(onClick = { confirmDelete = true }) {
+                    Icon(Icons.Default.Delete, "Eliminar página de apuntes", tint = NotCanRed)
+                }
             }
 
             Spacer(Modifier.height(6.dp))
@@ -141,8 +149,9 @@ internal fun WriterNoteEditor(
             ) {
                 IconButton(onClick = { command("bold") }) { Icon(Icons.Default.FormatBold, "Negrita") }
                 IconButton(onClick = { command("italic") }) { Icon(Icons.Default.FormatItalic, "Cursiva") }
-                IconButton(onClick = { command("underline") }) { Icon(Icons.Default.FormatUnderlined, "Subrayado") }
+                IconButton(onClick = { command("underline") }) { Icon(Icons.Default.FormatUnderlined, "Subrayado: toca de nuevo para quitarlo") }
                 IconButton(onClick = { command("strikeThrough") }) { Icon(Icons.Default.FormatStrikethrough, "Tachado") }
+                IconButton(onClick = { command("removeFormat") }) { Icon(Icons.Default.FormatClear, "Quitar formato") }
                 TextButton(onClick = { command("formatBlock", "H1") }) { Text("H1") }
                 TextButton(onClick = { command("formatBlock", "H2") }) { Text("H2") }
                 TextButton(onClick = { command("formatBlock", "P") }) { Text("P") }
@@ -187,11 +196,26 @@ internal fun WriterNoteEditor(
 
             Spacer(Modifier.height(4.dp))
             Text(
-                "Editor tipo Writer · HTML local · formato persistente · guardado automático",
+                "U activa o quita el subrayado · ⨯A limpia el formato seleccionado · guardado automático",
                 color = NotCanGray,
                 style = MaterialTheme.typography.labelSmall
             )
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Eliminar apunte") },
+            text = { Text("Se eliminará esta página de apuntes. El audio y la transcripción de la clase se conservarán.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDeleteNote()
+                }) { Text("Eliminar", color = NotCanRed) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
+        )
     }
 }
 
