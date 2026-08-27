@@ -12,7 +12,9 @@ if(DEFINED ANDROID_ABI)
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(GGML_SYSTEM_ARCH "ARM")
         set(GGML_CPU_KLEIDIAI ON)
-        set(GGML_OPENMP ON)
+        # Known-green configuration from the successful v0.7 native build.
+        # Avoid an extra OpenMP runtime while keeping llama.cpp multi-threaded.
+        set(GGML_OPENMP OFF)
     else()
         message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}")
     endif()
