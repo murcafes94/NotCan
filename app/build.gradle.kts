@@ -5,6 +5,34 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val sherpaAar = layout.projectDirectory.file("libs/sherpa-onnx-1.13.6.aar").asFile
+val fetchSherpaAar by tasks.registering {
+    outputs.file(sherpaAar)
+    doLast {
+        val expectedSha = "0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698"
+        if (!sherpaAar.exists()) {
+            sherpaAar.parentFile.mkdirs()
+            val url = java.net.URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/sherpa-onnx-1.13.6.aar").toURL()
+            url.openStream().use { input -> sherpaAar.outputStream().use { output -> input.copyTo(output) } }
+        }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        sherpaAar.inputStream().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n <= 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expectedSha) { "sherpa-onnx AAR SHA-256 mismatch: $actual" }
+    }
+}
+
+tasks.matching { it.name == "preDebugBuild" || it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(fetchSherpaAar)
+}
+
 android {
     namespace = "com.notcan.app"
     compileSdk = 35
@@ -66,16 +94,18 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Reliable background processing. Long local transcriptions can continue after leaving the app.
     implementation("androidx.work:work-runtime:2.11.2")
 
     // Final local transcription. The model itself is downloaded separately (~1.5 GiB).
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
 
+    // Lightweight Spanish provisional transcription while a class is being recorded.
+    implementation(files(sherpaAar))
+    implementation("org.apache.commons:commons-compress:1.27.1")
+
     // Local generative study assistant powered by the pinned llama.cpp Android runtime.
     implementation(project(":llama-android"))
 
-    // WYSIWYG notes editor, Apache-2.0.
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
