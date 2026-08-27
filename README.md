@@ -1,6 +1,6 @@
 # NotCan
 
-NotCan es una aplicación Android personal para estudiar por ciclos, materias y clases conectadas.
+NotCan es un ecosistema académico personal con una aplicación Android local-first y una PWA web sincronizable.
 
 ## Idea central
 
@@ -8,38 +8,47 @@ Cada clase mantiene unidos sus recursos: audio, transcripción, apuntes, documen
 
 ## Principios
 
-- **Local-first:** grabación, edición, maquetación, biblioteca y anotación funcionan sin Internet.
-- **IA online:** la transcripción y asistencia inteligente se integrarán mediante Gemini, sin descargar modelos pesados al dispositivo.
-- **Grabación segura:** el audio local es la fuente principal; una futura transcripción en vivo nunca debe interrumpir ni comprometer la grabación.
-- **Tablet-first:** interfaz optimizada para pantallas grandes y stylus/pencil.
+- **Local-first:** grabación, edición, maquetación, biblioteca y anotación deben seguir funcionando sin Internet.
+- **IA híbrida:** la asistencia inteligente puede usar servicios online y, cuando el dispositivo lo permita, modelos locales opcionales.
+- **Grabación segura:** el audio local es la fuente principal; una transcripción en vivo nunca debe interrumpir ni comprometer la grabación.
+- **Tablet-first en Android:** interfaz optimizada para pantallas grandes y stylus/pencil.
+- **Web/PWA:** la versión de navegador sirve como espacio amplio para organizar, redactar, estudiar, administrar documentos y usar IA desde cualquier PC.
 - **Documentos:** arquitectura preparada para PDF, EPUB y DOC/DOCX.
-- **Respaldo separado:** audios y material de estudio se respaldarán por separado.
-- **Sincronización futura:** el modelo de datos usa identificadores estables para permitir sincronización con PC sin compartir una base SQLite viva.
+- **Respaldo separado:** audios y material de estudio se respaldan con una política distinta a la sincronización cotidiana de datos.
+- **Sincronización por registros:** Android y Web conservan UUID estables y sincronizan cambios; nunca comparten una base SQLite/IndexedDB viva.
 
-## Primera etapa
+## Arquitectura de datos
 
-La versión inicial contiene:
+La estructura base compartida es:
 
-- estructura Android nativa con Kotlin y Jetpack Compose;
-- tema visual oscuro de NotCan;
-- modelo `Ciclo -> Materia -> Clase -> Recursos`;
-- pantalla principal de demostración;
-- estados de grabación `inactivo / grabando / pausado`;
-- control compacto `● -> pausa/reanudar + stop`;
-- marcador de momento importante;
-- servicio Android de grabación en primer plano preparado para captura local.
+`Ciclo -> Materia -> Clase -> Recursos`
 
-## Próximos módulos
+Android usa Room como almacenamiento local. NotCan Web usa IndexedDB. Un backend común será la fuente de intercambio entre dispositivos, preservando los mismos UUID.
 
-1. Persistencia local con Room.
-2. Grabación AAC/M4A completa y reproducción.
-3. Editor enriquecido y lienzo con stylus.
-4. Importación y anotación PDF.
-5. Importación EPUB y DOC/DOCX.
-6. Gemini: transcripción en vivo y final, resumen, preguntas y mapas mentales.
-7. Google Drive: respaldo progresivo y paquetes finales separados.
-8. Sincronización con NotCan Desktop.
+## NotCan Web
+
+La primera base de la PWA vive en `web/` e incluye:
+
+- React + TypeScript + Vite;
+- instalación como PWA;
+- almacenamiento offline con IndexedDB/Dexie;
+- cola local (`outbox`) para cambios todavía no enviados;
+- modelo de datos alineado con las entidades Android;
+- adaptador inicial para sincronización con Supabase;
+- esquema SQL con Row Level Security en `supabase/schema.sql`.
+
+Mientras el backend no esté configurado, la web continúa funcionando de forma local y conserva los cambios pendientes.
+
+## Próximos pasos de sincronización
+
+1. Crear el backend Supabase de NotCan y aplicar `supabase/schema.sql`.
+2. Añadir inicio de sesión a la PWA.
+3. Probar sincronización real Web <-> nube con ciclos, materias, clases, apuntes y calificaciones.
+4. Añadir el cliente de sincronización Android sobre Room sin reemplazar la base local.
+5. Implementar resolución explícita de conflictos para contenido editado en dos dispositivos.
+6. Extender sincronización a horarios, transcripciones, mapas, marcadores y anotaciones.
+7. Definir Storage para documentos y una política separada/opt-in para audios pesados.
 
 ## Licencias de terceros
 
-El proyecto mantendrá un registro explícito de cualquier código o componente reutilizado. Consulta `THIRD_PARTY_NOTICES.md` antes de incorporar código externo.
+El proyecto mantiene un registro explícito de cualquier código o componente reutilizado. Consulta `THIRD_PARTY_NOTICES.md` antes de incorporar código externo.
