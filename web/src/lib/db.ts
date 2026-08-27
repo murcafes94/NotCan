@@ -52,6 +52,18 @@ export async function queueUpsert(entity: OutboxRecord['entity'], entityId: stri
   })
 }
 
+export async function queueDelete(entity: OutboxRecord['entity'], entityId: string) {
+  await db.outbox.where('entityId').equals(entityId).delete()
+  await db.outbox.put({
+    id: crypto.randomUUID(),
+    entity,
+    entityId,
+    operation: 'DELETE',
+    payload: null,
+    changedAtEpochMs: Date.now(),
+  })
+}
+
 export async function seedDemoIfEmpty() {
   if ((await db.studyCycles.count()) > 0) return
 
