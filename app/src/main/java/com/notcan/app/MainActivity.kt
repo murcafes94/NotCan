@@ -101,6 +101,8 @@ class MainActivity : ComponentActivity() {
                 val aiBusy = studyViewModel.aiBusy.collectAsStateWithLifecycle().value
                 val aiError = studyViewModel.aiError.collectAsStateWithLifecycle().value
                 val aiResult = studyViewModel.aiResult.collectAsStateWithLifecycle().value
+                val studyModelState = studyViewModel.studyModelState.collectAsStateWithLifecycle().value
+                val studyModelProgress = studyViewModel.studyModelProgress.collectAsStateWithLifecycle().value
                 val whisperModelState = studyViewModel.whisperModelState.collectAsStateWithLifecycle().value
                 val whisperModelProgress = studyViewModel.whisperModelProgress.collectAsStateWithLifecycle().value
                 val localWhisperError = studyViewModel.localWhisperError.collectAsStateWithLifecycle().value
@@ -140,6 +142,7 @@ class MainActivity : ComponentActivity() {
                             documents = documents,
                             pdfInkStrokes = pdfInkStrokes,
                             transcripts = transcripts,
+                            detectedCues = detectedCues,
                             whisperModelState = whisperModelState,
                             localWhisperBusy = false,
                             localWhisperError = localWhisperError,
@@ -205,10 +208,14 @@ class MainActivity : ComponentActivity() {
                             transcripts = transcripts,
                             audioRecordings = audioRecordings,
                             detectedCues = detectedCues,
+                            studyModelState = studyModelState,
+                            studyModelProgress = studyModelProgress,
                             whisperModelState = whisperModelState,
                             whisperModelProgress = whisperModelProgress,
                             localWhisperBusy = false,
                             localWhisperError = localWhisperError,
+                            onDownloadStudyModel = studyViewModel::downloadStudyModel,
+                            onRemoveStudyModel = studyViewModel::removeStudyModel,
                             onDownloadWhisperModel = studyViewModel::downloadWhisperModel,
                             onRemoveWhisperModel = studyViewModel::removeWhisperModel,
                             onTranscribeLocal = ::enqueueBackgroundTranscription,
