@@ -2,14 +2,11 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "feature/v0.7-focus-background" ]
   workflow_dispatch:
 
 jobs:
   cleanup-artifacts:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,10 +19,15 @@ jobs:
         shell: bash
         run: |
           set -u
+          echo "Existing APK artifacts:"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | "\(.id)  \(.created_at)  \(.name)"' || true
+
           mapfile -t old_ids < <(
             gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
               --jq '.artifacts | sort_by(.created_at) | reverse | .[1:] | .[].id'
           )
+
           if [ "${#old_ids[@]}" -eq 0 ]; then
             echo "No old artifacts to delete; keeping the newest existing artifact."
           else
@@ -35,9 +37,12 @@ jobs:
             done
           fi
 
+          echo "Artifacts kept before new build:"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | "\(.id)  \(.created_at)  \(.name)"' || true
+
   build:
     needs: cleanup-artifacts
-    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -58,7 +63,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
