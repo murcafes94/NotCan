@@ -1,3 +1,6 @@
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,10 +15,10 @@ val fetchSherpaAar by tasks.registering {
         val expectedSha = "0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698"
         if (!sherpaAar.exists()) {
             sherpaAar.parentFile.mkdirs()
-            val url = java.net.URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/sherpa-onnx-1.13.6.aar").toURL()
+            val url = URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/sherpa-onnx-1.13.6.aar").toURL()
             url.openStream().use { input -> sherpaAar.outputStream().use { output -> input.copyTo(output) } }
         }
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val digest = MessageDigest.getInstance("SHA-256")
         sherpaAar.inputStream().use { input ->
             val buffer = ByteArray(1024 * 1024)
             while (true) {
@@ -24,7 +27,7 @@ val fetchSherpaAar by tasks.registering {
                 digest.update(buffer, 0, n)
             }
         }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
         check(actual == expectedSha) { "sherpa-onnx AAR SHA-256 mismatch: $actual" }
     }
 }
