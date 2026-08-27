@@ -1,6 +1,7 @@
 package com.notcan.app.ai
 
 import android.content.Context
+import android.text.Html
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
 import com.notcan.app.localai.StudyModelManager
@@ -27,7 +28,7 @@ class NotCanAiService(private val context: Context) {
         question: String
     ): String {
         require(isConfigured()) {
-            "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde IA → Modelos."
+            "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde IA → Fuentes."
         }
 
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
@@ -36,6 +37,13 @@ class NotCanAiService(private val context: Context) {
             .replace(SOURCE_ONLY_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
             .trim()
+
+        val plainNotes = sourcePlainText(notes)
+        val plainTranscript = sourcePlainText(transcript)
+
+        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank()) {
+            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
+        }
 
         val preferences = NotCanPreferences(context)
         val systemPrompt = buildString {
@@ -53,7 +61,6 @@ class NotCanAiService(private val context: Context) {
                 appendLine("Usa exclusivamente los apuntes y la transcripción suministrados; no completes huecos con conocimiento general ni memoria del modelo.")
                 appendLine("Si un dato solicitado no aparece en las fuentes, dilo claramente: 'No consta en las fuentes disponibles'.")
                 appendLine("Al final de cada párrafo factual indica [Apuntes], [Transcripción] o [Apuntes + Transcripción], según corresponda.")
-                appendLine("Antes de entregar la respuesta, comprueba que cada afirmación factual esté respaldada por el material. No muestres ese proceso de comprobación.")
             }
 
             if (socraticMode) {
@@ -66,19 +73,15 @@ class NotCanAiService(private val context: Context) {
 
         val sourceText = buildString {
             subjectName?.let { appendLine("MATERIA: $it") }
-            if (notes.isNotBlank()) {
+            if (plainNotes.isNotBlank()) {
                 appendLine("\n[FUENTE: APUNTES]")
-                appendLine(notes.takeLast(MAX_SOURCE_CHARS / 2))
+                appendLine(plainNotes.takeLast(MAX_SOURCE_CHARS / 2))
             }
-            if (transcript.isNotBlank()) {
+            if (plainTranscript.isNotBlank()) {
                 appendLine("\n[FUENTE: TRANSCRIPCIÓN]")
-                appendLine(transcript.takeLast(MAX_SOURCE_CHARS / 2))
+                appendLine(plainTranscript.takeLast(MAX_SOURCE_CHARS / 2))
             }
         }.takeLast(MAX_SOURCE_CHARS)
-
-        if (strictSources && sourceText.isBlank()) {
-            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo fuentes."
-        }
 
         val userPrompt = buildString {
             if (sourceText.isNotBlank()) {
@@ -101,7 +104,7 @@ class NotCanAiService(private val context: Context) {
             engine.setSystemPrompt(systemPrompt)
             val answer = StringBuilder()
             engine.sendUserPrompt(userPrompt, MAX_OUTPUT_TOKENS).collect { token -> answer.append(token) }
-            answer.toString().trim().ifBlank { "El modelo local no devolvió texto." }
+            answer.toString().trim().ifBlank { "El modelo local no devolvió texto. Vuelve a intentarlo con una pregunta más breve." }
         } finally {
             runCatching {
                 when (engine.state.value) {
@@ -120,13 +123,9 @@ class NotCanAiService(private val context: Context) {
             else -> Unit
         }
 
-        if (engine.state.value is InferenceEngine.State.Uninitialized ||
-            engine.state.value is InferenceEngine.State.Initializing
-        ) {
+        if (engine.state.value is InferenceEngine.State.Uninitialized || engine.state.value is InferenceEngine.State.Initializing) {
             val state = withTimeout(30_000L) {
-                engine.state.first {
-                    it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error
-                }
+                engine.state.first { it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error }
             }
             if (state is InferenceEngine.State.Error) throw state.exception
         }
@@ -136,11 +135,22 @@ class NotCanAiService(private val context: Context) {
         }
     }
 
+    private fun sourcePlainText(value: String): String {
+        if (value.isBlank()) return ""
+        val withoutScripts = value
+            .replace(Regex("(?is)<script.*?>.*?</script>"), "")
+            .replace(Regex("(?is)<style.*?>.*?</style>"), "")
+        return if (withoutScripts.contains('<') && withoutScripts.contains('>')) {
+            Html.fromHtml(withoutScripts, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+        } else withoutScripts.trim()
+    }
+
     companion object {
         const val TEXT_MODEL = StudyModelSpec.MODEL_NAME
         const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
         const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
-        private const val MAX_SOURCE_CHARS = 22_000
-        private const val MAX_OUTPUT_TOKENS = 900
+        // 4k native context: leave room for system/user prompts and generated answer.
+        private const val MAX_SOURCE_CHARS = 14_000
+        private const val MAX_OUTPUT_TOKENS = 512
     }
 }

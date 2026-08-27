@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/v0.7-focus-background", "fix/v0.7.1-crashes" ]
+    branches: [ "main", "feature/**", "fix/**" ]
   workflow_dispatch:
 
 jobs:
@@ -37,10 +37,6 @@ jobs:
             done
           fi
 
-          echo "Artifacts kept before new build:"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | "\(.id)  \(.created_at)  \(.name)"' || true
-
   build:
     needs: cleanup-artifacts
     if: always()
@@ -68,6 +64,16 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          EXPECTED="ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586"
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
       - name: Upload debug APK artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
@@ -83,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.1-test"
+          TAG="v0.7.2-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.1-test.apk" \
+            "$APK#NotCan-v0.7.2-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.1 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.1. Corrige el compartido de audio y usa un backend ARM64 más compatible para la IA local."
+            --title "NotCan v0.7.2 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.2. Añade escritorio de clase centrado en apuntes, transcripción provisional visible, editor HTML tipo Writer, icono corregido, ajustes de memoria/compatibilidad de la IA local y una firma de prueba persistente para futuras actualizaciones."

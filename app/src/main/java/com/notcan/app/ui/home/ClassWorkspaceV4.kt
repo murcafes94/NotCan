@@ -16,7 +16,7 @@ import com.notcan.app.recording.RecordingState
 
 /**
  * Compatibility wrapper kept while older PDF entities remain in the database.
- * Current UI intentionally focuses on audio, transcription, notes and study.
+ * The active workspace is v0.7.2: Writer-style notes plus live transcription during recording.
  */
 @Composable
 internal fun NotCanClassWorkspaceV4(
@@ -55,7 +55,9 @@ internal fun NotCanClassWorkspaceV4(
     onStopRecording: () -> Unit,
     onMarkMoment: () -> Unit
 ) {
-    NotCanClassWorkspace(
+    // PDF/document callbacks remain in the signature for database compatibility, but documents are
+    // opened externally and are not rendered inside the focused class workspace.
+    NotCanClassWorkspaceV5(
         modifier = modifier,
         cycleName = cycleName,
         subject = subject,
