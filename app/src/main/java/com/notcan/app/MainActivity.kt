@@ -272,7 +272,7 @@ class MainActivity : ComponentActivity() {
             .putExtra(RecordingService.EXTRA_CLASS_TITLE, request.classTitle)
             .putExtra(RecordingService.EXTRA_AUTO_STOP_MODE, request.autoStopMode)
             .putExtra(RecordingService.EXTRA_AUTO_STOP_GRACE_MINUTES, request.graceMinutes)
-            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, false)
+            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
         request.plannedEndEpochMs?.let { intent.putExtra(RecordingService.EXTRA_PLANNED_END_EPOCH_MS, it) }
         ContextCompat.startForegroundService(this, intent)
     }
