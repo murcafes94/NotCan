@@ -1,8 +1,39 @@
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+}
+
+val sherpaAar = layout.projectDirectory.file("libs/sherpa-onnx-1.13.6.aar").asFile
+val fetchSherpaAar by tasks.registering {
+    outputs.file(sherpaAar)
+    doLast {
+        val expectedSha = "0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698"
+        if (!sherpaAar.exists()) {
+            sherpaAar.parentFile.mkdirs()
+            val url = URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/sherpa-onnx-1.13.6.aar").toURL()
+            url.openStream().use { input -> sherpaAar.outputStream().use { output -> input.copyTo(output) } }
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        sherpaAar.inputStream().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n <= 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+        check(actual == expectedSha) { "sherpa-onnx AAR SHA-256 mismatch: $actual" }
+    }
+}
+
+tasks.matching { it.name == "preDebugBuild" || it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(fetchSherpaAar)
 }
 
 android {
@@ -13,8 +44,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
     }
 
     buildTypes {
@@ -66,18 +97,19 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.work:work-runtime:2.11.2")
 
-    // Local-first transcription. The model itself is downloaded separately (~1.5 GiB).
+    // Final local transcription. The model itself is downloaded separately (~1.5 GiB).
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
 
-    // WYSIWYG notes editor, Apache-2.0. rc10 matches Kotlin 2.0.21 / Compose 1.7.x.
-    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
+    // Lightweight Spanish provisional transcription while a class is being recorded.
+    implementation(files(sherpaAar))
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
-    // Kept only as an optional cloud study assistant. Local transcription never depends on it.
-    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
-    implementation("com.google.firebase:firebase-ai")
-    implementation("com.google.firebase:firebase-appcheck-debug")
+    // Local generative study assistant powered by the pinned llama.cpp Android runtime.
+    implementation(project(":llama-android"))
+
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

@@ -14,11 +14,17 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.notcan.app.MainActivity
 import com.notcan.app.R
-import com.notcan.app.ai.GeminiLiveTranscriber
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.localai.BackgroundTranscriptionManager
+import com.notcan.app.localai.LiveTranscriptionModelManager
+import com.notcan.app.localai.LiveTranscriptionModelState
+import com.notcan.app.localai.LocalLiveTranscriber
+import com.notcan.app.localai.WhisperModelManager
+import com.notcan.app.localai.WhisperModelState
+import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,9 +40,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -46,8 +49,9 @@ class RecordingService : Service() {
     private var outputFile: File? = null
     private var startedAtEpochMs: Long = 0L
     private var currentClassSessionId: String? = null
+    private var currentClassTitle: String = "Clase"
     private var currentAudioId: String? = null
-    private var liveTranscriber: GeminiLiveTranscriber? = null
+    private var liveTranscriber: LocalLiveTranscriber? = null
     private var pcmChannel: Channel<ByteArray>? = null
     private var liveSenderJob: Job? = null
     private var scheduleEndJob: Job? = null
@@ -81,6 +85,7 @@ class RecordingService : Service() {
         scheduleEndJob?.cancel()
         liveSenderJob?.cancel()
         pcmChannel?.close()
+        runCatching { liveTranscriber?.close() }
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -101,9 +106,9 @@ class RecordingService : Service() {
 
         try {
             val recordingsDir = File(filesDir, "recordings").apply { mkdirs() }
-            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            currentClassTitle = intent.getStringExtra(EXTRA_CLASS_TITLE)?.trim().orEmpty().ifBlank { "Clase" }
             val audioId = UUID.randomUUID().toString()
-            val file = File(recordingsDir, "notcan_$stamp.m4a")
+            val file = uniqueRecordingFile(recordingsDir, "${sanitizeFileName(currentClassTitle)}.m4a")
             outputFile = file
             startedAtEpochMs = System.currentTimeMillis()
             currentClassSessionId = classSessionId
@@ -113,24 +118,19 @@ class RecordingService : Service() {
             autoStopGraceMinutes = intent.getIntExtra(EXTRA_AUTO_STOP_GRACE_MINUTES, 5).coerceIn(0, 60)
             stopping.set(false)
             _liveTranscript.value = ""
-            _aiStatus.value = if (intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)) {
-                "Conectando transcripción en vivo…"
-            } else {
-                "Transcripción en vivo desactivada"
-            }
 
-            val liveEnabled = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
+            val requestedLive = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
+            val liveManager = LiveTranscriptionModelManager(this)
+            val liveEnabled = requestedLive && liveManager.state() == LiveTranscriptionModelState.INSTALLED
+            _aiStatus.value = if (liveEnabled) "Iniciando transcripción provisional local…" else "Grabando sin transcripción provisional"
             val channel = if (liveEnabled) Channel<ByteArray>(capacity = 64) else null
             pcmChannel = channel
 
             if (liveEnabled && channel != null) {
-                val transcriber = GeminiLiveTranscriber(
-                    context = this,
-                    scope = serviceScope,
+                val transcriber = LocalLiveTranscriber(
+                    modelManager = liveManager,
                     onTranscriptChunk = { chunk ->
-                        _liveTranscript.update { current ->
-                            if (current.isBlank()) chunk.trim() else "$current ${chunk.trim()}"
-                        }
+                        _liveTranscript.update { current -> if (current.isBlank()) chunk.trim() else "$current ${chunk.trim()}" }
                     },
                     onStatus = { _aiStatus.value = it }
                 )
@@ -144,26 +144,17 @@ class RecordingService : Service() {
                     liveSenderJob = launch {
                         for (pcm in channel) {
                             if (!isActive) break
-                            transcriber.sendPcmRealtime(pcm)
+                            transcriber.acceptPcm16k(pcm)
                         }
                     }
                 }
             }
 
-            val engine = AacM4aRecorder(
-                outputFile = file,
-                scope = serviceScope,
-                onPcmChunk = { pcm -> pcmChannel?.trySend(pcm) }
-            )
+            val engine = AacM4aRecorder(outputFile = file, scope = serviceScope, onPcmChunk = { pcm -> pcmChannel?.trySend(pcm) })
             recorder = engine
             engine.start()
 
-            _state.value = RecordingState.Recording(
-                startedAtEpochMs = startedAtEpochMs,
-                outputPath = file.absolutePath,
-                classSessionId = classSessionId,
-                audioId = audioId
-            )
+            _state.value = RecordingState.Recording(startedAtEpochMs, file.absolutePath, classSessionId, audioId)
             startForeground(NOTIFICATION_ID, buildNotification(isPaused = false))
             schedulePlannedEndBehavior()
         } catch (t: Throwable) {
@@ -179,16 +170,9 @@ class RecordingService : Service() {
         if (current !is RecordingState.Recording) return
         try {
             recorder?.pause()
-            _state.value = RecordingState.Paused(
-                current.startedAtEpochMs,
-                current.outputPath,
-                current.classSessionId,
-                current.audioId
-            )
+            _state.value = RecordingState.Paused(current.startedAtEpochMs, current.outputPath, current.classSessionId, current.audioId)
             notifyState(isPaused = true)
-        } catch (t: Throwable) {
-            _state.value = RecordingState.Error(t.message ?: "No se pudo pausar")
-        }
+        } catch (t: Throwable) { _state.value = RecordingState.Error(t.message ?: "No se pudo pausar") }
     }
 
     private fun resumeRecording() {
@@ -196,16 +180,9 @@ class RecordingService : Service() {
         if (current !is RecordingState.Paused) return
         try {
             recorder?.resume()
-            _state.value = RecordingState.Recording(
-                current.startedAtEpochMs,
-                current.outputPath,
-                current.classSessionId,
-                current.audioId
-            )
+            _state.value = RecordingState.Recording(current.startedAtEpochMs, current.outputPath, current.classSessionId, current.audioId)
             notifyState(isPaused = false)
-        } catch (t: Throwable) {
-            _state.value = RecordingState.Error(t.message ?: "No se pudo reanudar")
-        }
+        } catch (t: Throwable) { _state.value = RecordingState.Error(t.message ?: "No se pudo reanudar") }
     }
 
     private fun stopRecording() {
@@ -213,6 +190,7 @@ class RecordingService : Service() {
         val path = outputFile?.absolutePath
         val classSessionId = currentClassSessionId
         val audioId = currentAudioId
+        val classTitle = currentClassTitle
         val createdAt = startedAtEpochMs
         scheduleEndJob?.cancel()
 
@@ -222,11 +200,7 @@ class RecordingService : Service() {
         }
 
         serviceScope.launch {
-            val durationMs = try {
-                recorder?.stop() ?: 0L
-            } catch (_: Throwable) {
-                recorder?.elapsedMs() ?: 0L
-            }
+            val durationMs = try { recorder?.stop() ?: 0L } catch (_: Throwable) { recorder?.elapsedMs() ?: 0L }
             recorder = null
             pcmChannel?.close()
             try { liveSenderJob?.join() } catch (_: Throwable) { }
@@ -235,40 +209,23 @@ class RecordingService : Service() {
 
             val file = File(path)
             if (file.exists() && file.length() > 0L) {
-                dao.insertAudioRecording(
-                    AudioRecordingEntity(
-                        id = audioId,
-                        classSessionId = classSessionId,
-                        localPath = path,
-                        durationMs = durationMs,
-                        createdAtEpochMs = createdAt
-                    )
-                )
+                dao.insertAudioRecording(AudioRecordingEntity(audioId, classSessionId, path, durationMs, createdAt))
                 val liveText = _liveTranscript.value.trim()
                 if (liveText.isNotBlank()) {
                     val now = System.currentTimeMillis()
                     dao.insertTranscript(
-                        TranscriptEntity(
-                            id = UUID.randomUUID().toString(),
-                            classSessionId = classSessionId,
-                            audioId = audioId,
-                            body = liveText,
-                            status = "LIVE_CAPTURE",
-                            modelName = "gemini-live",
-                            createdAtEpochMs = createdAt,
-                            updatedAtEpochMs = now
-                        )
+                        TranscriptEntity(UUID.randomUUID().toString(), classSessionId, audioId, liveText, "LIVE_LOCAL_PROVISIONAL", "moonshine-base-es", createdAt, now)
                     )
+                }
+
+                val preferences = NotCanPreferences(this@RecordingService)
+                if (preferences.autoTranscribeAfterRecording && WhisperModelManager(this@RecordingService).state() == WhisperModelState.INSTALLED) {
+                    BackgroundTranscriptionManager.enqueue(this@RecordingService, audioId, classSessionId, path, classTitle)
                 }
             }
 
             withContext(Dispatchers.Main) {
-                _state.value = RecordingState.Finished(
-                    outputPath = path,
-                    classSessionId = classSessionId,
-                    audioId = audioId,
-                    durationMs = durationMs
-                )
+                _state.value = RecordingState.Finished(path, classSessionId, audioId, durationMs)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 clearSessionState()
                 stopSelf()
@@ -282,49 +239,27 @@ class RecordingService : Service() {
         val audioId: String
         val outputPath: String
         when (current) {
-            is RecordingState.Recording -> {
-                classSessionId = current.classSessionId
-                audioId = current.audioId
-                outputPath = current.outputPath
-            }
-            is RecordingState.Paused -> {
-                classSessionId = current.classSessionId
-                audioId = current.audioId
-                outputPath = current.outputPath
-            }
+            is RecordingState.Recording -> { classSessionId = current.classSessionId; audioId = current.audioId; outputPath = current.outputPath }
+            is RecordingState.Paused -> { classSessionId = current.classSessionId; audioId = current.audioId; outputPath = current.outputPath }
             else -> return
         }
-
         val offsetMs = recordedElapsedMs()
         val createdAt = System.currentTimeMillis()
         val momentId = UUID.randomUUID().toString()
         File("$outputPath.markers.csv").appendText("$momentId,$offsetMs,$createdAt\n")
         serviceScope.launch {
-            dao.insertImportantMoment(
-                ImportantMomentEntity(
-                    id = momentId,
-                    classSessionId = classSessionId,
-                    audioId = audioId,
-                    offsetMs = offsetMs,
-                    createdAtEpochMs = createdAt
-                )
-            )
+            dao.insertImportantMoment(ImportantMomentEntity(momentId, classSessionId, audioId, offsetMs, createdAtEpochMs = createdAt))
         }
     }
 
     private fun schedulePlannedEndBehavior() {
         val end = plannedEndEpochMs ?: return
         if (autoStopMode == AUTO_STOP_CONTINUE) return
-        val target = if (autoStopMode == AUTO_STOP_AUTO) {
-            end + autoStopGraceMinutes * 60_000L
-        } else {
-            end
-        }
+        val target = if (autoStopMode == AUTO_STOP_AUTO) end + autoStopGraceMinutes * 60_000L else end
         val delayMs = (target - System.currentTimeMillis()).coerceAtLeast(0L)
         scheduleEndJob = serviceScope.launch {
             delay(delayMs)
-            if (autoStopMode == AUTO_STOP_AUTO) stopRecording()
-            else if (autoStopMode == AUTO_STOP_ASK) notifyScheduleEnded()
+            if (autoStopMode == AUTO_STOP_AUTO) stopRecording() else if (autoStopMode == AUTO_STOP_ASK) notifyScheduleEnded()
         }
     }
 
@@ -348,6 +283,7 @@ class RecordingService : Service() {
         outputFile = null
         startedAtEpochMs = 0L
         currentClassSessionId = null
+        currentClassTitle = "Clase"
         currentAudioId = null
         plannedEndEpochMs = null
         scheduleEndJob = null
@@ -360,19 +296,14 @@ class RecordingService : Service() {
     }
 
     private fun buildNotification(isPaused: Boolean, scheduleEnded: Boolean = false): Notification {
-        val openAppPendingIntent = PendingIntent.getActivity(
-            this,
-            10,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val openAppPendingIntent = PendingIntent.getActivity(this, 10, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val pauseOrResumeAction = if (isPaused) ACTION_RESUME else ACTION_PAUSE
         val pauseOrResumeLabel = if (isPaused) "Reanudar" else "Pausar"
         val pauseOrResumeIcon = if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         val text = when {
             scheduleEnded -> "Terminó el horario previsto · detén cuando termine la clase"
-            isPaused -> "Grabación pausada"
-            else -> "Grabación en curso"
+            isPaused -> "$currentClassTitle · pausada"
+            else -> "$currentClassTitle · grabando"
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
@@ -388,35 +319,41 @@ class RecordingService : Service() {
     }
 
     private fun notifyState(isPaused: Boolean) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(isPaused))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, buildNotification(isPaused))
     }
 
     private fun notifyScheduleEnded() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(isPaused = recorder?.isPaused() == true, scheduleEnded = true))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, buildNotification(recorder?.isPaused() == true, scheduleEnded = true))
     }
 
-    private fun servicePendingIntent(requestCode: Int, action: String): PendingIntent {
-        return PendingIntent.getService(
-            this,
-            requestCode,
-            Intent(this, RecordingService::class.java).setAction(action),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
+    private fun servicePendingIntent(requestCode: Int, action: String): PendingIntent = PendingIntent.getService(
+        this, requestCode, Intent(this, RecordingService::class.java).setAction(action), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.recording_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Controles discretos de grabación de NotCan"
-            setSound(null, null)
+        val channel = NotificationChannel(CHANNEL_ID, getString(R.string.recording_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Controles discretos de grabación de NotCan"; setSound(null, null)
         }
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(channel)
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
+    }
+
+    private fun sanitizeFileName(value: String): String = value
+        .replace(Regex("[\\\\/:*?\"<>|]"), "-")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .take(90)
+        .ifBlank { "Clase" }
+
+    private fun uniqueRecordingFile(dir: File, requestedName: String): File {
+        val base = requestedName.substringBeforeLast('.')
+        val ext = requestedName.substringAfterLast('.', "m4a")
+        var candidate = File(dir, requestedName)
+        var n = 2
+        while (candidate.exists()) {
+            candidate = File(dir, "$base ($n).$ext")
+            n++
+        }
+        return candidate
     }
 
     companion object {
@@ -426,6 +363,7 @@ class RecordingService : Service() {
         const val ACTION_STOP = "com.notcan.app.recording.STOP"
         const val ACTION_MARK = "com.notcan.app.recording.MARK"
         const val EXTRA_CLASS_SESSION_ID = "class_session_id"
+        const val EXTRA_CLASS_TITLE = "class_title"
         const val EXTRA_PLANNED_END_EPOCH_MS = "planned_end_epoch_ms"
         const val EXTRA_AUTO_STOP_MODE = "auto_stop_mode"
         const val EXTRA_AUTO_STOP_GRACE_MINUTES = "auto_stop_grace_minutes"
@@ -442,7 +380,7 @@ class RecordingService : Service() {
         val state: StateFlow<RecordingState> = _state.asStateFlow()
         private val _liveTranscript = MutableStateFlow("")
         val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
-        private val _aiStatus = MutableStateFlow("IA inactiva")
+        private val _aiStatus = MutableStateFlow("Transcripción local inactiva")
         val aiStatus: StateFlow<String> = _aiStatus.asStateFlow()
     }
 }

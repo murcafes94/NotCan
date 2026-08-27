@@ -11,25 +11,35 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notcan.app.calendar.CalendarSync
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.NotePageEntity
+import com.notcan.app.localai.BackgroundTranscriptionManager
 import com.notcan.app.recording.RecordingService
+import com.notcan.app.recording.RecordingState
+import com.notcan.app.settings.NotCanPreferences
+import com.notcan.app.ui.AcademicExtrasViewModel
 import com.notcan.app.ui.NotCanViewModel
 import com.notcan.app.ui.ai.NotCanAiScreen
 import com.notcan.app.ui.calendar.AcademicCalendarScreen
+import com.notcan.app.ui.grades.GradesScreen
 import com.notcan.app.ui.home.NotCanHomeScreen
 import com.notcan.app.ui.home.NotCanRootV5
+import com.notcan.app.ui.settings.SettingsScreen
 import com.notcan.app.ui.theme.NotCanTheme
 import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     private val studyViewModel: NotCanViewModel by viewModels()
+    private val extrasViewModel: AcademicExtrasViewModel by viewModels()
+    private val preferences by lazy { NotCanPreferences(this) }
     private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
     private var pendingNoteClassId: String? = null
@@ -68,6 +78,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
 
         setContent {
             NotCanTheme {
@@ -90,19 +101,29 @@ class MainActivity : ComponentActivity() {
                 val aiBusy = studyViewModel.aiBusy.collectAsStateWithLifecycle().value
                 val aiError = studyViewModel.aiError.collectAsStateWithLifecycle().value
                 val aiResult = studyViewModel.aiResult.collectAsStateWithLifecycle().value
+                val studyModelState = studyViewModel.studyModelState.collectAsStateWithLifecycle().value
+                val studyModelProgress = studyViewModel.studyModelProgress.collectAsStateWithLifecycle().value
                 val whisperModelState = studyViewModel.whisperModelState.collectAsStateWithLifecycle().value
                 val whisperModelProgress = studyViewModel.whisperModelProgress.collectAsStateWithLifecycle().value
-                val localWhisperBusy = studyViewModel.localWhisperBusy.collectAsStateWithLifecycle().value
                 val localWhisperError = studyViewModel.localWhisperError.collectAsStateWithLifecycle().value
+                val gradeItems = extrasViewModel.gradeItems.collectAsStateWithLifecycle().value
+                val detectedCues = extrasViewModel.detectedCues.collectAsStateWithLifecycle().value
+
+                LaunchedEffect(selectedSubjectId, selectedClassId) {
+                    extrasViewModel.setContext(selectedSubjectId, selectedClassId)
+                }
 
                 val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
                 val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
                 val selectedClass = classes.firstOrNull { it.id == selectedClassId }
+                val recordingActive = recordingState is RecordingState.Recording || recordingState is RecordingState.Paused
 
                 NotCanRootV5(
                     cycle = selectedCycle,
                     subjects = subjects,
                     schedules = schedules,
+                    recordingActive = recordingActive,
+                    autoFocusOnRecording = { preferences.autoFocusOnRecording },
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                     onRecordPlannedClass = { occurrence ->
                         studyViewModel.materializeOccurrence(occurrence) { session ->
@@ -121,8 +142,9 @@ class MainActivity : ComponentActivity() {
                             documents = documents,
                             pdfInkStrokes = pdfInkStrokes,
                             transcripts = transcripts,
+                            detectedCues = detectedCues,
                             whisperModelState = whisperModelState,
-                            localWhisperBusy = localWhisperBusy,
+                            localWhisperBusy = false,
                             localWhisperError = localWhisperError,
                             selectedCycleId = selectedCycleId,
                             selectedSubjectId = selectedSubjectId,
@@ -141,7 +163,7 @@ class MainActivity : ComponentActivity() {
                             onShareNote = ::shareNote,
                             onShareAudio = ::shareAudio,
                             onDeleteAudio = studyViewModel::deleteAudio,
-                            onTranscribeLocal = studyViewModel::transcribeAudioLocal,
+                            onTranscribeLocal = ::enqueueBackgroundTranscription,
                             onImportDocument = ::requestDocumentImport,
                             onOpenDocument = ::openDocument,
                             onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
@@ -185,17 +207,31 @@ class MainActivity : ComponentActivity() {
                             result = aiResult,
                             transcripts = transcripts,
                             audioRecordings = audioRecordings,
+                            detectedCues = detectedCues,
+                            studyModelState = studyModelState,
+                            studyModelProgress = studyModelProgress,
                             whisperModelState = whisperModelState,
                             whisperModelProgress = whisperModelProgress,
-                            localWhisperBusy = localWhisperBusy,
+                            localWhisperBusy = false,
                             localWhisperError = localWhisperError,
+                            onDownloadStudyModel = studyViewModel::downloadStudyModel,
+                            onRemoveStudyModel = studyViewModel::removeStudyModel,
                             onDownloadWhisperModel = studyViewModel::downloadWhisperModel,
                             onRemoveWhisperModel = studyViewModel::removeWhisperModel,
-                            onTranscribeLocal = studyViewModel::transcribeAudioLocal,
+                            onTranscribeLocal = ::enqueueBackgroundTranscription,
                             onAsk = studyViewModel::askAi,
                             onClear = studyViewModel::clearAiMessage
                         )
-                    }
+                    },
+                    gradesContent = {
+                        GradesScreen(
+                            subjectName = selectedSubject?.name,
+                            items = gradeItems,
+                            onAdd = extrasViewModel::addGrade,
+                            onDelete = extrasViewModel::deleteGrade
+                        )
+                    },
+                    settingsContent = { SettingsScreen(preferences) }
                 )
             }
         }
@@ -222,6 +258,7 @@ class MainActivity : ComponentActivity() {
         val schedule = session?.scheduleId?.let { id -> studyViewModel.schedules.value.firstOrNull { it.id == id } }
         return PendingRecording(
             classSessionId = classSessionId,
+            classTitle = session?.title ?: "Clase",
             plannedEndEpochMs = plannedEndEpochMs ?: session?.plannedEndEpochMs,
             autoStopMode = autoStopMode ?: schedule?.autoStopMode ?: RecordingService.AUTO_STOP_ASK,
             graceMinutes = graceMinutes ?: schedule?.autoStopGraceMinutes ?: 5
@@ -232,12 +269,24 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, RecordingService::class.java)
             .setAction(RecordingService.ACTION_START)
             .putExtra(RecordingService.EXTRA_CLASS_SESSION_ID, request.classSessionId)
+            .putExtra(RecordingService.EXTRA_CLASS_TITLE, request.classTitle)
             .putExtra(RecordingService.EXTRA_AUTO_STOP_MODE, request.autoStopMode)
             .putExtra(RecordingService.EXTRA_AUTO_STOP_GRACE_MINUTES, request.graceMinutes)
-            // v0.6: recording never streams continuously to Gemini. Local M4A remains the source.
-            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, false)
+            .putExtra(RecordingService.EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
         request.plannedEndEpochMs?.let { intent.putExtra(RecordingService.EXTRA_PLANNED_END_EPOCH_MS, it) }
         ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun enqueueBackgroundTranscription(audioId: String) {
+        val audio = studyViewModel.audioRecordings.value.firstOrNull { it.id == audioId }
+        if (audio == null) {
+            Toast.makeText(this, "No encontré el audio", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val title = studyViewModel.classes.value.firstOrNull { it.id == audio.classSessionId }?.title ?: File(audio.localPath).nameWithoutExtension
+        requestNotificationPermissionIfNeeded()
+        BackgroundTranscriptionManager.enqueue(this, audio.id, audio.classSessionId, audio.localPath, title)
+        Toast.makeText(this, "Transcripción en segundo plano iniciada", Toast.LENGTH_SHORT).show()
     }
 
     private fun sendRecordingAction(action: String) {
@@ -283,9 +332,7 @@ class MainActivity : ComponentActivity() {
         if (readGranted && writeGranted) {
             pendingCalendarScheduleId = null
             performCalendarSync(scheduleId)
-        } else {
-            calendarPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
-        }
+        } else calendarPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
     }
 
     private fun performCalendarSync(scheduleId: String) {
@@ -309,7 +356,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Kept temporarily for migrations/imported data created by v0.3-v0.5. New UI no longer exposes document viewers.
     private fun requestDocumentImport(classSessionId: String) {
         pendingDocumentClassId = classSessionId
         documentLauncher.launch(arrayOf("application/pdf", "application/epub+zip", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
@@ -337,6 +383,7 @@ class MainActivity : ComponentActivity() {
 
     private data class PendingRecording(
         val classSessionId: String,
+        val classTitle: String,
         val plannedEndEpochMs: Long?,
         val autoStopMode: String,
         val graceMinutes: Int

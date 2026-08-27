@@ -18,9 +18,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NotePageEntity::class,
         DocumentResourceEntity::class,
         PdfInkStrokeEntity::class,
-        TranscriptEntity::class
+        TranscriptEntity::class,
+        GradeItemEntity::class,
+        DetectedCueEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class NotCanDatabase : RoomDatabase() {
@@ -125,6 +127,44 @@ abstract class NotCanDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `grade_items` (
+                        `id` TEXT NOT NULL,
+                        `subjectId` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `score` REAL NOT NULL,
+                        `maxScore` REAL NOT NULL,
+                        `weightPercent` REAL NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`subjectId`) REFERENCES `subjects`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_grade_items_subjectId` ON `grade_items` (`subjectId`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `detected_cues` (
+                        `id` TEXT NOT NULL,
+                        `classSessionId` TEXT NOT NULL,
+                        `transcriptId` TEXT,
+                        `audioId` TEXT,
+                        `label` TEXT NOT NULL,
+                        `keyword` TEXT NOT NULL,
+                        `excerpt` TEXT NOT NULL,
+                        `offsetMs` INTEGER,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`classSessionId`) REFERENCES `class_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_detected_cues_classSessionId` ON `detected_cues` (`classSessionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_detected_cues_transcriptId` ON `detected_cues` (`transcriptId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_detected_cues_label` ON `detected_cues` (`label`)")
+            }
+        }
+
         fun getInstance(context: Context): NotCanDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -132,7 +172,7 @@ abstract class NotCanDatabase : RoomDatabase() {
                     NotCanDatabase::class.java,
                     "notcan.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

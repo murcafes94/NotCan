@@ -1,42 +1,24 @@
 package com.notcan.app.ai
 
 import android.content.Context
-import com.google.firebase.Firebase
-import com.google.firebase.FirebaseApp
-import com.google.firebase.ai.ai
-import com.google.firebase.ai.type.AudioTranscriptionConfig
-import com.google.firebase.ai.type.GenerativeBackend
-import com.google.firebase.ai.type.InlineData
-import com.google.firebase.ai.type.LiveServerContent
-import com.google.firebase.ai.type.LiveSession
-import com.google.firebase.ai.type.PublicPreviewAPI
-import com.google.firebase.ai.type.ResponseModality
-import com.google.firebase.ai.type.content
-import com.google.firebase.ai.type.liveGenerationConfig
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
+import com.arm.aichat.AiChat
+import com.arm.aichat.InferenceEngine
+import com.notcan.app.localai.StudyModelManager
+import com.notcan.app.localai.StudyModelSpec
+import com.notcan.app.localai.StudyModelState
+import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
-import java.io.File
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 
+/**
+ * Fully local study assistant. No API key, cloud inference or token billing is used.
+ * The GGUF model is downloaded separately and executed by the pinned llama.cpp Android runtime.
+ */
 class NotCanAiService(private val context: Context) {
+    private val modelManager = StudyModelManager(context)
 
-    fun isConfigured(): Boolean =
-        FirebaseApp.getApps(context).isNotEmpty() || FirebaseApp.initializeApp(context) != null
-
-    private fun ensureFirebase() {
-        if (!isConfigured()) {
-            error("Gemini aún no está configurado. Vincula NotCan con Firebase AI Logic para activar la IA.")
-        }
-    }
-
-    suspend fun ask(prompt: String): String {
-        ensureFirebase()
-        val model = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(TEXT_MODEL)
-        return model.generateContent(prompt).text?.trim().orEmpty()
-            .ifBlank { "Gemini no devolvió texto." }
-    }
+    fun isConfigured(): Boolean = modelManager.state() == StudyModelState.INSTALLED
 
     suspend fun studyAssistant(
         subjectName: String?,
@@ -44,104 +26,121 @@ class NotCanAiService(private val context: Context) {
         transcript: String,
         question: String
     ): String {
-        val prompt = buildString {
-            appendLine("Eres el asistente académico de NotCan. Responde en español claro y preciso.")
-            subjectName?.let { appendLine("Materia: $it") }
-            if (notes.isNotBlank()) appendLine("\nAPUNTES DEL USUARIO:\n$notes")
-            if (transcript.isNotBlank()) appendLine("\nTRANSCRIPCIÓN DE CLASE:\n$transcript")
-            appendLine("\nSOLICITUD:\n$question")
-            appendLine("No inventes datos que no estén en el material. Señala cuando una respuesta sea una inferencia.")
+        require(isConfigured()) {
+            "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde IA → Modelos."
         }
-        return ask(prompt)
+
+        val strictSources = question.contains(SOURCE_ONLY_MARKER)
+        val socraticMode = question.contains(SOCRATIC_MARKER)
+        val cleanQuestion = question
+            .replace(SOURCE_ONLY_MARKER, "")
+            .replace(SOCRATIC_MARKER, "")
+            .trim()
+
+        val preferences = NotCanPreferences(context)
+        val systemPrompt = buildString {
+            appendLine("Eres ${preferences.assistantName}, el asistente académico local de NotCan.")
+            appendLine("Trabajas completamente offline y debes priorizar el material del estudiante.")
+            appendLine("Nivel de detalle: ${preferences.aiDetail}.")
+            if (preferences.aiInstructions.isNotBlank()) appendLine("Preferencias: ${preferences.aiInstructions}")
+            appendLine("No inventes instrucciones del profesor, fechas, tareas ni contenidos ausentes de las fuentes.")
+            appendLine("Distingue con claridad hechos presentes en las fuentes de inferencias o conocimiento general.")
+            appendLine("Responde en español salvo que el usuario pida otro idioma.")
+            appendLine("Las fuentes se entregan como [FUENTE: APUNTES] y [FUENTE: TRANSCRIPCIÓN].")
+
+            if (strictSources) {
+                appendLine("MODO SOLO FUENTES ACTIVADO.")
+                appendLine("Usa exclusivamente los apuntes y la transcripción suministrados; no completes huecos con conocimiento general ni memoria del modelo.")
+                appendLine("Si un dato solicitado no aparece en las fuentes, dilo claramente: 'No consta en las fuentes disponibles'.")
+                appendLine("Al final de cada párrafo factual indica [Apuntes], [Transcripción] o [Apuntes + Transcripción], según corresponda.")
+                appendLine("Antes de entregar la respuesta, comprueba que cada afirmación factual esté respaldada por el material. No muestres ese proceso de comprobación.")
+            }
+
+            if (socraticMode) {
+                appendLine("MODO SOCRÁTICO ACTIVADO.")
+                appendLine("No des una exposición completa ni reveles directamente la solución si el estudiante puede llegar a ella mediante preguntas.")
+                appendLine("Evalúa brevemente la respuesta del estudiante, corrige solo lo imprescindible y termina con UNA sola pregunta siguiente, concreta y progresiva.")
+                appendLine("Si es el primer turno, formula UNA pregunta diagnóstica basada en las fuentes.")
+            }
+        }
+
+        val sourceText = buildString {
+            subjectName?.let { appendLine("MATERIA: $it") }
+            if (notes.isNotBlank()) {
+                appendLine("\n[FUENTE: APUNTES]")
+                appendLine(notes.takeLast(MAX_SOURCE_CHARS / 2))
+            }
+            if (transcript.isNotBlank()) {
+                appendLine("\n[FUENTE: TRANSCRIPCIÓN]")
+                appendLine(transcript.takeLast(MAX_SOURCE_CHARS / 2))
+            }
+        }.takeLast(MAX_SOURCE_CHARS)
+
+        if (strictSources && sourceText.isBlank()) {
+            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo fuentes."
+        }
+
+        val userPrompt = buildString {
+            if (sourceText.isNotBlank()) {
+                appendLine(sourceText)
+                appendLine("\n--- FIN DE FUENTES ---\n")
+            }
+            appendLine("SOLICITUD:")
+            append(cleanQuestion)
+        }
+
+        return generate(systemPrompt, userPrompt)
     }
 
-    suspend fun transcribeAudio(file: File): String {
-        ensureFirebase()
-        require(file.exists()) { "El audio local no existe." }
-        require(file.length() <= SAFE_INLINE_AUDIO_BYTES) {
-            "Este audio es demasiado grande para transcripción final directa. Usa la transcripción en vivo o divide la grabación."
+    private suspend fun generate(systemPrompt: String, userPrompt: String): String {
+        val engine = AiChat.getInferenceEngine(context.applicationContext)
+        prepareEngine(engine)
+
+        return try {
+            engine.loadModel(modelManager.modelFile().absolutePath)
+            engine.setSystemPrompt(systemPrompt)
+            val answer = StringBuilder()
+            engine.sendUserPrompt(userPrompt, MAX_OUTPUT_TOKENS).collect { token -> answer.append(token) }
+            answer.toString().trim().ifBlank { "El modelo local no devolvió texto." }
+        } finally {
+            runCatching {
+                when (engine.state.value) {
+                    is InferenceEngine.State.ModelReady,
+                    is InferenceEngine.State.Error -> engine.cleanUp()
+                    else -> Unit
+                }
+            }
         }
-        val bytes = file.readBytes()
-        val model = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(TEXT_MODEL)
-        val prompt = content {
-            inlineData(bytes, "audio/m4a")
-            text(
-                "Transcribe fielmente esta clase en español. Conserva el orden, separa párrafos, " +
-                    "marca cambios de hablante cuando sean evidentes y no resumas."
-            )
+    }
+
+    private suspend fun prepareEngine(engine: InferenceEngine) {
+        when (engine.state.value) {
+            is InferenceEngine.State.ModelReady,
+            is InferenceEngine.State.Error -> runCatching { engine.cleanUp() }
+            else -> Unit
         }
-        return model.generateContent(prompt).text?.trim().orEmpty()
-            .ifBlank { "No se obtuvo una transcripción." }
+
+        if (engine.state.value is InferenceEngine.State.Uninitialized ||
+            engine.state.value is InferenceEngine.State.Initializing
+        ) {
+            val state = withTimeout(30_000L) {
+                engine.state.first {
+                    it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error
+                }
+            }
+            if (state is InferenceEngine.State.Error) throw state.exception
+        }
+
+        check(engine.state.value is InferenceEngine.State.Initialized) {
+            "El motor local no está listo (${engine.state.value.javaClass.simpleName})."
+        }
     }
 
     companion object {
-        const val TEXT_MODEL = "gemini-3.7-flash"
-        private const val SAFE_INLINE_AUDIO_BYTES = 14L * 1024L * 1024L
-    }
-}
-
-@OptIn(PublicPreviewAPI::class)
-class GeminiLiveTranscriber(
-    private val context: Context,
-    private val scope: CoroutineScope,
-    private val onTranscriptChunk: (String) -> Unit,
-    private val onStatus: (String) -> Unit = {}
-) {
-    private var session: LiveSession? = null
-    private var receiveJob: Job? = null
-
-    suspend fun start(): Boolean {
-        if (session != null) return true
-        val configured = FirebaseApp.getApps(context).isNotEmpty() || FirebaseApp.initializeApp(context) != null
-        if (!configured) {
-            onStatus("IA sin configurar")
-            return false
-        }
-        return try {
-            val liveModel = Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(
-                modelName = "gemini-2.5-flash-native-audio-preview-12-2025",
-                generationConfig = liveGenerationConfig {
-                    responseModality = ResponseModality.AUDIO
-                    inputAudioTranscription = AudioTranscriptionConfig()
-                }
-            )
-            val connected = liveModel.connect()
-            session = connected
-            receiveJob = scope.launch {
-                try {
-                    connected.receive().collect { message ->
-                        if (message is LiveServerContent) {
-                            message.inputTranscription?.text
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let(onTranscriptChunk)
-                        }
-                    }
-                } catch (t: Throwable) {
-                    onStatus("Transcripción en vivo interrumpida: ${t.message ?: "error de red"}")
-                }
-            }
-            onStatus("Transcripción en vivo activa")
-            true
-        } catch (t: Throwable) {
-            onStatus("No se pudo iniciar Gemini Live: ${t.message ?: "error"}")
-            false
-        }
-    }
-
-    suspend fun sendPcmRealtime(bytes: ByteArray) {
-        try {
-            session?.sendAudioRealtime(InlineData(bytes, "audio/pcm;rate=16000"))
-        } catch (t: Throwable) {
-            onStatus("Gemini Live sin conexión: ${t.message ?: "error"}")
-        }
-    }
-
-    suspend fun close() {
-        receiveJob?.cancel()
-        receiveJob = null
-        try { session?.close() } catch (_: Throwable) { }
-        session = null
-        onStatus("Transcripción en vivo detenida")
+        const val TEXT_MODEL = StudyModelSpec.MODEL_NAME
+        const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
+        const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
+        private const val MAX_SOURCE_CHARS = 22_000
+        private const val MAX_OUTPUT_TOKENS = 900
     }
 }

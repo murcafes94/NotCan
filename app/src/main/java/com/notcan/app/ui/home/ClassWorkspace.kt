@@ -2,8 +2,8 @@ package com.notcan.app.ui.home
 
 import android.media.MediaPlayer
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +76,7 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
+import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.SubjectEntity
@@ -103,6 +106,7 @@ internal fun NotCanClassWorkspace(
     notePages: List<NotePageEntity>,
     selectedNoteId: String?,
     transcripts: List<TranscriptEntity>,
+    detectedCues: List<DetectedCueEntity> = emptyList(),
     recordingState: RecordingState,
     whisperModelState: WhisperModelState,
     localWhisperBusy: Boolean,
@@ -125,10 +129,10 @@ internal fun NotCanClassWorkspace(
         if (classSession == null) {
             EmptyWorkspace(cycleName, subject != null, Modifier.align(Alignment.Center))
         } else {
-            Column(Modifier.fillMaxSize().padding(24.dp)) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp)) {
                 Text(listOfNotNull(cycleName, subject?.name).joinToString(" · "), color = NotCanGray, style = MaterialTheme.typography.labelLarge)
                 Text(classSession.title, color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(12.dp))
                 WorkspaceTabs(
                     classSessionId = classSession.id,
                     audioRecordings = audioRecordings,
@@ -136,6 +140,7 @@ internal fun NotCanClassWorkspace(
                     notePages = notePages,
                     selectedNoteId = selectedNoteId,
                     transcripts = transcripts,
+                    detectedCues = detectedCues,
                     whisperModelState = whisperModelState,
                     localWhisperBusy = localWhisperBusy,
                     localWhisperError = localWhisperError,
@@ -159,7 +164,7 @@ internal fun NotCanClassWorkspace(
             onResume = onResumeRecording,
             onStop = onStopRecording,
             onMark = onMarkMoment,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(22.dp)
+            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)
         )
     }
 }
@@ -167,7 +172,7 @@ internal fun NotCanClassWorkspace(
 @Composable
 private fun EmptyWorkspace(cycleName: String?, hasSubject: Boolean, modifier: Modifier = Modifier) {
     Column(modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.School, contentDescription = null, tint = NotCanBlue, modifier = Modifier.size(56.dp))
+        Icon(Icons.Default.School, null, tint = NotCanBlue, modifier = Modifier.size(56.dp))
         Spacer(Modifier.height(14.dp))
         Text(
             when { cycleName == null -> "Crea tu primer ciclo"; !hasSubject -> "Crea o selecciona una materia"; else -> "Crea o selecciona una clase" },
@@ -188,6 +193,7 @@ private fun WorkspaceTabs(
     notePages: List<NotePageEntity>,
     selectedNoteId: String?,
     transcripts: List<TranscriptEntity>,
+    detectedCues: List<DetectedCueEntity>,
     whisperModelState: WhisperModelState,
     localWhisperBusy: Boolean,
     localWhisperError: String?,
@@ -206,13 +212,13 @@ private fun WorkspaceTabs(
     TabRow(selectedTabIndex = selected, containerColor = Color.Transparent, contentColor = NotCanBlue, divider = { }) {
         tabs.forEachIndexed { index, title -> Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) }) }
     }
-    Spacer(Modifier.height(18.dp))
+    Spacer(Modifier.height(12.dp))
 
     when (selected) {
         0 -> AudioContent(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
-        1 -> TranscriptContent(audioRecordings, transcripts, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal)
+        1 -> TranscriptContent(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal)
         2 -> NotesContent(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onImportNote, onShareNote)
-        else -> StudyContent(transcripts, notePages)
+        else -> StudyContent(transcripts, notePages, detectedCues)
     }
 }
 
@@ -241,36 +247,39 @@ private fun AudioContent(
         } catch (_: Throwable) { playingId = null; isPlaying = false }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Mic, contentDescription = null, tint = NotCanBlue)
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("Grabaciones de la clase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                        Text("Puedes reproducir, compartir o eliminar cada audio manualmente.", color = NotCanGray)
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Mic, null, tint = NotCanBlue)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("Grabaciones de la clase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                            Text("Reproduce, comparte o elimina cada audio.", color = NotCanGray)
+                        }
                     }
-                }
-                Spacer(Modifier.height(16.dp))
-                if (audioRecordings.isEmpty()) Text("Todavía no hay grabaciones.", color = NotCanGray)
-                else audioRecordings.forEach { audio ->
-                    AudioRow(audio, playingId == audio.id && isPlaying, { toggleAudio(audio) }, { onShareAudio(audio) }, { onDeleteAudio(audio.id) })
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
+                    if (audioRecordings.isEmpty()) Text("Todavía no hay grabaciones.", color = NotCanGray)
+                    else audioRecordings.forEach { audio ->
+                        AudioRow(audio, playingId == audio.id && isPlaying, { toggleAudio(audio) }, { onShareAudio(audio) }, { onDeleteAudio(audio.id) })
+                        Spacer(Modifier.height(7.dp))
+                    }
                 }
             }
         }
-
-        Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(18.dp)) {
-                Text("Momentos importantes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(10.dp))
-                if (importantMoments.isEmpty()) Text("Pulsa ✴ durante la clase para guardar un instante importante.", color = NotCanGray)
-                else importantMoments.take(30).forEach { moment ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Star, null, tint = NotCanBlue, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text(formatDuration(moment.offsetMs), color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Momentos importantes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    if (importantMoments.isEmpty()) Text("Pulsa ✴ durante la clase para guardar un instante importante.", color = NotCanGray)
+                    else importantMoments.take(30).forEach { moment ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Star, null, tint = NotCanBlue, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(formatDuration(moment.offsetMs), color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
@@ -279,21 +288,13 @@ private fun AudioContent(
 }
 
 @Composable
-private fun AudioRow(
-    audio: AudioRecordingEntity,
-    playing: Boolean,
-    onPlay: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit
-) {
+private fun AudioRow(audio: AudioRecordingEntity, playing: Boolean, onPlay: () -> Unit, onShare: () -> Unit, onDelete: () -> Unit) {
     var confirmDelete by remember(audio.id) { mutableStateOf(false) }
     Surface(color = NotCanGraphite, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onPlay) {
-                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pausar" else "Reproducir", tint = NotCanBlue)
-            }
+            IconButton(onClick = onPlay) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pausar" else "Reproducir", tint = NotCanBlue) }
             Column(Modifier.weight(1f)) {
-                Text(File(audio.localPath).name, color = NotCanOffWhite, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(File(audio.localPath).nameWithoutExtension, color = NotCanOffWhite, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(formatDateTime(audio.createdAtEpochMs), color = NotCanGray, style = MaterialTheme.typography.labelSmall)
             }
             Text(formatDuration(audio.durationMs), color = NotCanGray)
@@ -316,44 +317,65 @@ private fun AudioRow(
 private fun TranscriptContent(
     audioRecordings: List<AudioRecordingEntity>,
     transcripts: List<TranscriptEntity>,
+    detectedCues: List<DetectedCueEntity>,
     modelState: WhisperModelState,
     busy: Boolean,
     error: String?,
     onTranscribeLocal: (String) -> Unit
 ) {
     val latestAudio = audioRecordings.firstOrNull()
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Transcripción local", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                Text(
-                    when (modelState) {
-                        WhisperModelState.INSTALLED -> "Whisper large-v3-turbo está instalado. El audio no sale de la tablet."
-                        WhisperModelState.DOWNLOADING -> "El modelo de ~1,5 GB se está descargando."
-                        WhisperModelState.NOT_INSTALLED -> "Descarga primero el modelo desde la pestaña IA."
-                    },
-                    color = NotCanGray
-                )
-                Button(
-                    enabled = latestAudio != null && modelState == WhisperModelState.INSTALLED && !busy,
-                    onClick = { latestAudio?.let { onTranscribeLocal(it.id) } }
-                ) { Text(if (busy) "Transcribiendo…" else "Transcribir último audio offline") }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Transcripción local", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        when (modelState) {
+                            WhisperModelState.INSTALLED -> "Whisper large-v3-turbo listo. La transcripción final puede continuar aunque cierres NotCan."
+                            WhisperModelState.DOWNLOADING -> "El modelo de ~1,5 GB se descarga en segundo plano."
+                            WhisperModelState.NOT_INSTALLED -> "Descarga primero el modelo desde IA → Fuentes."
+                        }, color = NotCanGray
+                    )
+                    Button(
+                        enabled = latestAudio != null && modelState == WhisperModelState.INSTALLED && !busy,
+                        onClick = { latestAudio?.let { onTranscribeLocal(it.id) } }
+                    ) { Text("Transcribir último audio en segundo plano") }
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
             }
         }
 
-        if (transcripts.isEmpty()) {
-            Text("Todavía no hay transcripción guardada.", color = NotCanGray)
-        } else {
-            transcripts.forEach { transcript ->
-                Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp)) {
-                        Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium)
-                        Spacer(Modifier.height(8.dp))
-                        Text(transcript.body, color = NotCanOffWhite)
-                    }
+        if (detectedCues.isNotEmpty()) {
+            item { Text("Énfasis detectado", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold) }
+            items(detectedCues, key = { it.id }) { cue -> CueCard(cue) }
+        }
+
+        if (transcripts.isEmpty()) item { Text("Todavía no hay transcripción guardada.", color = NotCanGray) }
+        else items(transcripts, key = { it.id }) { transcript ->
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(7.dp))
+                    Text(transcript.body, color = NotCanOffWhite)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CueCard(cue: DetectedCueEntity) {
+    val accent = when {
+        cue.label.contains("Examen") -> Color(0xFFAA73FF)
+        cue.label.contains("Tarea") -> Color(0xFFFFA13B)
+        cue.label.contains("Ojazos") || cue.label.contains("Importantísimo") -> Color(0xFFFF5555)
+        cue.label.contains("Ojo") -> Color(0xFFFFCF4D)
+        else -> NotCanBlue
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.12f)), shape = RoundedCornerShape(13.dp)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(cue.label, color = accent, fontWeight = FontWeight.SemiBold)
+            Text(cue.excerpt, color = NotCanOffWhite)
         }
     }
 }
@@ -374,7 +396,7 @@ private fun NotesContent(
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Apuntes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                Text("Crea una página o importa un archivo de texto/Markdown que ya tengas.", color = NotCanGray)
+                Text("Crea una página o importa apuntes de texto que ya tengas.", color = NotCanGray)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onCreateNote("Apuntes") }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Crear") }
                     OutlinedButton(onClick = { onImportNote(classSessionId) }) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Importar") }
@@ -384,9 +406,9 @@ private fun NotesContent(
         return
     }
 
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(modifier = Modifier.width(190.dp), color = NotCanGraphite, shape = RoundedCornerShape(14.dp)) {
-            Column(Modifier.padding(10.dp)) {
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(modifier = Modifier.width(170.dp), color = NotCanGraphite, shape = RoundedCornerShape(14.dp)) {
+            Column(Modifier.padding(9.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Páginas", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                     IconButton(onClick = { onCreateNote("Nueva página") }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.Add, "Nueva página") }
@@ -394,7 +416,7 @@ private fun NotesContent(
                 OutlinedButton(onClick = { onImportNote(classSessionId) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text("Importar")
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(5.dp))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     items(notePages, key = { it.id }) { note ->
                         Surface(
@@ -402,7 +424,7 @@ private fun NotesContent(
                             color = if (note.id == selectedNote.id) NotCanBlue.copy(alpha = 0.18f) else Color.Transparent,
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Column(Modifier.padding(10.dp)) {
+                            Column(Modifier.padding(9.dp)) {
                                 Text(note.title.ifBlank { "Apuntes" }, color = if (note.id == selectedNote.id) NotCanOffWhite else NotCanGray, maxLines = 2)
                                 Text(formatDateTime(note.updatedAtEpochMs), color = NotCanGray.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
                             }
@@ -411,12 +433,12 @@ private fun NotesContent(
                 }
             }
         }
-        NoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))
+        OfficeNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun NoteEditor(
+private fun OfficeNoteEditor(
     note: NotePageEntity,
     onUpdateNote: (String, String, String) -> Unit,
     onShare: () -> Unit,
@@ -444,37 +466,65 @@ private fun NoteEditor(
         }
     }
 
-    Card(modifier = modifier.fillMaxSize(), colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.padding(16.dp)) {
+    Card(modifier = modifier.fillMaxSize(), colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Título") }, singleLine = true, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(8.dp))
                 IconButton(onClick = onShare) { Icon(Icons.Default.Share, "Compartir apuntes", tint = NotCanBlue) }
             }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.height(7.dp))
+            Divider(color = NotCanGray.copy(alpha = 0.25f))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 IconButton(onClick = { richState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold)) }) { Icon(Icons.Default.FormatBold, "Negrita") }
                 IconButton(onClick = { richState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic)) }) { Icon(Icons.Default.FormatItalic, "Cursiva") }
                 IconButton(onClick = { richState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline)) }) { Icon(Icons.Default.FormatUnderlined, "Subrayado") }
-                TextButton(onClick = { richState.toggleSpanStyle(SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold)) }) { Text("H1") }
-                IconButton(onClick = { richState.toggleUnorderedList() }) { Icon(Icons.Default.FormatListBulleted, "Lista") }
-                IconButton(onClick = { richState.toggleOrderedList() }) { Icon(Icons.Default.FormatListNumbered, "Lista numerada") }
+                TextButton(onClick = { richState.toggleSpanStyle(SpanStyle(fontSize = 25.sp, fontWeight = FontWeight.Bold)) }) { Text("H1") }
+                TextButton(onClick = { richState.toggleSpanStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)) }) { Text("H2") }
+                IconButton(onClick = { richState.toggleUnorderedList() }) { Icon(Icons.Default.FormatListBulleted, "Viñetas") }
+                IconButton(onClick = { richState.toggleOrderedList() }) { Icon(Icons.Default.FormatListNumbered, "Numeración") }
+                Text("  Resaltado:", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
+                HighlightButton(Color(0xFFFFE066), richState = { richState.toggleSpanStyle(SpanStyle(background = Color(0xFFFFE066))) })
+                HighlightButton(Color(0xFF8EE39A), richState = { richState.toggleSpanStyle(SpanStyle(background = Color(0xFF8EE39A))) })
+                HighlightButton(Color(0xFF7EC8FF), richState = { richState.toggleSpanStyle(SpanStyle(background = Color(0xFF7EC8FF))) })
+                HighlightButton(Color(0xFFFF9BB8), richState = { richState.toggleSpanStyle(SpanStyle(background = Color(0xFFFF9BB8))) })
+                Text("  Texto:", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
+                TextColorButton("A", NotCanOffWhite) { richState.toggleSpanStyle(SpanStyle(color = NotCanOffWhite)) }
+                TextColorButton("A", NotCanBlue) { richState.toggleSpanStyle(SpanStyle(color = NotCanBlue)) }
+                TextColorButton("A", NotCanRed) { richState.toggleSpanStyle(SpanStyle(color = NotCanRed)) }
+                TextColorButton("A", Color(0xFF65C76F)) { richState.toggleSpanStyle(SpanStyle(color = Color(0xFF65C76F))) }
             }
+            Divider(color = NotCanGray.copy(alpha = 0.25f))
             Spacer(Modifier.height(6.dp))
             RichTextEditor(state = richState, modifier = Modifier.fillMaxWidth().weight(1f))
-            Spacer(Modifier.height(6.dp))
-            Text("Formato visual · guardado automático local", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.height(5.dp))
+            Text("Editor visual · formato directo · guardado automático local", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
 
 @Composable
-private fun StudyContent(transcripts: List<TranscriptEntity>, notes: List<NotePageEntity>) {
+private fun HighlightButton(color: Color, richState: () -> Unit) {
+    Surface(modifier = Modifier.size(30.dp).clickable(onClick = richState), color = color, shape = RoundedCornerShape(6.dp)) { }
+}
+
+@Composable
+private fun TextColorButton(label: String, color: Color, onClick: () -> Unit) {
+    TextButton(onClick = onClick) { Text(label, color = color, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun StudyContent(transcripts: List<TranscriptEntity>, notes: List<NotePageEntity>, cues: List<DetectedCueEntity>) {
     Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text("Estudio", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-            Text("${transcripts.size} transcripción(es) · ${notes.size} página(s) de apuntes", color = NotCanGray)
-            Text("Esta sección será el punto de entrada para resumen, preguntas, flashcards y mapas usando el texto ya transcrito. La transcripción básica queda local y sin tokens.", color = NotCanGray)
+            Text("${transcripts.size} transcripción(es) · ${notes.size} página(s) · ${cues.size} señal(es) académicas", color = NotCanGray)
+            if (cues.isNotEmpty()) {
+                Text("NotCan ya está separando tareas, exámenes y frases enfatizadas para que no queden escondidas dentro de una clase larga.", color = NotCanGray)
+            } else Text("Cuando transcribas, aquí aparecerán tareas, exámenes y énfasis detectados automáticamente.", color = NotCanGray)
         }
     }
 }
@@ -507,9 +557,7 @@ private fun RecordingControls(
             }
             if (!active) {
                 RoundControl(Icons.Default.RadioButtonChecked, if (selectedClassId == null) "Selecciona una clase" else "Comenzar grabación", if (selectedClassId == null) NotCanGray else NotCanRed, NotCanGraphite, selectedClassId != null) { selectedClassId?.let(onStart) }
-            } else {
-                RoundControl(Icons.Default.Circle, "Controles de grabación", NotCanRed, NotCanGraphite) { expanded = !expanded }
-            }
+            } else RoundControl(Icons.Default.Circle, "Controles de grabación", NotCanRed, NotCanGraphite) { expanded = !expanded }
         }
     }
 }

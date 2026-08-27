@@ -1,6 +1,6 @@
 # Third-party notices
 
-NotCan se desarrolla con una política explícita de procedencia y licencias.
+NotCan se desarrolla con una política explícita de procedencia y licencias. La versión local-first no requiere un proveedor de IA de pago por tokens.
 
 ## Dependencias incorporadas
 
@@ -8,10 +8,36 @@ NotCan se desarrolla con una política explícita de procedencia y licencias.
 - AAR: `dev.ffmpegkit-maintained:whisper-android:1.0.0`.
 - Motor subyacente: `ggml-org/whisper.cpp`.
 - Licencia declarada por ambos proyectos: MIT.
-- Uso en NotCan: transcripción de archivos completamente local en Android.
+- Uso en NotCan: transcripción final de archivos completamente local en Android.
 - El modelo `ggml-large-v3-turbo.bin` no se empaqueta en la APK; el usuario lo descarga por separado desde el repositorio de modelos de whisper.cpp/Hugging Face.
 - NotCan no incorpora código de NotelyVoice para esta función.
-- Verificación de esta integración: compilación Android CI de la versión 0.6.x antes de fusionar.
+
+### llama.cpp Android
+- Proyecto: `ggml-org/llama.cpp`.
+- Licencia: MIT.
+- Commit fijado en el submódulo `third_party/llama.cpp`: `192067b72d1b7a3653b3f0c59190303b18596637`.
+- Uso en NotCan: inferencia GGUF local para el asistente académico, mediante el puente Android/JNI oficial del proyecto.
+- El modelo generativo no se empaqueta dentro de la APK.
+
+### DeepSeek-R1-Distill-Qwen-1.5B
+- Modelo original: `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`, publicado por DeepSeek como modelo destilado basado en Qwen2.5.
+- Uso en NotCan: cerebro local inicial del asistente académico.
+- Cuantización utilizada: `bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF`, archivo `Q4_K_M`, aproximadamente 1,1 GB.
+- SHA-256 publicado para el GGUF seleccionado: `1741e5b2d062b07acf048bf0d2c514dadf2a48f94e2b4aa0cfe069af3838ee2f`.
+- Se descarga bajo petición del usuario y se ejecuta localmente; NotCan no envía las fuentes académicas a una API de DeepSeek.
+
+### sherpa-onnx
+- Proyecto: `k2-fsa/sherpa-onnx`.
+- Licencia: Apache-2.0.
+- Runtime Android fijado: `sherpa-onnx-1.13.6.aar`.
+- SHA-256 del AAR verificado durante la compilación: `0012d9a28f15bd6fb966b62b70a75da3990512fdccce28b83098248ce4be1698`.
+- Uso en NotCan: transcripción provisional local mientras se graba una clase.
+- Modelo: `sherpa-onnx-moonshine-base-es-quantized-2026-02-27`, español, aproximadamente 63 MB; se descarga por separado desde los releases oficiales de sherpa-onnx.
+
+### Apache Commons Compress
+- Artefacto: `org.apache.commons:commons-compress:1.27.1`.
+- Licencia: Apache-2.0.
+- Uso: extraer localmente el paquete `.tar.bz2` del modelo Moonshine después de la descarga.
 
 ### Compose Rich Editor
 - Artefacto: `com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10`.

@@ -2,7 +2,9 @@ package com.notcan.app.data
 
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
+import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.DocumentResourceEntity
+import com.notcan.app.data.local.GradeItemEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.NotCanDao
@@ -12,9 +14,6 @@ import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.SubjectScheduleEntity
 import com.notcan.app.data.local.TranscriptEntity
 import kotlinx.coroutines.flow.Flow
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 class StudyRepository(private val dao: NotCanDao) {
@@ -28,6 +27,8 @@ class StudyRepository(private val dao: NotCanDao) {
     fun observeDocuments(classSessionId: String): Flow<List<DocumentResourceEntity>> = dao.observeDocuments(classSessionId)
     fun observePdfInkStrokes(classSessionId: String): Flow<List<PdfInkStrokeEntity>> = dao.observePdfInkStrokes(classSessionId)
     fun observeTranscripts(classSessionId: String): Flow<List<TranscriptEntity>> = dao.observeTranscripts(classSessionId)
+    fun observeGradeItems(subjectId: String): Flow<List<GradeItemEntity>> = dao.observeGradeItems(subjectId)
+    fun observeDetectedCues(classSessionId: String): Flow<List<DetectedCueEntity>> = dao.observeDetectedCues(classSessionId)
 
     suspend fun createCycle(name: String, makeActive: Boolean = true): StudyCycleEntity {
         val now = System.currentTimeMillis()
@@ -88,10 +89,13 @@ class StudyRepository(private val dao: NotCanDao) {
 
     suspend fun createClassSession(subjectId: String, title: String): ClassSessionEntity {
         val now = System.currentTimeMillis()
+        val classNumber = dao.countClassesForSubject(subjectId) + 1
+        val subject = dao.getSubject(subjectId)
+        val resolvedTitle = title.trim().ifBlank { "${subject?.name ?: "Clase"} - Clase $classNumber" }
         val classSession = ClassSessionEntity(
             id = UUID.randomUUID().toString(),
             subjectId = subjectId,
-            title = title.trim(),
+            title = resolvedTitle,
             startedAtEpochMs = now,
             createdAtEpochMs = now
         )
@@ -106,14 +110,11 @@ class StudyRepository(private val dao: NotCanDao) {
         occurrenceEndEpochMs: Long
     ): ClassSessionEntity {
         dao.findMaterializedSession(subject.id, occurrenceStartEpochMs)?.let { return it }
-        val date = Instant.ofEpochMilli(occurrenceStartEpochMs)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
-            .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+        val classNumber = dao.countClassesForSubject(subject.id) + 1
         val session = ClassSessionEntity(
             id = UUID.randomUUID().toString(),
             subjectId = subject.id,
-            title = "${subject.name} · $date",
+            title = "${subject.name} - Clase $classNumber",
             startedAtEpochMs = occurrenceStartEpochMs,
             createdAtEpochMs = System.currentTimeMillis(),
             scheduleId = schedule.id,
@@ -138,6 +139,25 @@ class StudyRepository(private val dao: NotCanDao) {
         return note
     }
 
+    suspend fun addGradeItem(subjectId: String, title: String, score: Double, maxScore: Double, weightPercent: Double): GradeItemEntity {
+        require(maxScore > 0.0) { "La nota máxima debe ser mayor que cero" }
+        require(weightPercent in 0.0..100.0) { "El porcentaje debe estar entre 0 y 100" }
+        val item = GradeItemEntity(
+            id = UUID.randomUUID().toString(),
+            subjectId = subjectId,
+            title = title.trim().ifBlank { "Evaluación" },
+            score = score,
+            maxScore = maxScore,
+            weightPercent = weightPercent,
+            createdAtEpochMs = System.currentTimeMillis()
+        )
+        dao.insertGradeItem(item)
+        return item
+    }
+
+    suspend fun deleteGradeItem(itemId: String) = dao.deleteGradeItem(itemId)
+    suspend fun saveDetectedCue(cue: DetectedCueEntity) = dao.insertDetectedCue(cue)
+    suspend fun deleteDetectedCuesForTranscript(transcriptId: String) = dao.deleteDetectedCuesForTranscript(transcriptId)
     suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)
     suspend fun saveDocument(document: DocumentResourceEntity) = dao.insertDocument(document)
     suspend fun saveAudioRecording(audioRecording: AudioRecordingEntity) = dao.insertAudioRecording(audioRecording)

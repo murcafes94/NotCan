@@ -39,6 +39,12 @@ interface NotCanDao {
     @Query("SELECT * FROM transcripts WHERE classSessionId = :classSessionId ORDER BY updatedAtEpochMs DESC")
     fun observeTranscripts(classSessionId: String): Flow<List<TranscriptEntity>>
 
+    @Query("SELECT * FROM grade_items WHERE subjectId = :subjectId ORDER BY createdAtEpochMs ASC")
+    fun observeGradeItems(subjectId: String): Flow<List<GradeItemEntity>>
+
+    @Query("SELECT * FROM detected_cues WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs ASC")
+    fun observeDetectedCues(classSessionId: String): Flow<List<DetectedCueEntity>>
+
     @Query("SELECT * FROM class_sessions WHERE subjectId = :subjectId AND plannedStartEpochMs = :plannedStart LIMIT 1")
     suspend fun findMaterializedSession(subjectId: String, plannedStart: Long): ClassSessionEntity?
 
@@ -47,6 +53,12 @@ interface NotCanDao {
 
     @Query("SELECT * FROM subjects WHERE id = :subjectId LIMIT 1")
     suspend fun getSubject(subjectId: String): SubjectEntity?
+
+    @Query("SELECT * FROM class_sessions WHERE id = :classId LIMIT 1")
+    suspend fun getClassSession(classId: String): ClassSessionEntity?
+
+    @Query("SELECT COUNT(*) FROM class_sessions WHERE subjectId = :subjectId")
+    suspend fun countClassesForSubject(subjectId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCycle(cycle: StudyCycleEntity)
@@ -77,6 +89,12 @@ interface NotCanDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTranscript(transcript: TranscriptEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGradeItem(item: GradeItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDetectedCue(cue: DetectedCueEntity)
 
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
@@ -122,4 +140,10 @@ interface NotCanDao {
 
     @Query("DELETE FROM pdf_ink_strokes WHERE documentId = :documentId AND pageIndex = :pageIndex")
     suspend fun clearPdfInkPage(documentId: String, pageIndex: Int)
+
+    @Query("DELETE FROM grade_items WHERE id = :itemId")
+    suspend fun deleteGradeItem(itemId: String)
+
+    @Query("DELETE FROM detected_cues WHERE transcriptId = :transcriptId")
+    suspend fun deleteDetectedCuesForTranscript(transcriptId: String)
 }
