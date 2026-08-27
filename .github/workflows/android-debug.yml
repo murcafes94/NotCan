@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/v0.7-focus-background" ]
+    branches: [ "main", "feature/v0.7-focus-background", "fix/v0.7.1-crashes" ]
   workflow_dispatch:
 
 jobs:
@@ -83,12 +83,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.0-test"
+          TAG="v0.7.1-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.0-test.apk" \
+            "$APK#NotCan-v0.7.1-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.0 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.0. Incluye IA local, transcripción local provisional y final, herramientas de estudio basadas en fuentes, calendario, calificaciones, notas y modo concentración."
+            --title "NotCan v0.7.1 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.1. Corrige el compartido de audio y usa un backend ARM64 más compatible para la IA local."

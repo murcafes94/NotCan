@@ -21,9 +21,13 @@ android {
                 arguments += "-DLLAMA_BUILD_COMMON=ON"
                 arguments += "-DLLAMA_OPENSSL=OFF"
                 arguments += "-DGGML_NATIVE=OFF"
-                arguments += "-DGGML_BACKEND_DL=ON"
-                arguments += "-DGGML_CPU_ALL_VARIANTS=ON"
+                // v0.7.1: use one conservative ARM64 CPU backend. Dynamic CPU variants and
+                // KleidiAI can select instructions that are not available on every Android SoC.
+                arguments += "-DGGML_BACKEND_DL=OFF"
+                arguments += "-DGGML_CPU_ALL_VARIANTS=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
+                arguments += "-DGGML_OPENMP=OFF"
+                arguments += "-DGGML_CPU_KLEIDIAI=OFF"
             }
         }
     }
