@@ -9,13 +9,14 @@ import com.notcan.app.ai.NotCanAiService
 import com.notcan.app.calendar.PlannedClassOccurrence
 import com.notcan.app.calendar.ReminderScheduler
 import com.notcan.app.data.StudyRepository
-import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.PdfInkStrokeEntity
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.LocalWhisperEngine
+import com.notcan.app.localai.StudyModelManager
+import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
@@ -37,6 +38,7 @@ import java.util.UUID
 class NotCanViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = StudyRepository(NotCanDatabase.getInstance(application).dao())
     private val aiService = NotCanAiService(application)
+    private val studyModelManager = StudyModelManager(application)
     private val whisperModelManager = WhisperModelManager(application)
     private val localWhisper = LocalWhisperEngine(application)
 
@@ -57,6 +59,11 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     val aiBusy: StateFlow<Boolean> = _aiBusy.asStateFlow()
     private val _aiConfigured = MutableStateFlow(aiService.isConfigured())
     val aiConfigured: StateFlow<Boolean> = _aiConfigured.asStateFlow()
+
+    private val _studyModelState = MutableStateFlow(studyModelManager.state())
+    val studyModelState: StateFlow<StudyModelState> = _studyModelState.asStateFlow()
+    private val _studyModelProgress = MutableStateFlow(studyModelManager.progressPercent())
+    val studyModelProgress: StateFlow<Int?> = _studyModelProgress.asStateFlow()
 
     private val _whisperModelState = MutableStateFlow(whisperModelManager.state())
     val whisperModelState: StateFlow<WhisperModelState> = _whisperModelState.asStateFlow()
@@ -121,7 +128,12 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
             while (isActive) {
                 _whisperModelState.value = whisperModelManager.state()
                 _whisperModelProgress.value = whisperModelManager.progressPercent()
-                delay(if (_whisperModelState.value == WhisperModelState.DOWNLOADING) 1_500 else 8_000)
+                _studyModelState.value = studyModelManager.state()
+                _studyModelProgress.value = studyModelManager.progressPercent()
+                _aiConfigured.value = _studyModelState.value == StudyModelState.INSTALLED
+                val downloading = _whisperModelState.value == WhisperModelState.DOWNLOADING ||
+                    _studyModelState.value == StudyModelState.DOWNLOADING
+                delay(if (downloading) 1_500 else 8_000)
             }
         }
     }
@@ -166,8 +178,11 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
 
     fun createClass(title: String) {
         val parent = _selectedSubjectId.value ?: return
-        if (title.isBlank()) return
-        viewModelScope.launch { _selectedClassId.value = repository.createClassSession(parent, title).id }
+        viewModelScope.launch {
+            val number = classes.value.size + 1
+            val resolvedTitle = title.trim().ifBlank { "Clase $number" }
+            _selectedClassId.value = repository.createClassSession(parent, resolvedTitle).id
+        }
     }
 
     fun addSchedule(subjectId: String, weekdayIso: Int, startMinuteOfDay: Int, endMinuteOfDay: Int, autoStopMode: String, autoStopGraceMinutes: Int) {
@@ -246,6 +261,29 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun downloadStudyModel() {
+        _aiError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                studyModelManager.enqueueDownload()
+                _studyModelState.value = studyModelManager.state()
+            } catch (t: Throwable) {
+                _aiError.value = t.message ?: "No se pudo iniciar la descarga de NotCan AI"
+            }
+        }
+    }
+
+    fun removeStudyModel() {
+        if (_aiBusy.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            studyModelManager.removeModel()
+            _studyModelState.value = studyModelManager.state()
+            _studyModelProgress.value = null
+            _aiConfigured.value = false
+            _aiResult.value = ""
+        }
+    }
+
     fun transcribeAudioLocal(audioId: String) {
         val audio = audioRecordings.value.firstOrNull { it.id == audioId } ?: return
         if (_localWhisperBusy.value) return
@@ -302,7 +340,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun askAi(question: String) {
-        if (question.isBlank()) return
+        if (question.isBlank() || _aiBusy.value) return
         _aiBusy.value = true
         _aiError.value = null
         viewModelScope.launch(Dispatchers.IO) {
@@ -314,34 +352,14 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                 _aiConfigured.value = true
             } catch (t: Throwable) {
                 _aiConfigured.value = aiService.isConfigured()
-                _aiError.value = t.message ?: "No se pudo consultar Gemini"
+                _aiError.value = t.message ?: "No se pudo ejecutar la IA local"
             } finally {
                 _aiBusy.value = false
             }
         }
     }
 
-    fun transcribeAudio(audioId: String) {
-        val audio: AudioRecordingEntity = audioRecordings.value.firstOrNull { it.id == audioId } ?: return
-        _aiBusy.value = true
-        _aiError.value = null
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val text = aiService.transcribeAudio(File(audio.localPath))
-                val now = System.currentTimeMillis()
-                repository.saveTranscript(
-                    TranscriptEntity(UUID.randomUUID().toString(), audio.classSessionId, audio.id, text, "FINAL_CLOUD", NotCanAiService.TEXT_MODEL, now, now)
-                )
-                _aiResult.value = text
-                _aiConfigured.value = true
-            } catch (t: Throwable) {
-                _aiConfigured.value = aiService.isConfigured()
-                _aiError.value = t.message ?: "No se pudo transcribir el audio"
-            } finally {
-                _aiBusy.value = false
-            }
-        }
-    }
+    fun transcribeAudio(audioId: String) = transcribeAudioLocal(audioId)
 
     fun clearAiMessage() { _aiError.value = null; _aiResult.value = "" }
 
