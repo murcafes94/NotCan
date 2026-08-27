@@ -159,6 +159,7 @@ class MainActivity : ComponentActivity() {
                             onCreateClass = studyViewModel::createClass,
                             onCreateNote = studyViewModel::createNotePage,
                             onUpdateNote = studyViewModel::updateNotePage,
+                            onDeleteNote = studyViewModel::deleteNotePage,
                             onImportNote = ::requestNoteImport,
                             onShareNote = ::shareNote,
                             onShareAudio = ::shareAudio,

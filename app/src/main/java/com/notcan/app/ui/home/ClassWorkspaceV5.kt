@@ -110,6 +110,7 @@ internal fun NotCanClassWorkspaceV5(
     onSelectNote: (String) -> Unit,
     onCreateNote: (String) -> Unit,
     onUpdateNote: (String, String, String) -> Unit,
+    onDeleteNote: (String) -> Unit,
     onImportNote: (String) -> Unit,
     onShareNote: (NotePageEntity) -> Unit,
     onShareAudio: (AudioRecordingEntity) -> Unit,
@@ -148,6 +149,7 @@ internal fun NotCanClassWorkspaceV5(
                         onSelectNote = onSelectNote,
                         onCreateNote = onCreateNote,
                         onUpdateNote = onUpdateNote,
+                        onDeleteNote = onDeleteNote,
                         onShareNote = onShareNote,
                         modifier = Modifier.weight(1f)
                     )
@@ -169,6 +171,7 @@ internal fun NotCanClassWorkspaceV5(
                         onSelectNote = onSelectNote,
                         onCreateNote = onCreateNote,
                         onUpdateNote = onUpdateNote,
+                        onDeleteNote = onDeleteNote,
                         onImportNote = onImportNote,
                         onShareNote = onShareNote,
                         onShareAudio = onShareAudio,
@@ -220,6 +223,7 @@ private fun FocusedRecordingDesk(
     onSelectNote: (String) -> Unit,
     onCreateNote: (String) -> Unit,
     onUpdateNote: (String, String, String) -> Unit,
+    onDeleteNote: (String) -> Unit,
     onShareNote: (NotePageEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -257,13 +261,13 @@ private fun FocusedRecordingDesk(
             }
         } else if (wide) {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(0.70f))
+                WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(0.70f))
                 LiveTranscriptPanel(liveTranscript, liveStatus, Modifier.weight(0.30f))
             }
         } else {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LiveTranscriptPanel(liveTranscript, liveStatus, Modifier.height(150.dp).fillMaxWidth())
-                WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))
+                WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
             }
         }
     }
@@ -319,6 +323,7 @@ private fun NormalClassTabs(
     onSelectNote: (String) -> Unit,
     onCreateNote: (String) -> Unit,
     onUpdateNote: (String, String, String) -> Unit,
+    onDeleteNote: (String) -> Unit,
     onImportNote: (String) -> Unit,
     onShareNote: (NotePageEntity) -> Unit,
     onShareAudio: (AudioRecordingEntity) -> Unit,
@@ -338,7 +343,7 @@ private fun NormalClassTabs(
             when (selected) {
                 0 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
                 1 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal)
-                2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onImportNote, onShareNote)
+                2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)
                 else -> StudyContentV5(transcripts, notePages, detectedCues)
             }
         }
@@ -353,6 +358,7 @@ private fun NotesContentV5(
     onSelectNote: (String) -> Unit,
     onCreateNote: (String) -> Unit,
     onUpdateNote: (String, String, String) -> Unit,
+    onDeleteNote: (String) -> Unit,
     onImportNote: (String) -> Unit,
     onShareNote: (NotePageEntity) -> Unit
 ) {
@@ -376,7 +382,7 @@ private fun NotesContentV5(
     if (wide) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             NotePagesRail(notePages, selectedNote.id, onSelectNote, onCreateNote, onImportNote, classSessionId, Modifier.width(160.dp))
-            WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))
+            WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
         }
     } else {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -388,7 +394,7 @@ private fun NotesContentV5(
                 }
                 item { OutlinedButton(onClick = { onCreateNote("Nueva página") }) { Text("+") } }
             }
-            WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, Modifier.weight(1f))
+            WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
         }
     }
 }

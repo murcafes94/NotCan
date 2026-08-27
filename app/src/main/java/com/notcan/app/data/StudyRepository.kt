@@ -159,6 +159,7 @@ class StudyRepository(private val dao: NotCanDao) {
     suspend fun saveDetectedCue(cue: DetectedCueEntity) = dao.insertDetectedCue(cue)
     suspend fun deleteDetectedCuesForTranscript(transcriptId: String) = dao.deleteDetectedCuesForTranscript(transcriptId)
     suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)
+    suspend fun deleteNotePage(noteId: String) = dao.deleteNotePage(noteId)
     suspend fun saveDocument(document: DocumentResourceEntity) = dao.insertDocument(document)
     suspend fun saveAudioRecording(audioRecording: AudioRecordingEntity) = dao.insertAudioRecording(audioRecording)
     suspend fun deleteAudio(audioId: String) = dao.deleteAudioAndMoments(audioId)
