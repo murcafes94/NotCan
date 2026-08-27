@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
+import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotePageEntity
@@ -14,8 +15,8 @@ import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.recording.RecordingState
 
 /**
- * Compatibility wrapper kept while the older PDF entities remain in the database.
- * v0.6 intentionally removes PDF/EPUB/DOCX viewers from the class UI.
+ * Compatibility wrapper kept while older PDF entities remain in the database.
+ * Current UI intentionally focuses on audio, transcription, notes and study.
  */
 @Composable
 internal fun NotCanClassWorkspaceV4(
@@ -30,6 +31,7 @@ internal fun NotCanClassWorkspaceV4(
     documents: List<DocumentResourceEntity>,
     pdfInkStrokes: List<PdfInkStrokeEntity>,
     transcripts: List<TranscriptEntity>,
+    detectedCues: List<DetectedCueEntity> = emptyList(),
     recordingState: RecordingState,
     whisperModelState: WhisperModelState,
     localWhisperBusy: Boolean,
@@ -53,7 +55,6 @@ internal fun NotCanClassWorkspaceV4(
     onStopRecording: () -> Unit,
     onMarkMoment: () -> Unit
 ) {
-    // documents/pdfInkStrokes and their callbacks are deliberately retained only for DB migration compatibility.
     NotCanClassWorkspace(
         modifier = modifier,
         cycleName = cycleName,
@@ -64,6 +65,7 @@ internal fun NotCanClassWorkspaceV4(
         notePages = notePages,
         selectedNoteId = selectedNoteId,
         transcripts = transcripts,
+        detectedCues = detectedCues,
         recordingState = recordingState,
         whisperModelState = whisperModelState,
         localWhisperBusy = localWhisperBusy,
