@@ -64,6 +64,16 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          EXPECTED="ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586"
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
       - name: Upload debug APK artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
@@ -87,4 +97,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "NotCan v0.7.2 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.2. Añade escritorio de clase centrado en apuntes, transcripción provisional visible, editor HTML tipo Writer, icono corregido y ajustes de memoria/compatibilidad de la IA local."
+            --notes "APK de prueba de NotCan v0.7.2. Añade escritorio de clase centrado en apuntes, transcripción provisional visible, editor HTML tipo Writer, icono corregido, ajustes de memoria/compatibilidad de la IA local y una firma de prueba persistente para futuras actualizaciones."
