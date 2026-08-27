@@ -69,16 +69,14 @@ dependencies {
     // Reliable background processing. Long local transcriptions can continue after leaving the app.
     implementation("androidx.work:work-runtime:2.11.2")
 
-    // Local-first transcription. The model itself is downloaded separately (~1.5 GiB).
+    // Final local transcription. The model itself is downloaded separately (~1.5 GiB).
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
 
-    // WYSIWYG notes editor, Apache-2.0. rc10 matches Kotlin 2.0.21 / Compose 1.7.x.
-    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
+    // Local generative study assistant powered by the pinned llama.cpp Android runtime.
+    implementation(project(":llama-android"))
 
-    // Kept only as an optional cloud study assistant. Local transcription never depends on it.
-    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
-    implementation("com.google.firebase:firebase-ai")
-    implementation("com.google.firebase:firebase-appcheck-debug")
+    // WYSIWYG notes editor, Apache-2.0.
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
