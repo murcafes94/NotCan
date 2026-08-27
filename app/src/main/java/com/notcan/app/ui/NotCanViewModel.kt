@@ -218,6 +218,11 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun deleteNotePage(noteId: String) {
+        if (_selectedNoteId.value == noteId) _selectedNoteId.value = null
+        viewModelScope.launch(Dispatchers.IO) { repository.deleteNotePage(noteId) }
+    }
+
     fun importNoteText(classSessionId: String, uri: Uri) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
