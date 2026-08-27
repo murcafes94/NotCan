@@ -11,10 +11,8 @@ if(DEFINED ANDROID_ABI)
     message(STATUS "Detected Android ABI: ${ANDROID_ABI}")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(GGML_SYSTEM_ARCH "ARM")
-        # First test build: use the portable ARM64 CPU path. This keeps the native
-        # runtime small and makes it compatible with a wider range of ARM64 phones/tablets.
-        set(GGML_CPU_KLEIDIAI OFF)
-        set(GGML_OPENMP OFF)
+        set(GGML_CPU_KLEIDIAI ON)
+        set(GGML_OPENMP ON)
     else()
         message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}")
     endif()

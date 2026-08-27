@@ -7,11 +7,35 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Keep only the newest previous APK artifact
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          mapfile -t old_ids < <(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts | sort_by(.created_at) | reverse | .[1:] | .[].id'
+          )
+          if [ "${#old_ids[@]}" -eq 0 ]; then
+            echo "No old artifacts to delete; keeping the newest existing artifact."
+          else
+            for artifact_id in "${old_ids[@]}"; do
+              echo "Deleting old artifact ${artifact_id}"
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+            done
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -32,11 +56,27 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Upload debug APK
+      - name: Upload debug APK artifact
+        id: upload_artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: notcan-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
+
+      - name: Publish rolling private test prerelease
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_TAG: notcan-v0.7-test
+        shell: bash
+        run: |
+          gh release delete "$TEST_TAG" --cleanup-tag -y >/dev/null 2>&1 || true
+          gh release create "$TEST_TAG" \
+            "app/build/outputs/apk/debug/app-debug.apk#NotCan-v0.7.0-test.apk" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "NotCan v0.7.0 · prueba" \
+            --notes "APK privada de prueba. Incluye la experiencia académica v0.7, IA local, transcripción local y herramientas de estudio centradas en fuentes."

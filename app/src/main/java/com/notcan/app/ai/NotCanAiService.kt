@@ -30,6 +30,13 @@ class NotCanAiService(private val context: Context) {
             "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde IA → Modelos."
         }
 
+        val strictSources = question.contains(SOURCE_ONLY_MARKER)
+        val socraticMode = question.contains(SOCRATIC_MARKER)
+        val cleanQuestion = question
+            .replace(SOURCE_ONLY_MARKER, "")
+            .replace(SOCRATIC_MARKER, "")
+            .trim()
+
         val preferences = NotCanPreferences(context)
         val systemPrompt = buildString {
             appendLine("Eres ${preferences.assistantName}, el asistente académico local de NotCan.")
@@ -39,19 +46,39 @@ class NotCanAiService(private val context: Context) {
             appendLine("No inventes instrucciones del profesor, fechas, tareas ni contenidos ausentes de las fuentes.")
             appendLine("Distingue con claridad hechos presentes en las fuentes de inferencias o conocimiento general.")
             appendLine("Responde en español salvo que el usuario pida otro idioma.")
+            appendLine("Las fuentes se entregan como [FUENTE: APUNTES] y [FUENTE: TRANSCRIPCIÓN].")
+
+            if (strictSources) {
+                appendLine("MODO SOLO FUENTES ACTIVADO.")
+                appendLine("Usa exclusivamente los apuntes y la transcripción suministrados; no completes huecos con conocimiento general ni memoria del modelo.")
+                appendLine("Si un dato solicitado no aparece en las fuentes, dilo claramente: 'No consta en las fuentes disponibles'.")
+                appendLine("Al final de cada párrafo factual indica [Apuntes], [Transcripción] o [Apuntes + Transcripción], según corresponda.")
+                appendLine("Antes de entregar la respuesta, comprueba que cada afirmación factual esté respaldada por el material. No muestres ese proceso de comprobación.")
+            }
+
+            if (socraticMode) {
+                appendLine("MODO SOCRÁTICO ACTIVADO.")
+                appendLine("No des una exposición completa ni reveles directamente la solución si el estudiante puede llegar a ella mediante preguntas.")
+                appendLine("Evalúa brevemente la respuesta del estudiante, corrige solo lo imprescindible y termina con UNA sola pregunta siguiente, concreta y progresiva.")
+                appendLine("Si es el primer turno, formula UNA pregunta diagnóstica basada en las fuentes.")
+            }
         }
 
         val sourceText = buildString {
             subjectName?.let { appendLine("MATERIA: $it") }
             if (notes.isNotBlank()) {
-                appendLine("\nAPUNTES DEL ESTUDIANTE:")
+                appendLine("\n[FUENTE: APUNTES]")
                 appendLine(notes.takeLast(MAX_SOURCE_CHARS / 2))
             }
             if (transcript.isNotBlank()) {
-                appendLine("\nTRANSCRIPCIÓN DE CLASE:")
+                appendLine("\n[FUENTE: TRANSCRIPCIÓN]")
                 appendLine(transcript.takeLast(MAX_SOURCE_CHARS / 2))
             }
         }.takeLast(MAX_SOURCE_CHARS)
+
+        if (strictSources && sourceText.isBlank()) {
+            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo fuentes."
+        }
 
         val userPrompt = buildString {
             if (sourceText.isNotBlank()) {
@@ -59,7 +86,7 @@ class NotCanAiService(private val context: Context) {
                 appendLine("\n--- FIN DE FUENTES ---\n")
             }
             appendLine("SOLICITUD:")
-            append(question)
+            append(cleanQuestion)
         }
 
         return generate(systemPrompt, userPrompt)
@@ -111,6 +138,8 @@ class NotCanAiService(private val context: Context) {
 
     companion object {
         const val TEXT_MODEL = StudyModelSpec.MODEL_NAME
+        const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
+        const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
         private const val MAX_SOURCE_CHARS = 22_000
         private const val MAX_OUTPUT_TOKENS = 900
     }

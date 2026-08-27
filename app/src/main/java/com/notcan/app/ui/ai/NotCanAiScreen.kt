@@ -30,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.notcan.app.ai.NotCanAiService
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.TranscriptEntity
@@ -108,7 +110,14 @@ fun NotCanAiScreen(
                 onTranscribeLocal = onTranscribeLocal
             )
             1 -> AiChat(subjectName, classTitle, configured, busy, error, result, onAsk, onClear, onDownloadStudyModel)
-            else -> AiStudio(configured, busy, onAsk)
+            else -> AiStudio(
+                configured = configured,
+                busy = busy,
+                onAsk = { prompt ->
+                    onAsk(prompt)
+                    section = 1
+                }
+            )
         }
 
         NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -144,6 +153,15 @@ private fun AiSources(
             Text(subjectName ?: "Fuentes", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(classTitle ?: "Selecciona una clase", color = NotCanGray)
             Text("Todos los modelos de esta pantalla funcionan localmente. No usan API ni consumen tokens.", color = NotCanBlue)
+        }
+
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Respuesta centrada en tus fuentes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text("En Chat puedes activar “Solo mis fuentes”: NotCan evita completar huecos con conocimiento general y marca si una afirmación proviene de apuntes o de la transcripción.", color = NotCanGray)
+                }
+            }
         }
 
         item {
@@ -267,6 +285,9 @@ private fun AiChat(
     onDownloadModel: () -> Unit
 ) {
     var question by remember(classTitle) { mutableStateOf("") }
+    var sourceOnly by remember(classTitle) { mutableStateOf(true) }
+    var socraticMode by remember(classTitle) { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.AutoAwesome, null, tint = NotCanBlue)
@@ -278,12 +299,42 @@ private fun AiChat(
             if (result.isNotBlank()) TextButton(onClick = onClear) { Text("Nuevo") }
         }
 
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = sourceOnly,
+                onClick = { sourceOnly = !sourceOnly },
+                label = { Text("Solo mis fuentes") },
+                leadingIcon = { Icon(Icons.Default.Source, contentDescription = null) }
+            )
+            FilterChip(
+                selected = socraticMode,
+                onClick = { socraticMode = !socraticMode },
+                label = { Text("Socrático") },
+                leadingIcon = { Icon(Icons.Default.Quiz, contentDescription = null) }
+            )
+        }
+        Text(
+            when {
+                socraticMode && sourceOnly -> "Te guía con una pregunta a la vez y se mantiene estrictamente dentro de tus apuntes y transcripciones."
+                socraticMode -> "Te guía con una pregunta a la vez, corrige lo imprescindible y continúa de forma progresiva."
+                sourceOnly -> "Prioriza precisión académica: si algo no aparece en tus fuentes, NotCan debe decirlo."
+                else -> "Puede complementar tus fuentes con conocimiento general, distinguiéndolo del material de clase."
+            },
+            color = NotCanGray,
+            style = MaterialTheme.typography.bodySmall
+        )
+
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                 if (result.isBlank()) {
                     Icon(Icons.Default.MenuBook, null, tint = NotCanBlue)
                     Spacer(Modifier.height(8.dp))
-                    Text("Pregunta usando tus apuntes y transcripciones como fuentes.", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (socraticMode) "Escribe el tema que quieres practicar o responde la pregunta del tutor."
+                        else "Pregunta usando tus apuntes y transcripciones como fuentes.",
+                        color = NotCanOffWhite,
+                        fontWeight = FontWeight.Medium
+                    )
                     Text("El modelo se ejecuta en tu dispositivo. Puedes personalizar nombre, profundidad y estilo desde Configuración.", color = NotCanGray)
                 } else Text(result, color = NotCanOffWhite)
                 error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
@@ -299,39 +350,130 @@ private fun AiChat(
                 }
             }
         }
-        OutlinedTextField(value = question, onValueChange = { question = it }, label = { Text("Pregunta…") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-        Button(enabled = configured && question.isNotBlank() && !busy, onClick = { onAsk(question) }, modifier = Modifier.fillMaxWidth()) {
+
+        OutlinedTextField(
+            value = question,
+            onValueChange = { question = it },
+            label = { Text(if (socraticMode && result.isNotBlank()) "Tu respuesta…" else "Pregunta o tema…") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2
+        )
+        Button(
+            enabled = configured && question.isNotBlank() && !busy,
+            onClick = {
+                val prompt = buildString {
+                    if (sourceOnly) appendLine(NotCanAiService.SOURCE_ONLY_MARKER)
+                    if (socraticMode) {
+                        appendLine(NotCanAiService.SOCRATIC_MARKER)
+                        if (result.isNotBlank()) {
+                            appendLine("ÚLTIMA INTERVENCIÓN DEL TUTOR:")
+                            appendLine(result)
+                            appendLine("RESPUESTA DEL ESTUDIANTE:")
+                        } else {
+                            appendLine("INICIO DE SESIÓN SOCRÁTICA. Tema o petición del estudiante:")
+                        }
+                    }
+                    append(question)
+                }
+                onAsk(prompt)
+                question = ""
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
             if (busy) { CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
-            Text("Preguntar offline")
+            Text(if (socraticMode) "Continuar tutoría" else "Preguntar offline")
         }
     }
 }
 
+private data class StudyTool(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val prompt: String
+)
+
 @Composable
 private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit) {
     val options = listOf(
-        Triple("Resumen de clase", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase, con ideas principales y conceptos clave."),
-        Triple("Tarjetas didácticas", Icons.Default.Style, "Crea tarjetas didácticas pregunta-respuesta basadas exclusivamente en esta clase."),
-        Triple("Cuestionario", Icons.Default.Quiz, "Crea un cuestionario variado con respuestas para estudiar esta clase."),
-        Triple("Preparar examen oral", Icons.Default.MenuBook, "Prepara un examen oral: organiza los temas, formula preguntas progresivas y da puntos clave para responder."),
-        Triple("Informe de estudio", Icons.Default.Description, "Genera un informe de estudio organizado por temas, puntos débiles y prioridades."),
-        Triple("Mapa mental", Icons.Default.AutoAwesome, "Genera la jerarquía textual de un mapa mental de esta clase.")
+        StudyTool(
+            "Resumen de clase",
+            "Ideas principales, conceptos y estructura",
+            Icons.Default.GraphicEq,
+            "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones. No agregues contenido que no aparezca en las fuentes."
+        ),
+        StudyTool(
+            "Tarjetas didácticas",
+            "Formato pregunta-respuesta para repaso activo",
+            Icons.Default.Style,
+            "Crea entre 12 y 20 tarjetas didácticas pregunta-respuesta basadas exclusivamente en esta clase. Mezcla definiciones, relaciones, causas, consecuencias y aplicaciones."
+        ),
+        StudyTool(
+            "Cuestionario",
+            "Opción múltiple y desarrollo",
+            Icons.Default.Quiz,
+            "Crea un cuestionario de estudio basado exclusivamente en esta clase. Incluye preguntas de opción múltiple y preguntas de desarrollo, con respuestas separadas al final."
+        ),
+        StudyTool(
+            "Preparar examen oral",
+            "Preguntas progresivas y puntos clave",
+            Icons.Default.MenuBook,
+            "Prepara un examen oral usando solo estas fuentes: organiza los temas, formula preguntas progresivas y da puntos clave que deberían aparecer en una respuesta correcta."
+        ),
+        StudyTool(
+            "Plan de estudio 25/5",
+            "Bloques breves, prioridades y descansos",
+            Icons.Default.Description,
+            "Convierte el material de esta clase en un plan de estudio por bloques de 25 minutos con descansos de 5 minutos. Prioriza lo esencial, indica qué repasar en cada bloque y termina con una comprobación activa."
+        ),
+        StudyTool(
+            "Repaso rápido",
+            "Microtarjetas estilo feed para recorrer el tema",
+            Icons.Default.AutoAwesome,
+            "Transforma esta clase en 10 microtarjetas de repaso rápido. Cada tarjeta debe tener un título breve, una explicación de máximo 3 líneas y una pregunta de comprobación."
+        ),
+        StudyTool(
+            "Mapa mental",
+            "Jerarquía lista para visualizar",
+            Icons.Default.AutoAwesome,
+            "Genera la jerarquía textual de un mapa mental de esta clase: tema central, ramas principales, subramas y conexiones importantes. Usa solamente las fuentes disponibles."
+        ),
+        StudyTool(
+            "Comprobar fuentes",
+            "Detecta afirmaciones fuertes y verifica su respaldo",
+            Icons.Default.Source,
+            "Extrae las afirmaciones académicas más importantes del material y comprueba una por una si están respaldadas por los apuntes, por la transcripción o por ambas. Si algo no puede verificarse, indícalo como 'No consta'. No completes con conocimiento externo."
+        )
     )
+
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text("Estudio", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("Material generado localmente a partir de tus propias fuentes.", color = NotCanGray)
+            Text("Herramientas locales de estudio activo generadas a partir de tus propias fuentes.", color = NotCanGray)
         }
-        items(options) { (title, icon, prompt) ->
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Diseñado para estudiar, no solo resumir", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text("Incluye repaso activo, verificación de fuentes, planificación por bloques y formatos breves para recorrer el material con menos fricción.", color = NotCanGray)
+                }
+            }
+        }
+        items(options) { tool ->
             Card(
-                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) { onAsk(prompt) },
+                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) {
+                    onAsk("${NotCanAiService.SOURCE_ONLY_MARKER}\n${tool.prompt}")
+                },
                 colors = CardDefaults.cardColors(containerColor = NotCanSurface),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Row(Modifier.fillMaxWidth().padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(icon, null, tint = NotCanBlue)
+                    Icon(tool.icon, null, tint = NotCanBlue)
                     Spacer(Modifier.width(12.dp))
-                    Text(title, color = if (configured) NotCanOffWhite else NotCanGray, fontWeight = FontWeight.Medium)
+                    Column {
+                        Text(tool.title, color = if (configured) NotCanOffWhite else NotCanGray, fontWeight = FontWeight.Medium)
+                        Text(tool.subtitle, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
