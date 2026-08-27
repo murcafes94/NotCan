@@ -13,8 +13,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
     }
 
     buildTypes {
@@ -66,7 +66,8 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    // Reliable background processing. Long local transcriptions can continue after leaving the app.
+    implementation("androidx.work:work-runtime:2.11.2")
 
     // Local-first transcription. The model itself is downloaded separately (~1.5 GiB).
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
