@@ -21,8 +21,11 @@ android {
                 arguments += "-DLLAMA_BUILD_COMMON=ON"
                 arguments += "-DLLAMA_OPENSSL=OFF"
                 arguments += "-DGGML_NATIVE=OFF"
-                arguments += "-DGGML_BACKEND_DL=ON"
-                arguments += "-DGGML_CPU_ALL_VARIANTS=ON"
+                // One generic ARM64 CPU backend for the test build. This avoids bundling
+                // seven architecture variants and keeps the APK/build time reasonable.
+                arguments += "-DGGML_BACKEND_DL=OFF"
+                arguments += "-DGGML_CPU_ALL_VARIANTS=OFF"
+                arguments += "-DGGML_OPENMP=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
             }
         }
