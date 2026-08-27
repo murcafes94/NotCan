@@ -1,0 +1,45 @@
+name: NotCan Web Build
+
+on:
+  push:
+    branches: [ "main", "feature/web-pwa-sync-foundation" ]
+    paths:
+      - "web/**"
+      - "supabase/**"
+      - ".github/workflows/web-build.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "supabase/**"
+      - ".github/workflows/web-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build PWA
+        run: npm run build
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-web-dist
+          path: web/dist
+          if-no-files-found: error
