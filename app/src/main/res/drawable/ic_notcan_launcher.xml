@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#0B1220"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Notebook/document -->
+    <path
+        android:fillColor="#172238"
+        android:pathData="M24,15h52l14,14v61h-66z" />
+    <path
+        android:fillColor="#2E6BFF"
+        android:pathData="M76,15l14,14h-14z" />
+    <path
+        android:fillColor="#35506F"
+        android:pathData="M35,31h27a3,3 0,0 1,0 6h-27a3,3 0,0 1,0 -6zM35,42h39a2.5,2.5 0,0 1,0 5h-39a2.5,2.5 0,0 1,0 -5z" />
+    <path
+        android:fillColor="#2E6BFF"
+        android:pathData="M34,31h16a3,3 0,0 1,0 6h-16a3,3 0,0 1,0 -6z" />
+
+    <!-- Audio waveform -->
+    <path android:fillColor="#2E6BFF" android:pathData="M34,59h4v10h-4zM42,54h4v20h-4zM50,57h4v14h-4zM58,50h4v28h-4zM66,57h4v14h-4zM74,54h4v20h-4zM82,59h4v10h-4z" />
+
+    <!-- Graduation cap -->
+    <path
+        android:fillColor="#303B50"
+        android:pathData="M18,79l22,-10l22,10l-22,10z" />
+    <path
+        android:fillColor="#202B40"
+        android:pathData="M27,83v8c8,6 18,6 26,0v-8l-13,6z" />
+    <path
+        android:fillColor="#FFC13B"
+        android:pathData="M40,72l20,9v11h-3v-9l-18,-8zM58,91a3,3 0,1 0,0.1 0z" />
+
+    <!-- AI speech bubble -->
+    <path
+        android:fillColor="#2E6BFF"
+        android:pathData="M63,72c0,-8 6,-14 14,-14h13c8,0 14,6 14,14v10c0,8 -6,14 -14,14h-9l-12,8l3,-9c-5,-2 -9,-7 -9,-13z" />
+    <path
+        android:fillColor="#0B1220"
+        android:pathData="M68,72c0,-5 4,-9 9,-9h13c5,0 9,4 9,9v10c0,5 -4,9 -9,9h-11l-6,4l2,-6c-4,-1 -7,-4 -7,-8z" />
+    <path
+        android:fillColor="#FFC13B"
+        android:pathData="M84,68l2,6l6,2l-6,2l-2,6l-2,-6l-6,-2l6,-2z" />
+</vector>
