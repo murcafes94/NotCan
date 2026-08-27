@@ -14,8 +14,8 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/notcan_launcher_selected"
-        android:roundIcon="@drawable/notcan_launcher_selected"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="NotCan"
         android:supportsRtl="true"
         android:theme="@style/Theme.NotCan">
