@@ -28,7 +28,7 @@ class NotCanAiService(private val context: Context) {
         question: String
     ): String {
         require(isConfigured()) {
-            "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde IA → Fuentes."
+            "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde Configuración → Componentes y descargas."
         }
 
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
@@ -84,6 +84,9 @@ class NotCanAiService(private val context: Context) {
         }.takeLast(MAX_SOURCE_CHARS)
 
         val userPrompt = buildString {
+            // Qwen3 can reason in "thinking" mode, but on a phone/tablet that costs latency and RAM.
+            // Keep the lightweight local assistant in direct-answer mode by default.
+            appendLine("/no_think")
             if (sourceText.isNotBlank()) {
                 appendLine(sourceText)
                 appendLine("\n--- FIN DE FUENTES ---\n")
@@ -149,7 +152,7 @@ class NotCanAiService(private val context: Context) {
         const val TEXT_MODEL = StudyModelSpec.MODEL_NAME
         const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
         const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
-        // 4k native context: leave room for system/user prompts and generated answer.
+        // Keep the mobile context conservative even though Qwen3 supports much more natively.
         private const val MAX_SOURCE_CHARS = 14_000
         private const val MAX_OUTPUT_TOKENS = 512
     }
