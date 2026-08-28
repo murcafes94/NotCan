@@ -49,10 +49,10 @@ class WhisperModelManager(private val context: Context) {
     }
 
     fun enqueueDownload(): Long {
-        // The lightweight Spanish live model is started in parallel. Both downloads are owned
-        // by Android DownloadManager, so they continue even when NotCan is closed.
-        runCatching { LiveTranscriptionModelManager(context).enqueueDownload() }
         if (state() == WhisperModelState.INSTALLED) return -1L
+        val existingId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+        if (existingId > 0L && state() == WhisperModelState.DOWNLOADING) return existingId
+
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(WhisperModelSpec.DOWNLOAD_URL))
             .setTitle("NotCan · ${WhisperModelSpec.DISPLAY_NAME}")
@@ -81,8 +81,14 @@ class WhisperModelManager(private val context: Context) {
     }
 
     fun removeModel(): Boolean {
-        val file = modelFile()
+        val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+        if (id > 0L) {
+            runCatching {
+                (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(id)
+            }
+        }
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
+        val file = modelFile()
         return !file.exists() || file.delete()
     }
 
