@@ -41,8 +41,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.notcan.app.localai.LiveTranscriptionModelManager
-import com.notcan.app.localai.LiveTranscriptionModelSpec
 import com.notcan.app.localai.LiveTranscriptionModelState
+import com.notcan.app.localai.StudyModelManager
+import com.notcan.app.localai.StudyModelSpec
+import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
@@ -58,6 +60,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val context = LocalContext.current
     val whisperManager = remember(context) { WhisperModelManager(context.applicationContext) }
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
+    val studyManager = remember(context) { StudyModelManager(context.applicationContext) }
 
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
@@ -78,6 +81,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val whisperProgress = remember(refreshTick) { whisperManager.progressPercent() }
     val liveState = remember(refreshTick) { liveManager.state() }
     val liveProgress = remember(refreshTick) { liveManager.progressPercent() }
+    val studyState = remember(refreshTick) { studyManager.state() }
+    val studyProgress = remember(refreshTick) { studyManager.progressPercent() }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -147,8 +152,30 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     }
                 )
 
+                DownloadComponentCard(
+                    title = "Asistente IA local",
+                    subtitle = "${StudyModelSpec.MODEL_NAME} · ${StudyModelSpec.LICENSE} · funciona sin internet",
+                    sizeText = "~639 MB",
+                    stateText = when (studyState) {
+                        StudyModelState.INSTALLED -> "Instalado y listo"
+                        StudyModelState.DOWNLOADING -> "Descargando"
+                        StudyModelState.NOT_INSTALLED -> "No instalado"
+                    },
+                    progress = studyProgress,
+                    installed = studyState == StudyModelState.INSTALLED,
+                    downloading = studyState == StudyModelState.DOWNLOADING,
+                    onDownload = {
+                        runCatching { studyManager.enqueueDownload() }
+                        refreshTick++
+                    },
+                    onRemove = {
+                        runCatching { studyManager.removeModel() }
+                        refreshTick++
+                    }
+                )
+
                 Text(
-                    "Las descargas grandes se realizan con el gestor de Android, continúan aunque cierres NotCan y evitan datos móviles por defecto.",
+                    "Las descargas grandes se realizan con el gestor de Android, continúan aunque cierres NotCan y evitan datos móviles por defecto. Ningún modelo se descarga sin tu acción.",
                     color = NotCanGray,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -248,7 +275,7 @@ private fun DownloadComponentCard(
 
             if (downloading) {
                 LinearProgressIndicator(
-                    progress = (progress ?: 0) / 100f,
+                    progress = { (progress ?: 0) / 100f },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
