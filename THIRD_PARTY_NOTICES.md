@@ -19,12 +19,14 @@ NotCan se desarrolla con una política explícita de procedencia y licencias. La
 - Uso en NotCan: inferencia GGUF local para el asistente académico, mediante el puente Android/JNI oficial del proyecto.
 - El modelo generativo no se empaqueta dentro de la APK.
 
-### DeepSeek-R1-Distill-Qwen-1.5B
-- Modelo original: `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`, publicado por DeepSeek como modelo destilado basado en Qwen2.5.
-- Uso en NotCan: cerebro local inicial del asistente académico.
-- Cuantización utilizada: `bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF`, archivo `Q4_K_M`, aproximadamente 1,1 GB.
-- SHA-256 publicado para el GGUF seleccionado: `1741e5b2d062b07acf048bf0d2c514dadf2a48f94e2b4aa0cfe069af3838ee2f`.
-- Se descarga bajo petición del usuario y se ejecuta localmente; NotCan no envía las fuentes académicas a una API de DeepSeek.
+### Qwen3-0.6B-GGUF
+- Modelo: `Qwen/Qwen3-0.6B-GGUF`.
+- Licencia: Apache-2.0.
+- Uso en NotCan desde v0.7.5: cerebro local ligero del asistente académico.
+- Cuantización seleccionada: `Qwen3-0.6B-Q8_0.gguf`, aproximadamente 639 MB.
+- Se descarga bajo petición explícita del usuario desde Hugging Face y se ejecuta localmente mediante llama.cpp.
+- NotCan usa por defecto `/no_think` para reducir latencia y consumo en Android.
+- El modelo anterior `DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf` se elimina cuando Qwen3 queda instalado para evitar ocupar aproximadamente 1,1 GB adicionales.
 
 ### sherpa-onnx
 - Proyecto: `k2-fsa/sherpa-onnx`.
@@ -71,6 +73,11 @@ NotCan se desarrolla con una política explícita de procedencia y licencias. La
 - Licencia declarada: Apache-2.0.
 - Uso actual: referencia conceptual para RAG, agentes y memoria/contexto.
 - Código incorporado: ninguno.
+
+### Omi
+- Repositorio: `BasedHardware/omi`.
+- Licencia del repositorio principal: MIT.
+- Uso actual: referencia arquitectónica para audio, streaming, memoria, transcripción y herramientas; no se ha incorporado código de Omi en v0.7.5.
 
 ## Política
 
