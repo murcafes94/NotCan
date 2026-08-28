@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.4-test"
+          TAG="v0.7.5-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.4-test.apk" \
+            "$APK#NotCan-v0.7.5-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.4 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.4. Añade eliminación segura de páginas de apuntes, control explícito para quitar formato y mejora la claridad del subrayado, conservando la firma estable y las correcciones de v0.7.3."
+            --title "NotCan v0.7.5 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.5. Centraliza las descargas de Moonshine, Whisper y la IA local en Configuración; sustituye el modelo generativo anterior por Qwen3 0.6B Q8_0 (~639 MB) ejecutado localmente con llama.cpp y mantiene la firma de prueba estable."
