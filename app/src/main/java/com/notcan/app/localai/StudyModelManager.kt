@@ -6,13 +6,16 @@ import android.net.Uri
 import java.io.File
 
 object StudyModelSpec {
-    const val DISPLAY_NAME = "NotCan AI · DeepSeek R1 1.5B"
-    const val MODEL_NAME = "DeepSeek-R1-Distill-Qwen-1.5B Q4_K_M"
-    const val FILE_NAME = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
-    const val DOWNLOAD_URL = "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf?download=true"
-    const val APPROX_BYTES = 1_120_000_000L
-    const val MIN_VALID_BYTES = 1_000_000_000L
-    const val SHA256 = "1741e5b2d062b07acf048bf0d2c514dadf2a48f94e2b4aa0cfe069af3838ee2f"
+    const val DISPLAY_NAME = "NotCan AI · Qwen3 0.6B"
+    const val MODEL_NAME = "Qwen3 0.6B Q8_0"
+    const val FILE_NAME = "Qwen3-0.6B-Q8_0.gguf"
+    const val DOWNLOAD_URL = "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true"
+    const val APPROX_BYTES = 639_000_000L
+    const val MIN_VALID_BYTES = 600_000_000L
+    const val LICENSE = "Apache-2.0"
+
+    // Kept only so v0.7.5 can clean up the previous local model after Qwen is installed.
+    const val LEGACY_FILE_NAME = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
 }
 
 enum class StudyModelState {
@@ -30,9 +33,15 @@ class StudyModelManager(private val context: Context) {
         return File(dir, StudyModelSpec.FILE_NAME)
     }
 
+    private fun legacyModelFile(): File = File(modelFile().parentFile, StudyModelSpec.LEGACY_FILE_NAME)
+
     fun state(): StudyModelState {
         val file = modelFile()
-        if (isValidModel(file)) return StudyModelState.INSTALLED
+        if (isValidModel(file)) {
+            // The previous 1.5B model is no longer needed and would otherwise waste ~1.1 GB.
+            runCatching { legacyModelFile().delete() }
+            return StudyModelState.INSTALLED
+        }
 
         val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (id > 0L) {
@@ -52,10 +61,17 @@ class StudyModelManager(private val context: Context) {
 
     fun enqueueDownload(): Long {
         if (state() == StudyModelState.INSTALLED) return -1L
+
+        val existingId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+        if (existingId > 0L && state() == StudyModelState.DOWNLOADING) return existingId
+
+        val destination = modelFile()
+        if (destination.exists()) destination.delete()
+
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(StudyModelSpec.DOWNLOAD_URL))
             .setTitle("NotCan · IA local")
-            .setDescription("DeepSeek R1 1.5B · aprox. 1,1 GB · sin tokens")
+            .setDescription("Qwen3 0.6B Q8_0 · aprox. 639 MB · funciona sin internet")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverRoaming(false)
             .setAllowedOverMetered(false)
@@ -83,7 +99,7 @@ class StudyModelManager(private val context: Context) {
 
             if (!isValidModel(staging)) {
                 throw IllegalArgumentException(
-                    "El archivo no parece ser el modelo GGUF de NotCan AI o está incompleto"
+                    "El archivo no parece ser Qwen3 0.6B Q8_0 en formato GGUF o está incompleto"
                 )
             }
 
@@ -107,6 +123,7 @@ class StudyModelManager(private val context: Context) {
                 }
             }
             prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
+            runCatching { legacyModelFile().delete() }
             return true
         } catch (t: Throwable) {
             staging.delete()
@@ -137,8 +154,9 @@ class StudyModelManager(private val context: Context) {
             }
         }
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
-        val file = modelFile()
-        return !file.exists() || file.delete()
+        val currentDeleted = !modelFile().exists() || modelFile().delete()
+        val legacyDeleted = !legacyModelFile().exists() || legacyModelFile().delete()
+        return currentDeleted && legacyDeleted
     }
 
     private fun isValidModel(file: File): Boolean {
@@ -146,7 +164,9 @@ class StudyModelManager(private val context: Context) {
         return runCatching {
             file.inputStream().buffered().use { input ->
                 val header = ByteArray(4)
-                input.read(header) == 4 && header.contentEquals(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+                input.read(header) == 4 && header.contentEquals(
+                    byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte())
+                )
             }
         }.getOrDefault(false)
     }
