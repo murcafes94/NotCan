@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.8-test"
+          TAG="v0.7.9-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.8-test.apk" \
+            "$APK#NotCan-v0.7.9-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.8 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.8. Rediseña la interfaz de TuNot para tablet y teléfono, presenta el chat como conversación, renderiza Markdown (títulos, listas, citas, tablas y código), compacta el estado de Mistral y mejora Fuentes y Herramientas de estudio manteniendo Whisper/Moonshine locales."
+            --title "NotCan v0.7.9 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.9. Simplifica el calendario, separa horario de creación de clases y numera cada clase por materia con formato Materia #N. Al pulsar grabar desde una materia, crea automáticamente la siguiente clase antes de iniciar la grabación; la creación manual con + usa la misma secuencia."
