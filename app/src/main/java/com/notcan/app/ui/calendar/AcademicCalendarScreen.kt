@@ -82,13 +82,11 @@ fun AcademicCalendarScreen(
     var dateError by remember { mutableStateOf<String?>(null) }
 
     var subjectId by remember(subjects, selectedSubjectId) { mutableStateOf(selectedSubjectId ?: subjects.firstOrNull()?.id) }
-    var weekday by remember { mutableIntStateOf(1) }
-    var startMinute by remember { mutableIntStateOf(8 * 60 + 15) }
-    var endMinute by remember { mutableIntStateOf(9 * 60 + 45) }
+    var weekday by remember { mutableIntStateOf(LocalDate.now().dayOfWeek.value) }
+    var startMinute by remember { mutableIntStateOf(8 * 60) }
+    var endMinute by remember { mutableIntStateOf(9 * 60 + 30) }
     var startTimeOpen by remember { mutableStateOf(false) }
     var endTimeOpen by remember { mutableStateOf(false) }
-    var autoStopMode by remember { mutableStateOf(RecordingService.AUTO_STOP_ASK) }
-    var graceMinutes by remember { mutableIntStateOf(5) }
     var scheduleError by remember { mutableStateOf<String?>(null) }
 
     val today = LocalDate.now()
@@ -96,13 +94,13 @@ fun AcademicCalendarScreen(
     val upcoming = cycle?.let {
         AcademicSchedule.allOccurrences(it, subjects, schedules)
             .filter { occurrence -> !occurrence.date.isBefore(today) }
-            .take(24)
+            .take(18)
     }.orEmpty()
 
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Text("Calendario académico", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("Clases, horario y recordatorios del ciclo. Una sesión prevista solo se convierte en clase cuando la utilizas.", color = NotCanGray)
+            Text("Calendario", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text("Organiza cuándo tienes cada materia. El número de clase se asigna solo cuando realmente creas la clase o comienzas a grabar.", color = NotCanGray)
         }
 
         item {
@@ -111,7 +109,10 @@ fun AcademicCalendarScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CalendarMonth, null, tint = NotCanBlue)
                         Spacer(Modifier.width(8.dp))
-                        Text(cycle?.name ?: "Selecciona o crea un ciclo", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Column {
+                            Text(cycle?.name ?: "Ciclo académico", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                            Text("Período del ciclo", color = NotCanGray)
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         DateButton("Inicio", startDate, { startPickerOpen = true }, Modifier.weight(1f))
@@ -123,7 +124,7 @@ fun AcademicCalendarScreen(
                         val end = endDate
                         if (start == null || end == null || end.isBefore(start)) dateError = "La fecha final debe ser igual o posterior al inicio."
                         else { onSaveCycleDates(start.toEpochDay(), end.toEpochDay()); dateError = null }
-                    }) { Text("Guardar período del semestre") }
+                    }) { Text("Guardar período") }
                 }
             }
         }
@@ -131,57 +132,43 @@ fun AcademicCalendarScreen(
         item {
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Horario de una materia", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text("Añadir horario", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text("El horario no crea clases por adelantado.", color = NotCanGray)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(subjects, key = { it.id }) { subject ->
                             FilterChip(selected = subjectId == subject.id, onClick = { subjectId = subject.id }, label = { Text(subject.name) })
                         }
                     }
-                    Text("Día de la semana", color = NotCanGray)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items((1..7).toList()) { day ->
                             FilterChip(selected = weekday == day, onClick = { weekday = day }, label = { Text(AcademicSchedule.weekdayLabel(day).take(3)) })
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TimeButton("Empieza", startMinute, { startTimeOpen = true }, Modifier.weight(1f))
-                        TimeButton("Termina", endMinute, { endTimeOpen = true }, Modifier.weight(1f))
-                    }
-                    Text("Al terminar el horario", color = NotCanGray)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        item { FilterChip(selected = autoStopMode == RecordingService.AUTO_STOP_ASK, onClick = { autoStopMode = RecordingService.AUTO_STOP_ASK }, label = { Text("Preguntar") }) }
-                        item { FilterChip(selected = autoStopMode == RecordingService.AUTO_STOP_AUTO, onClick = { autoStopMode = RecordingService.AUTO_STOP_AUTO }, label = { Text("Detener automático") }) }
-                        item { FilterChip(selected = autoStopMode == RecordingService.AUTO_STOP_CONTINUE, onClick = { autoStopMode = RecordingService.AUTO_STOP_CONTINUE }, label = { Text("Continuar") }) }
-                    }
-                    if (autoStopMode == RecordingService.AUTO_STOP_AUTO) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Margen:", color = NotCanGray)
-                            listOf(0, 5, 10, 15).forEach { value ->
-                                FilterChip(selected = graceMinutes == value, onClick = { graceMinutes = value }, label = { Text("+$value min") })
-                            }
-                        }
+                        TimeButton("Inicio", startMinute, { startTimeOpen = true }, Modifier.weight(1f))
+                        TimeButton("Fin", endMinute, { endTimeOpen = true }, Modifier.weight(1f))
                     }
                     scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(enabled = cycle != null && subjectId != null, onClick = {
                         if (endMinute <= startMinute) scheduleError = "La hora final debe ser posterior a la inicial."
                         else {
-                            onAddSchedule(subjectId!!, weekday, startMinute, endMinute, autoStopMode, graceMinutes)
+                            onAddSchedule(subjectId!!, weekday, startMinute, endMinute, RecordingService.AUTO_STOP_ASK, 5)
                             scheduleError = null
                         }
-                    }) { Text("Añadir al horario") }
+                    }) { Text("Guardar horario") }
                 }
             }
         }
 
         item { Text("Horario semanal", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-        if (schedules.isEmpty()) item { Text("Todavía no has añadido horarios.", color = NotCanGray) }
+        if (schedules.isEmpty()) item { Text("Todavía no hay horarios guardados.", color = NotCanGray) }
         else items(schedules, key = { it.id }) { schedule ->
             val subject = subjects.firstOrNull { it.id == schedule.subjectId }
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(14.dp)) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(subject?.name ?: "Materia", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                        Text("${AcademicSchedule.weekdayLabel(schedule.weekdayIso)} · ${AcademicSchedule.formatMinutes(schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(schedule.endMinuteOfDay)} · aviso 1 día antes", color = NotCanGray)
+                        Text("${AcademicSchedule.weekdayLabel(schedule.weekdayIso)} · ${AcademicSchedule.formatMinutes(schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(schedule.endMinuteOfDay)}", color = NotCanGray)
                     }
                     IconButton(onClick = { onSyncScheduleToCalendar(schedule.id) }) { Icon(Icons.Default.Sync, "Sincronizar con calendario", tint = NotCanBlue) }
                     IconButton(onClick = { onDeleteSchedule(schedule.id) }) { Icon(Icons.Default.Delete, "Eliminar horario") }
@@ -191,9 +178,11 @@ fun AcademicCalendarScreen(
 
         item { Text("Hoy", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
         if (todayOccurrences.isEmpty()) item { Text("No hay materias programadas para hoy.", color = NotCanGray) }
-        else items(todayOccurrences, key = { it.schedule.id + it.date }) { occurrence -> OccurrenceRow(occurrence, onOpenOccurrence, onRecordOccurrence) }
+        else items(todayOccurrences, key = { it.schedule.id + it.date }) { occurrence ->
+            OccurrenceRow(occurrence, onOpenOccurrence, onRecordOccurrence)
+        }
 
-        item { Text("Próximas clases", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+        item { Text("Próximas", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
         items(upcoming, key = { it.schedule.id + it.date }) { occurrence ->
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f))) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -273,10 +262,14 @@ private fun OccurrenceRow(occurrence: PlannedClassOccurrence, onOpen: (PlannedCl
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
                 Text(occurrence.subject.name, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                Text("${AcademicSchedule.formatMinutes(occurrence.schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(occurrence.schedule.endMinuteOfDay)} · sesión prevista", color = NotCanGray)
+                Text("${AcademicSchedule.formatMinutes(occurrence.schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(occurrence.schedule.endMinuteOfDay)} · aún no crea número de clase", color = NotCanGray)
             }
-            OutlinedButton(onClick = { onOpen(occurrence) }) { Text("Abrir") }
-            Button(onClick = { onRecord(occurrence) }) { Icon(Icons.Default.Mic, null); Spacer(Modifier.width(5.dp)); Text("Grabar") }
+            OutlinedButton(onClick = { onOpen(occurrence) }) { Text("Crear clase") }
+            Button(onClick = { onRecord(occurrence) }) {
+                Icon(Icons.Default.Mic, null)
+                Spacer(Modifier.width(5.dp))
+                Text("Grabar")
+            }
         }
     }
 }
