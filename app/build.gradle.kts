@@ -59,8 +59,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.7.6"
+        versionCode = 14
+        versionName = "0.7.7"
     }
 
     signingConfigs {
@@ -130,12 +130,11 @@ dependencies {
 
     implementation("androidx.work:work-runtime:2.11.2")
 
-    // Final local transcription. The model itself is downloaded separately (~57 MiB by default).
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
-
     implementation(files(sherpaAar))
     implementation("org.apache.commons:commons-compress:1.27.1")
 
+    // Kept for compatibility with legacy local-model code during the 0.7.7 migration.
     implementation(project(":llama-android"))
 
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
