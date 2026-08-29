@@ -16,10 +16,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.notcan.app.calendar.CalendarSync
+import com.notcan.app.data.StudyRepository
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.NotePageEntity
+import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.localai.BackgroundTranscriptionManager
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
@@ -34,12 +37,14 @@ import com.notcan.app.ui.home.NotCanRootV5
 import com.notcan.app.ui.settings.SettingsScreen
 import com.notcan.app.ui.theme.NotCanTheme
 import java.io.File
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private val studyViewModel: NotCanViewModel by viewModels()
     private val extrasViewModel: AcademicExtrasViewModel by viewModels()
     private val preferences by lazy { NotCanPreferences(this) }
+    private val recordingRepository by lazy { StudyRepository(NotCanDatabase.getInstance(this).dao()) }
     private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
     private var pendingNoteClassId: String? = null
@@ -170,7 +175,16 @@ class MainActivity : ComponentActivity() {
                             onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
                             onDeletePdfInkStroke = studyViewModel::deletePdfInkStroke,
                             onClearPdfInkPage = studyViewModel::clearPdfInkPage,
-                            onStartRecording = { classId -> requestPermissionsAndStart(classId) },
+                            onStartRecording = { _ ->
+                                val subjectId = selectedSubjectId
+                                if (subjectId != null && !recordingActive) {
+                                    lifecycleScope.launch {
+                                        val session = recordingRepository.createClassSession(subjectId, "")
+                                        studyViewModel.selectClass(session.id)
+                                        requestPermissionsAndStart(session.id)
+                                    }
+                                }
+                            },
                             onPauseRecording = { sendRecordingAction(RecordingService.ACTION_PAUSE) },
                             onResumeRecording = { sendRecordingAction(RecordingService.ACTION_RESUME) },
                             onStopRecording = { sendRecordingAction(RecordingService.ACTION_STOP) },
