@@ -6,11 +6,12 @@ import android.net.Uri
 import java.io.File
 
 object WhisperModelSpec {
-    const val DISPLAY_NAME = "Whisper large-v3-turbo"
-    const val FILE_NAME = "ggml-large-v3-turbo.bin"
-    const val DOWNLOAD_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin?download=true"
-    const val APPROX_BYTES = 1_620_000_000L
-    const val MIN_VALID_BYTES = 1_400_000_000L
+    const val DISPLAY_NAME = "Whisper Base q5_1 · multilingüe"
+    const val FILE_NAME = "ggml-base-q5_1.bin"
+    const val DOWNLOAD_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin?download=true"
+    const val APPROX_BYTES = 60_000_000L
+    const val MIN_VALID_BYTES = 55_000_000L
+    const val LEGACY_FILE_NAME = "ggml-large-v3-turbo.bin"
 }
 
 enum class WhisperModelState {
@@ -28,9 +29,12 @@ class WhisperModelManager(private val context: Context) {
         return File(dir, WhisperModelSpec.FILE_NAME)
     }
 
+    private fun legacyModelFile(): File = File(modelFile().parentFile, WhisperModelSpec.LEGACY_FILE_NAME)
+
     fun state(): WhisperModelState {
         val file = modelFile()
         if (file.exists() && file.length() >= WhisperModelSpec.MIN_VALID_BYTES) {
+            runCatching { legacyModelFile().delete() }
             return WhisperModelState.INSTALLED
         }
         val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
@@ -53,13 +57,16 @@ class WhisperModelManager(private val context: Context) {
         val existingId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (existingId > 0L && state() == WhisperModelState.DOWNLOADING) return existingId
 
+        val destination = modelFile()
+        if (destination.exists()) destination.delete()
+
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(WhisperModelSpec.DOWNLOAD_URL))
             .setTitle("NotCan · ${WhisperModelSpec.DISPLAY_NAME}")
-            .setDescription("Modelo local de transcripción final · aproximadamente 1,5 GB")
+            .setDescription("Modelo local rápido de transcripción final · aproximadamente 57 MB")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverRoaming(false)
-            .setAllowedOverMetered(false)
+            .setAllowedOverMetered(true)
             .setDestinationInExternalFilesDir(context, "models", WhisperModelSpec.FILE_NAME)
         val id = manager.enqueue(request)
         prefs.edit().putLong(KEY_DOWNLOAD_ID, id).apply()
@@ -88,8 +95,9 @@ class WhisperModelManager(private val context: Context) {
             }
         }
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
-        val file = modelFile()
-        return !file.exists() || file.delete()
+        val currentDeleted = !modelFile().exists() || modelFile().delete()
+        val legacyDeleted = !legacyModelFile().exists() || legacyModelFile().delete()
+        return currentDeleted && legacyDeleted
     }
 
     companion object {
