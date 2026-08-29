@@ -14,7 +14,6 @@ object StudyModelSpec {
     const val MIN_VALID_BYTES = 600_000_000L
     const val LICENSE = "Apache-2.0"
 
-    // Kept only so v0.7.5 can clean up the previous local model after Qwen is installed.
     const val LEGACY_FILE_NAME = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
 }
 
@@ -38,7 +37,6 @@ class StudyModelManager(private val context: Context) {
     fun state(): StudyModelState {
         val file = modelFile()
         if (isValidModel(file)) {
-            // The previous 1.5B model is no longer needed and would otherwise waste ~1.1 GB.
             runCatching { legacyModelFile().delete() }
             return StudyModelState.INSTALLED
         }
@@ -74,16 +72,11 @@ class StudyModelManager(private val context: Context) {
             .setDescription("Qwen3 0.6B Q8_0 · aprox. 639 MB · funciona sin internet")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverRoaming(false)
-            .setAllowedOverMetered(false)
+            .setAllowedOverMetered(true)
             .setDestinationInExternalFilesDir(context, "models", StudyModelSpec.FILE_NAME)
         return manager.enqueue(request).also { id -> prefs.edit().putLong(KEY_DOWNLOAD_ID, id).apply() }
     }
 
-    /**
-     * Reuses a GGUF that already exists on the device. This is intentionally a copy into
-     * NotCan's local model directory because llama.cpp needs a real filesystem path rather
-     * than an Android content:// URI. No network transfer is performed.
-     */
     fun importExistingModel(uri: Uri): Boolean {
         val destination = modelFile()
         val staging = File(destination.parentFile, "${destination.name}.importing")
