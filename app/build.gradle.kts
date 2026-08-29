@@ -133,10 +133,6 @@ dependencies {
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
     implementation(files(sherpaAar))
     implementation("org.apache.commons:commons-compress:1.27.1")
-
-    // Kept for compatibility with legacy local-model code during the 0.7.7 migration.
-    implementation(project(":llama-android"))
-
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
