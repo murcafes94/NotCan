@@ -33,8 +33,6 @@ val fetchSherpaAar by tasks.registering {
     }
 }
 
-// Public TEST key only. It exists to keep GitHub Actions debug APKs update-compatible
-// across ephemeral runners. Never reuse this key for a production/Play Store build.
 val testKeystorePayload = rootProject.file("ci/notcan-test.keystore.b64")
 val testKeystoreFile = layout.buildDirectory.file("signing/notcan-test.keystore").get().asFile
 val prepareTestKeystore by tasks.registering {
@@ -61,8 +59,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.7.5"
+        versionCode = 13
+        versionName = "0.7.6"
     }
 
     signingConfigs {
@@ -83,7 +81,6 @@ android {
             signingConfig = signingConfigs.getByName("notcanTest")
         }
         release {
-            // Production/release signing intentionally remains separate from the public test key.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -133,17 +130,14 @@ dependencies {
 
     implementation("androidx.work:work-runtime:2.11.2")
 
-    // Final local transcription. The model itself is downloaded separately (~1.5 GiB).
+    // Final local transcription. The model itself is downloaded separately (~57 MiB by default).
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
 
-    // Lightweight Spanish provisional transcription while a class is being recorded.
     implementation(files(sherpaAar))
     implementation("org.apache.commons:commons-compress:1.27.1")
 
-    // Local generative study assistant powered by the pinned llama.cpp Android runtime.
     implementation(project(":llama-android"))
 
-    // Kept temporarily for legacy note pages while v0.7.2 migrates active editing to HTML/WebView.
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
