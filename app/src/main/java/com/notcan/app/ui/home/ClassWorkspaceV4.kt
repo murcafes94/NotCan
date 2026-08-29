@@ -2,6 +2,7 @@ package com.notcan.app.ui.home
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
@@ -69,7 +70,7 @@ internal fun NotCanClassWorkspaceV4(
 
     Box(modifier = modifier) {
         NotCanClassWorkspaceV5(
-            modifier = Modifier.matchParentSize(),
+            modifier = Modifier.fillMaxSize(),
             cycleName = cycleName,
             subject = subject,
             classSession = classSession,
