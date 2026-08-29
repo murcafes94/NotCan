@@ -8,20 +8,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
@@ -103,8 +102,9 @@ fun NotCanHomeScreen(
     onMarkMoment: () -> Unit
 ) {
     var createDialog by remember { mutableStateOf<CreateDialog?>(null) }
-    var showSubjects by remember(selectedCycleId) { mutableStateOf(selectedSubjectId == null) }
-    var classMenu by remember { mutableStateOf(false) }
+    var level by remember(selectedSubjectId) {
+        mutableStateOf(if (selectedSubjectId == null) HomeLevel.SUBJECTS else HomeLevel.CLASSES)
+    }
 
     val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
     val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
@@ -112,104 +112,112 @@ fun NotCanHomeScreen(
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            if (showSubjects || selectedSubject == null) {
-                SubjectLanding(
-                    cycles = cycles,
-                    subjects = subjects,
-                    selectedCycleId = selectedCycleId,
-                    onSelectCycle = onSelectCycle,
-                    onSelectSubject = { id -> onSelectSubject(id); showSubjects = false },
-                    onAddCycle = { createDialog = CreateDialog.Cycle },
-                    onAddSubject = { createDialog = CreateDialog.Subject }
-                )
-            } else {
-                Surface(color = NotCanSurface, tonalElevation = 2.dp) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(onClick = { showSubjects = true }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = null)
-                            Spacer(Modifier.padding(horizontal = 3.dp))
-                            Text("Materias")
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(selectedSubject.name, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                            Text(selectedCycle?.name ?: "Ciclo", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
-                        }
-                        if (classes.isNotEmpty()) {
-                            Surface(
-                                modifier = Modifier.clickable { classMenu = true },
-                                color = MaterialTheme.colorScheme.background,
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(selectedClass?.title ?: "Elegir clase", color = NotCanOffWhite, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = NotCanGray)
-                                }
-                            }
-                            DropdownMenu(expanded = classMenu, onDismissRequest = { classMenu = false }) {
-                                classes.forEach { item ->
-                                    DropdownMenuItem(text = { Text(item.title) }, onClick = { onSelectClass(item.id); classMenu = false })
-                                }
-                            }
-                        }
-                        IconButton(onClick = { createDialog = CreateDialog.Class }) { Icon(Icons.Default.Add, contentDescription = "Nueva clase", tint = NotCanBlue) }
-                    }
+            when {
+                level == HomeLevel.SUBJECTS || selectedSubject == null -> {
+                    SubjectLanding(
+                        cycles = cycles,
+                        subjects = subjects,
+                        selectedCycleId = selectedCycleId,
+                        onSelectCycle = onSelectCycle,
+                        onSelectSubject = { id ->
+                            onSelectSubject(id)
+                            level = HomeLevel.CLASSES
+                        },
+                        onAddCycle = { createDialog = CreateDialog.Cycle },
+                        onAddSubject = { createDialog = CreateDialog.Subject }
+                    )
                 }
 
-                NotCanClassWorkspaceV4(
-                    modifier = Modifier.weight(1f),
-                    cycleName = selectedCycle?.name,
-                    subject = selectedSubject,
-                    classSession = selectedClass,
-                    audioRecordings = audioRecordings,
-                    importantMoments = importantMoments,
-                    notePages = notePages,
-                    selectedNoteId = selectedNoteId,
-                    documents = documents,
-                    pdfInkStrokes = pdfInkStrokes,
-                    transcripts = transcripts,
-                    detectedCues = detectedCues,
-                    recordingState = recordingState,
-                    whisperModelState = whisperModelState,
-                    localWhisperBusy = localWhisperBusy,
-                    localWhisperError = localWhisperError,
-                    onSelectNote = onSelectNote,
-                    onCreateNote = onCreateNote,
-                    onUpdateNote = onUpdateNote,
-                    onDeleteNote = onDeleteNote,
-                    onImportNote = onImportNote,
-                    onShareNote = onShareNote,
-                    onShareAudio = onShareAudio,
-                    onDeleteAudio = onDeleteAudio,
-                    onTranscribeLocal = onTranscribeLocal,
-                    onImportDocument = onImportDocument,
-                    onOpenDocument = onOpenDocument,
-                    onSavePdfInkStroke = onSavePdfInkStroke,
-                    onDeletePdfInkStroke = onDeletePdfInkStroke,
-                    onClearPdfInkPage = onClearPdfInkPage,
-                    onStartRecording = onStartRecording,
-                    onPauseRecording = onPauseRecording,
-                    onResumeRecording = onResumeRecording,
-                    onStopRecording = onStopRecording,
-                    onMarkMoment = onMarkMoment
-                )
+                level == HomeLevel.CLASSES || selectedClass == null -> {
+                    SubjectClassesLanding(
+                        cycleName = selectedCycle?.name,
+                        subject = selectedSubject,
+                        classes = classes,
+                        onBack = { level = HomeLevel.SUBJECTS },
+                        onSelectClass = { id ->
+                            onSelectClass(id)
+                            level = HomeLevel.WORKSPACE
+                        },
+                        onAddClass = { createDialog = CreateDialog.Class }
+                    )
+                }
+
+                else -> {
+                    CompactWorkspaceHeader(
+                        classTitle = selectedClass.title,
+                        onBackToClasses = { level = HomeLevel.CLASSES },
+                        onAddClass = { createDialog = CreateDialog.Class }
+                    )
+
+                    NotCanClassWorkspaceV4(
+                        modifier = Modifier.weight(1f),
+                        cycleName = selectedCycle?.name,
+                        subject = selectedSubject,
+                        classSession = selectedClass,
+                        audioRecordings = audioRecordings,
+                        importantMoments = importantMoments,
+                        notePages = notePages,
+                        selectedNoteId = selectedNoteId,
+                        documents = documents,
+                        pdfInkStrokes = pdfInkStrokes,
+                        transcripts = transcripts,
+                        detectedCues = detectedCues,
+                        recordingState = recordingState,
+                        whisperModelState = whisperModelState,
+                        localWhisperBusy = localWhisperBusy,
+                        localWhisperError = localWhisperError,
+                        onSelectNote = onSelectNote,
+                        onCreateNote = onCreateNote,
+                        onUpdateNote = onUpdateNote,
+                        onDeleteNote = onDeleteNote,
+                        onImportNote = onImportNote,
+                        onShareNote = onShareNote,
+                        onShareAudio = onShareAudio,
+                        onDeleteAudio = onDeleteAudio,
+                        onTranscribeLocal = onTranscribeLocal,
+                        onImportDocument = onImportDocument,
+                        onOpenDocument = onOpenDocument,
+                        onSavePdfInkStroke = onSavePdfInkStroke,
+                        onDeletePdfInkStroke = onDeletePdfInkStroke,
+                        onClearPdfInkPage = onClearPdfInkPage,
+                        onStartRecording = onStartRecording,
+                        onPauseRecording = onPauseRecording,
+                        onResumeRecording = onResumeRecording,
+                        onStopRecording = onStopRecording,
+                        onMarkMoment = onMarkMoment
+                    )
+                }
             }
         }
     }
 
     createDialog?.let { dialog ->
-        val enabled = when (dialog) { CreateDialog.Cycle -> true; CreateDialog.Subject -> selectedCycleId != null; CreateDialog.Class -> selectedSubjectId != null }
+        val enabled = when (dialog) {
+            CreateDialog.Cycle -> true
+            CreateDialog.Subject -> selectedCycleId != null
+            CreateDialog.Class -> selectedSubjectId != null
+        }
         NameEntryDialog(
-            title = when (dialog) { CreateDialog.Cycle -> "Nuevo ciclo"; CreateDialog.Subject -> "Nueva materia"; CreateDialog.Class -> "Nueva clase" },
-            label = when (dialog) { CreateDialog.Cycle -> "Ej. 2026 · Segundo semestre"; CreateDialog.Subject -> "Nombre de la materia"; CreateDialog.Class -> "Opcional · se numerará automáticamente" },
+            title = when (dialog) {
+                CreateDialog.Cycle -> "Nuevo ciclo"
+                CreateDialog.Subject -> "Nueva materia"
+                CreateDialog.Class -> "Nueva clase"
+            },
+            label = when (dialog) {
+                CreateDialog.Cycle -> "Ej. 2026 · Segundo semestre"
+                CreateDialog.Subject -> "Nombre de la materia"
+                CreateDialog.Class -> "Opcional · se numerará automáticamente"
+            },
             enabled = enabled,
             onDismiss = { createDialog = null },
             onConfirm = { name ->
-                when (dialog) { CreateDialog.Cycle -> onCreateCycle(name); CreateDialog.Subject -> onCreateSubject(name); CreateDialog.Class -> onCreateClass(name) }
+                when (dialog) {
+                    CreateDialog.Cycle -> onCreateCycle(name)
+                    CreateDialog.Subject -> onCreateSubject(name)
+                    CreateDialog.Class -> onCreateClass(name)
+                }
                 createDialog = null
+                if (dialog == CreateDialog.Class) level = HomeLevel.CLASSES
             }
         )
     }
@@ -225,15 +233,12 @@ private fun SubjectLanding(
     onAddCycle: () -> Unit,
     onAddSubject: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.School, contentDescription = null, tint = NotCanBlue)
-            Spacer(Modifier.padding(horizontal = 5.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Materias", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("Elige una materia y NotCan se centrará solo en ella.", color = NotCanGray)
+            Text("Materias", color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onAddSubject, enabled = selectedCycleId != null) {
+                Icon(Icons.Default.Add, "Nueva materia", tint = NotCanBlue)
             }
-            IconButton(onClick = onAddSubject, enabled = selectedCycleId != null) { Icon(Icons.Default.Add, "Nueva materia", tint = NotCanBlue) }
         }
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -247,24 +252,31 @@ private fun SubjectLanding(
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Todavía no hay materias", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Text("Crea la primera materia del ciclo. Después la pantalla de clase quedará limpia y centrada en esa materia.", color = NotCanGray)
+                    Text("Crea la primera materia de este ciclo.", color = NotCanGray)
                     Button(onClick = onAddSubject, enabled = selectedCycleId != null) { Text("Crear materia") }
                 }
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 210.dp),
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 items(subjects, key = { it.id }) { subject ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onSelectSubject(subject.id) },
                         colors = CardDefaults.cardColors(containerColor = NotCanSurface),
-                        shape = RoundedCornerShape(15.dp)
+                        shape = RoundedCornerShape(18.dp)
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Surface(color = NotCanBlue.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
-                                Icon(Icons.Default.School, contentDescription = null, tint = NotCanBlue, modifier = Modifier.padding(12.dp))
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                            Surface(color = NotCanBlue.copy(alpha = 0.16f), shape = RoundedCornerShape(12.dp)) {
+                                Icon(Icons.Default.School, null, tint = NotCanBlue, modifier = Modifier.padding(12.dp))
                             }
-                            Spacer(Modifier.padding(horizontal = 7.dp))
-                            Text(subject.name, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(subject.name, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Icon(Icons.Default.ChevronRight, null, tint = NotCanGray)
+                            }
                         }
                     }
                 }
@@ -272,3 +284,81 @@ private fun SubjectLanding(
         }
     }
 }
+
+@Composable
+private fun SubjectClassesLanding(
+    cycleName: String?,
+    subject: SubjectEntity,
+    classes: List<ClassSessionEntity>,
+    onBack: () -> Unit,
+    onSelectClass: (String) -> Unit,
+    onAddClass: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver a materias", tint = NotCanOffWhite) }
+            Column(Modifier.weight(1f)) {
+                Text(subject.name, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                cycleName?.let { Text(it, color = NotCanGray, style = MaterialTheme.typography.labelMedium) }
+            }
+            Button(onClick = onAddClass) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.padding(horizontal = 3.dp))
+                Text("Clase")
+            }
+        }
+
+        if (classes.isEmpty()) {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Aún no hay clases", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text("Cuando crees o grabes la primera clase aparecerá aquí directamente.", color = NotCanGray)
+                    Button(onClick = onAddClass) { Text("Crear primera clase") }
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 230.dp),
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(classes, key = { it.id }) { classSession ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelectClass(classSession.id) },
+                        colors = CardDefaults.cardColors(containerColor = NotCanSurface),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(classSession.title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("Abrir clase", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
+                            }
+                            Icon(Icons.Default.ChevronRight, null, tint = NotCanBlue)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactWorkspaceHeader(
+    classTitle: String,
+    onBackToClasses: () -> Unit,
+    onAddClass: () -> Unit
+) {
+    Surface(color = NotCanSurface, tonalElevation = 2.dp) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackToClasses) { Icon(Icons.Default.ArrowBack, "Clases", tint = NotCanOffWhite) }
+            Text(classTitle, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = onAddClass) { Icon(Icons.Default.Add, "Nueva clase", tint = NotCanBlue) }
+        }
+    }
+}
+
+private enum class HomeLevel { SUBJECTS, CLASSES, WORKSPACE }
