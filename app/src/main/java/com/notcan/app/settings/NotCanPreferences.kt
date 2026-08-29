@@ -20,9 +20,10 @@ class NotCanPreferences(context: Context) {
         get() = prefs.getString(KEY_AI_DETAIL, "Equilibrado") ?: "Equilibrado"
         set(value) = prefs.edit().putString(KEY_AI_DETAIL, value).apply()
 
+    /** El modo concentración automático se retiró en v0.7.6. */
     var autoFocusOnRecording: Boolean
-        get() = prefs.getBoolean(KEY_AUTO_FOCUS, true)
-        set(value) = prefs.edit().putBoolean(KEY_AUTO_FOCUS, value).apply()
+        get() = false
+        set(_) = prefs.edit().putBoolean(KEY_AUTO_FOCUS, false).apply()
 
     var autoTranscribeAfterRecording: Boolean
         get() = prefs.getBoolean(KEY_AUTO_TRANSCRIBE, false)
