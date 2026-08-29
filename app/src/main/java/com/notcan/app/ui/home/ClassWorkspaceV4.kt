@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,6 +26,7 @@ import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.recording.RecordingState
 import com.notcan.app.ui.theme.NotCanBlue
+import com.notcan.app.ui.theme.NotCanRed
 
 /** Compatibility wrapper kept while older PDF entities remain in the database. */
 @Composable
@@ -67,6 +69,7 @@ internal fun NotCanClassWorkspaceV4(
 ) {
     val context = LocalContext.current
     val latestTranscript = transcripts.firstOrNull()
+    val recordingActive = recordingState is RecordingState.Recording || recordingState is RecordingState.Paused
 
     Box(modifier = modifier) {
         NotCanClassWorkspaceV5(
@@ -100,7 +103,16 @@ internal fun NotCanClassWorkspaceV4(
             onMarkMoment = onMarkMoment
         )
 
-        if (latestTranscript != null && recordingState !is RecordingState.Recording && recordingState !is RecordingState.Paused) {
+        if (classSession == null && subject != null && !recordingActive) {
+            IconButton(
+                onClick = { onStartRecording(NEW_CLASS_RECORDING_SENTINEL) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = "Crear clase y comenzar grabación", tint = NotCanRed)
+            }
+        }
+
+        if (latestTranscript != null && !recordingActive) {
             IconButton(
                 onClick = {
                     val text = buildString {
@@ -121,3 +133,5 @@ internal fun NotCanClassWorkspaceV4(
         }
     }
 }
+
+internal const val NEW_CLASS_RECORDING_SENTINEL = "__NOTCAN_NEW_CLASS__"
