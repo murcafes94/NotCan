@@ -2,24 +2,26 @@ package com.notcan.app.ai
 
 import android.content.Context
 import android.text.Html
-import com.arm.aichat.AiChat
-import com.arm.aichat.InferenceEngine
-import com.notcan.app.localai.StudyModelManager
-import com.notcan.app.localai.StudyModelSpec
-import com.notcan.app.localai.StudyModelState
 import com.notcan.app.settings.NotCanPreferences
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
- * Fully local study assistant. No API key, cloud inference or token billing is used.
- * The GGUF model is downloaded separately and executed by the pinned llama.cpp Android runtime.
+ * Online academic assistant backed by the user's own Mistral Agent.
+ * The API key is stored locally with Android Keystore encryption and is never committed to the APK.
  */
 class NotCanAiService(private val context: Context) {
-    private val modelManager = StudyModelManager(context)
+    private val appContext = context.applicationContext
+    private val preferences = NotCanPreferences(appContext)
+    private val credentials = MistralCredentialsStore(appContext)
 
-    fun isConfigured(): Boolean = modelManager.state() == StudyModelState.INSTALLED
+    fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
+
+    fun startNewConversation() {
+        preferences.mistralConversationId = ""
+    }
 
     suspend fun studyAssistant(
         subjectName: String?,
@@ -28,7 +30,7 @@ class NotCanAiService(private val context: Context) {
         question: String
     ): String {
         require(isConfigured()) {
-            "Descarga primero ${StudyModelSpec.DISPLAY_NAME} desde Configuración → Componentes y descargas."
+            "Configura tu API key y Agent ID de Mistral en Configuración → Asistente NotCan."
         }
 
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
@@ -45,34 +47,8 @@ class NotCanAiService(private val context: Context) {
             return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
         }
 
-        val preferences = NotCanPreferences(context)
-        val systemPrompt = buildString {
-            appendLine("Eres ${preferences.assistantName}, el asistente académico local de NotCan.")
-            appendLine("Trabajas completamente offline y debes priorizar el material del estudiante.")
-            appendLine("Nivel de detalle: ${preferences.aiDetail}.")
-            if (preferences.aiInstructions.isNotBlank()) appendLine("Preferencias: ${preferences.aiInstructions}")
-            appendLine("No inventes instrucciones del profesor, fechas, tareas ni contenidos ausentes de las fuentes.")
-            appendLine("Distingue con claridad hechos presentes en las fuentes de inferencias o conocimiento general.")
-            appendLine("Responde en español salvo que el usuario pida otro idioma.")
-            appendLine("Las fuentes se entregan como [FUENTE: APUNTES] y [FUENTE: TRANSCRIPCIÓN].")
-
-            if (strictSources) {
-                appendLine("MODO SOLO FUENTES ACTIVADO.")
-                appendLine("Usa exclusivamente los apuntes y la transcripción suministrados; no completes huecos con conocimiento general ni memoria del modelo.")
-                appendLine("Si un dato solicitado no aparece en las fuentes, dilo claramente: 'No consta en las fuentes disponibles'.")
-                appendLine("Al final de cada párrafo factual indica [Apuntes], [Transcripción] o [Apuntes + Transcripción], según corresponda.")
-            }
-
-            if (socraticMode) {
-                appendLine("MODO SOCRÁTICO ACTIVADO.")
-                appendLine("No des una exposición completa ni reveles directamente la solución si el estudiante puede llegar a ella mediante preguntas.")
-                appendLine("Evalúa brevemente la respuesta del estudiante, corrige solo lo imprescindible y termina con UNA sola pregunta siguiente, concreta y progresiva.")
-                appendLine("Si es el primer turno, formula UNA pregunta diagnóstica basada en las fuentes.")
-            }
-        }
-
         val sourceText = buildString {
-            subjectName?.let { appendLine("MATERIA: $it") }
+            subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("MATERIA: $it") }
             if (plainNotes.isNotBlank()) {
                 appendLine("\n[FUENTE: APUNTES]")
                 appendLine(plainNotes.takeLast(MAX_SOURCE_CHARS / 2))
@@ -83,59 +59,149 @@ class NotCanAiService(private val context: Context) {
             }
         }.takeLast(MAX_SOURCE_CHARS)
 
-        val userPrompt = buildString {
-            // Qwen3 can reason in "thinking" mode, but on a phone/tablet that costs latency and RAM.
-            // Keep the lightweight local assistant in direct-answer mode by default.
-            appendLine("/no_think")
-            if (sourceText.isNotBlank()) {
-                appendLine(sourceText)
-                appendLine("\n--- FIN DE FUENTES ---\n")
+        val prompt = buildString {
+            appendLine("CONTEXTO DE NOTCAN")
+            appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
+            if (preferences.aiInstructions.isNotBlank()) appendLine("Preferencias del usuario: ${preferences.aiInstructions}")
+            appendLine("No muestres cadena de pensamiento, reflexiones internas ni monólogos. Entrega directamente el resultado útil.")
+            appendLine("No inventes citas, páginas, autores, fechas, referencias ni afirmaciones ausentes de las fuentes.")
+            appendLine("Si el usuario indica que puede haber un error, no inventes una corrección: corrige solo cuando tengas fundamento suficiente.")
+
+            if (strictSources) {
+                appendLine("MODO SOLO MIS FUENTES ACTIVADO.")
+                appendLine("Usa exclusivamente el material incluido debajo. Si el dato no consta, responde: 'No consta en las fuentes disponibles'.")
+                appendLine("Distingue [Apuntes], [Transcripción] o [Apuntes + Transcripción] cuando atribuyas afirmaciones importantes.")
+            } else {
+                appendLine("Puedes complementar con conocimiento general, pero distingue con claridad lo aportado por las fuentes del usuario.")
             }
-            appendLine("SOLICITUD:")
+
+            if (socraticMode) {
+                appendLine("MODO SOCRÁTICO ACTIVADO.")
+                appendLine("Evalúa brevemente la respuesta del estudiante y termina con UNA sola pregunta concreta y progresiva.")
+                appendLine("No reveles de inmediato una solución completa si puede alcanzarse mediante preguntas guiadas.")
+            }
+
+            if (sourceText.isNotBlank()) {
+                appendLine("\n--- FUENTES DE NOTCAN ---")
+                appendLine(sourceText)
+                appendLine("--- FIN DE FUENTES ---\n")
+            }
+
+            appendLine("SOLICITUD DEL USUARIO:")
             append(cleanQuestion)
         }
 
-        return generate(systemPrompt, userPrompt)
+        return sendToMistral(prompt)
     }
 
-    private suspend fun generate(systemPrompt: String, userPrompt: String): String {
-        val engine = AiChat.getInferenceEngine(context.applicationContext)
-        prepareEngine(engine)
+    private fun sendToMistral(prompt: String): String {
+        val apiKey = credentials.apiKey()
+        val agentId = preferences.mistralAgentId.trim()
+        val existingConversation = preferences.mistralConversationId.trim()
+
+        val response = if (existingConversation.isBlank()) {
+            startConversation(apiKey, agentId, prompt)
+        } else {
+            runCatching { appendConversation(apiKey, existingConversation, prompt) }
+                .getOrElse {
+                    preferences.mistralConversationId = ""
+                    startConversation(apiKey, agentId, prompt)
+                }
+        }
+
+        response.optString("conversation_id").takeIf { it.isNotBlank() }?.let {
+            preferences.mistralConversationId = it
+        }
+
+        extractAssistantText(response)?.let { return it }
+        extractFunctionCall(response)?.let { call ->
+            return "El agente solicitó la función ${call.first}${call.second?.let { " con $it" } ?: ""}. La función fue detectada por NotCan, pero su ejecutor externo todavía no está conectado."
+        }
+        return "Mistral respondió sin contenido de texto. Vuelve a intentarlo o inicia una conversación nueva."
+    }
+
+    private fun startConversation(apiKey: String, agentId: String, prompt: String): JSONObject {
+        val body = JSONObject()
+            .put("agent_id", agentId)
+            .put("inputs", prompt)
+            .put("store", true)
+        return postJson("$BASE_URL/v1/conversations", apiKey, body)
+    }
+
+    private fun appendConversation(apiKey: String, conversationId: String, prompt: String): JSONObject {
+        val body = JSONObject()
+            .put("inputs", prompt)
+            .put("store", true)
+        return postJson("$BASE_URL/v1/conversations/$conversationId", apiKey, body)
+    }
+
+    private fun postJson(endpoint: String, apiKey: String, body: JSONObject): JSONObject {
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer $apiKey")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+        }
 
         return try {
-            engine.loadModel(modelManager.modelFile().absolutePath)
-            engine.setSystemPrompt(systemPrompt)
-            val answer = StringBuilder()
-            engine.sendUserPrompt(userPrompt, MAX_OUTPUT_TOKENS).collect { token -> answer.append(token) }
-            answer.toString().trim().ifBlank { "El modelo local no devolvió texto. Vuelve a intentarlo con una pregunta más breve." }
+            connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body.toString()) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val message = runCatching { JSONObject(text).optString("message") }.getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: text.take(500).ifBlank { "HTTP $code" }
+                throw IllegalStateException("Mistral ($code): $message")
+            }
+            JSONObject(text)
         } finally {
-            runCatching {
-                when (engine.state.value) {
-                    is InferenceEngine.State.ModelReady,
-                    is InferenceEngine.State.Error -> engine.cleanUp()
-                    else -> Unit
+            connection.disconnect()
+        }
+    }
+
+    private fun extractAssistantText(root: JSONObject): String? {
+        val outputs = root.optJSONArray("outputs") ?: return null
+        val parts = mutableListOf<String>()
+        for (i in 0 until outputs.length()) {
+            val output = outputs.optJSONObject(i) ?: continue
+            val type = output.optString("type")
+            if (type.isNotBlank() && type != "message.output") continue
+            when (val content = output.opt("content")) {
+                is String -> if (content.isNotBlank()) parts += content
+                is JSONArray -> {
+                    for (j in 0 until content.length()) {
+                        when (val chunk = content.opt(j)) {
+                            is String -> if (chunk.isNotBlank()) parts += chunk
+                            is JSONObject -> {
+                                val text = chunk.optString("text").ifBlank { chunk.optString("content") }
+                                if (text.isNotBlank()) parts += text
+                            }
+                        }
+                    }
                 }
             }
         }
+        return parts.joinToString("\n").trim().ifBlank { null }
     }
 
-    private suspend fun prepareEngine(engine: InferenceEngine) {
-        when (engine.state.value) {
-            is InferenceEngine.State.ModelReady,
-            is InferenceEngine.State.Error -> runCatching { engine.cleanUp() }
-            else -> Unit
+    private fun extractFunctionCall(root: JSONObject): Pair<String, String?>? {
+        val outputs = root.optJSONArray("outputs") ?: return null
+        for (i in 0 until outputs.length()) {
+            val output = outputs.optJSONObject(i) ?: continue
+            val type = output.optString("type")
+            if (!type.contains("function", ignoreCase = true)) continue
+            val name = output.optString("name")
+                .ifBlank { output.optJSONObject("function")?.optString("name").orEmpty() }
+                .ifBlank { "función externa" }
+            val arguments = output.opt("arguments")?.toString()
+                ?: output.optJSONObject("function")?.opt("arguments")?.toString()
+            return name to arguments
         }
-
-        if (engine.state.value is InferenceEngine.State.Uninitialized || engine.state.value is InferenceEngine.State.Initializing) {
-            val state = withTimeout(30_000L) {
-                engine.state.first { it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error }
-            }
-            if (state is InferenceEngine.State.Error) throw state.exception
-        }
-
-        check(engine.state.value is InferenceEngine.State.Initialized) {
-            "El motor local no está listo (${engine.state.value.javaClass.simpleName})."
-        }
+        return null
     }
 
     private fun sourcePlainText(value: String): String {
@@ -149,11 +215,12 @@ class NotCanAiService(private val context: Context) {
     }
 
     companion object {
-        const val TEXT_MODEL = StudyModelSpec.MODEL_NAME
+        const val TEXT_MODEL = "Mistral Agent"
         const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
         const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
-        // Keep the mobile context conservative even though Qwen3 supports much more natively.
-        private const val MAX_SOURCE_CHARS = 14_000
-        private const val MAX_OUTPUT_TOKENS = 512
+        private const val BASE_URL = "https://api.mistral.ai"
+        private const val MAX_SOURCE_CHARS = 28_000
+        private const val CONNECT_TIMEOUT_MS = 20_000
+        private const val READ_TIMEOUT_MS = 90_000
     }
 }
