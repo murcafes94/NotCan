@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/**", "fix/**" ]
+    branches: [ "main", "feature/**", "fix/**", "notcan-v0.7.7-mistral" ]
   workflow_dispatch:
 
 jobs:
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.6-test"
+          TAG="v0.7.7-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.6-test.apk" \
+            "$APK#NotCan-v0.7.7-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.6 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.6. Retira el modo concentración automático, permite compartir transcripciones, cambia la transcripción final a Whisper Base q5_1 multilingüe (~57 MB) para reducir drásticamente el tiempo de procesamiento y permite que las descargas de modelos continúen con la red activa fuera de la app."
+            --title "NotCan v0.7.7 · prueba" \
+            --notes "APK de prueba de NotCan v0.7.7. Sustituye el asistente generativo local Qwen por el Agent de Mistral configurado por el usuario, guarda la API key cifrada con Android Keystore, mantiene Whisper/Moonshine locales y prepara la detección de funciones externas para futuras búsquedas web y herramientas de NotCan."
