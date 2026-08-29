@@ -65,7 +65,6 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
     var detail by remember { mutableStateOf(preferences.aiDetail) }
-    var autoFocus by remember { mutableStateOf(preferences.autoFocusOnRecording) }
     var autoTranscribe by remember { mutableStateOf(preferences.autoTranscribeAfterRecording) }
     var autoCues by remember { mutableStateOf(preferences.autoDetectAcademicCues) }
     var refreshTick by remember { mutableIntStateOf(0) }
@@ -110,7 +109,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
 
                 DownloadComponentCard(
                     title = "Transcripción en vivo",
-                    subtitle = "Moonshine español · para texto durante la grabación",
+                    subtitle = "Moonshine español · para texto provisional durante la grabación",
                     sizeText = "~63 MB",
                     stateText = when (liveState) {
                         LiveTranscriptionModelState.INSTALLED -> "Instalado"
@@ -131,9 +130,9 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 )
 
                 DownloadComponentCard(
-                    title = "Transcripción final de alta precisión",
+                    title = "Transcripción final rápida",
                     subtitle = WhisperModelSpec.DISPLAY_NAME,
-                    sizeText = "~1,5 GB",
+                    sizeText = "~57 MB",
                     stateText = when (whisperState) {
                         WhisperModelState.INSTALLED -> "Instalado"
                         WhisperModelState.DOWNLOADING -> "Descargando"
@@ -175,7 +174,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 )
 
                 Text(
-                    "Las descargas grandes se realizan con el gestor de Android, continúan aunque cierres NotCan y evitan datos móviles por defecto. Ningún modelo se descarga sin tu acción.",
+                    "Whisper y los modelos GGUF usan el gestor de descargas de Android para continuar fuera de NotCan. Se permite la red activa del dispositivo para evitar que una descarga quede pausada al salir de la app; el roaming sigue deshabilitado.",
                     color = NotCanGray,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -216,12 +215,6 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             }
         }
 
-        SettingsSwitch(
-            title = "Modo concentración al grabar",
-            subtitle = "Oculta navegación y elementos secundarios mientras una clase está activa.",
-            checked = autoFocus,
-            onCheckedChange = { autoFocus = it; preferences.autoFocusOnRecording = it }
-        )
         SettingsSwitch(
             title = "Transcribir al terminar",
             subtitle = "Si Whisper está instalado, encola automáticamente la transcripción final en segundo plano.",
