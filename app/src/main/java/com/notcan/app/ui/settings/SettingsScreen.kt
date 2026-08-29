@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SpatialAudioOff
 import androidx.compose.material3.Button
@@ -39,11 +41,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.notcan.app.ai.MistralCredentialsStore
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.StudyModelManager
-import com.notcan.app.localai.StudyModelSpec
 import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
@@ -60,13 +64,18 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val context = LocalContext.current
     val whisperManager = remember(context) { WhisperModelManager(context.applicationContext) }
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
-    val studyManager = remember(context) { StudyModelManager(context.applicationContext) }
+    val legacyStudyManager = remember(context) { StudyModelManager(context.applicationContext) }
+    val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
 
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
     var detail by remember { mutableStateOf(preferences.aiDetail) }
     var autoTranscribe by remember { mutableStateOf(preferences.autoTranscribeAfterRecording) }
     var autoCues by remember { mutableStateOf(preferences.autoDetectAcademicCues) }
+    var apiKeyInput by remember { mutableStateOf("") }
+    var agentId by remember { mutableStateOf(preferences.mistralAgentId) }
+    var hasSavedKey by remember { mutableStateOf(credentials.hasApiKey()) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
     var refreshTick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -80,8 +89,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val whisperProgress = remember(refreshTick) { whisperManager.progressPercent() }
     val liveState = remember(refreshTick) { liveManager.state() }
     val liveProgress = remember(refreshTick) { liveManager.progressPercent() }
-    val studyState = remember(refreshTick) { studyManager.state() }
-    val studyProgress = remember(refreshTick) { studyManager.progressPercent() }
+    val legacyStudyState = remember(refreshTick) { legacyStudyManager.state() }
+    val mistralConfigured = hasSavedKey && agentId.trim().isNotBlank()
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -99,17 +108,84 @@ fun SettingsScreen(preferences: NotCanPreferences) {
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Key, contentDescription = null, tint = NotCanBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Asistente NotCan · Mistral", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text(if (mistralConfigured) "Configurado · listo para usar tu agente" else "Añade tu API key y el Agent ID que creaste en Mistral Studio", color = if (mistralConfigured) NotCanBlue else NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                OutlinedTextField(
+                    value = agentId,
+                    onValueChange = { agentId = it; saveMessage = null },
+                    label = { Text("Agent ID") },
+                    supportingText = { Text("Empieza normalmente por ag_… o usa el ID que muestra Mistral Studio.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = apiKeyInput,
+                    onValueChange = { apiKeyInput = it; saveMessage = null },
+                    label = { Text(if (hasSavedKey) "Nueva API key (opcional)" else "API key de Mistral") },
+                    supportingText = { Text(if (hasSavedKey) "Ya hay una clave cifrada en este dispositivo. Déjalo vacío para conservarla." else "La clave no se guarda en GitHub ni dentro del APK.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = agentId.trim().isNotBlank() && (hasSavedKey || apiKeyInput.isNotBlank()),
+                        onClick = {
+                            preferences.mistralAgentId = agentId.trim()
+                            preferences.mistralConversationId = ""
+                            if (apiKeyInput.isNotBlank()) {
+                                runCatching { credentials.saveApiKey(apiKeyInput) }
+                                    .onSuccess {
+                                        hasSavedKey = true
+                                        apiKeyInput = ""
+                                        saveMessage = "Configuración guardada. Ya puedes probar el chat de NotCan AI."
+                                    }
+                                    .onFailure { saveMessage = it.message ?: "No se pudo guardar la clave" }
+                            } else {
+                                saveMessage = "Agent ID guardado. Se conserva la API key cifrada existente."
+                            }
+                        }
+                    ) { Text("Guardar Mistral") }
+
+                    if (hasSavedKey) {
+                        OutlinedButton(onClick = {
+                            credentials.clearApiKey()
+                            preferences.mistralConversationId = ""
+                            hasSavedKey = false
+                            apiKeyInput = ""
+                            saveMessage = "API key eliminada de este dispositivo."
+                        }) { Text("Eliminar clave") }
+                    }
+                }
+
+                saveMessage?.let { Text(it, color = if (mistralConfigured) NotCanBlue else NotCanGray, style = MaterialTheme.typography.bodySmall) }
+                Text("La IA generativa necesita Internet. Grabación, apuntes y transcripción local siguen funcionando sin conexión.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CloudDownload, contentDescription = null, tint = NotCanBlue)
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text("Componentes y descargas", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                        Text("Instala aquí los recursos que NotCan necesita para trabajar sin conexión.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                        Text("Recursos locales para transcripción y trabajo sin conexión.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
                 DownloadComponentCard(
                     title = "Transcripción en vivo",
-                    subtitle = "Moonshine español · para texto provisional durante la grabación",
+                    subtitle = "Moonshine español · texto provisional durante la grabación",
                     sizeText = "~63 MB",
                     stateText = when (liveState) {
                         LiveTranscriptionModelState.INSTALLED -> "Instalado"
@@ -119,14 +195,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     progress = liveProgress,
                     installed = liveState == LiveTranscriptionModelState.INSTALLED,
                     downloading = liveState == LiveTranscriptionModelState.DOWNLOADING,
-                    onDownload = {
-                        runCatching { liveManager.enqueueDownload() }
-                        refreshTick++
-                    },
-                    onRemove = {
-                        runCatching { liveManager.removeModel() }
-                        refreshTick++
-                    }
+                    onDownload = { runCatching { liveManager.enqueueDownload() }; refreshTick++ },
+                    onRemove = { runCatching { liveManager.removeModel() }; refreshTick++ }
                 )
 
                 DownloadComponentCard(
@@ -141,43 +211,25 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     progress = whisperProgress,
                     installed = whisperState == WhisperModelState.INSTALLED,
                     downloading = whisperState == WhisperModelState.DOWNLOADING,
-                    onDownload = {
-                        runCatching { whisperManager.enqueueDownload() }
-                        refreshTick++
-                    },
-                    onRemove = {
-                        runCatching { whisperManager.removeModel() }
-                        refreshTick++
-                    }
+                    onDownload = { runCatching { whisperManager.enqueueDownload() }; refreshTick++ },
+                    onRemove = { runCatching { whisperManager.removeModel() }; refreshTick++ }
                 )
 
-                DownloadComponentCard(
-                    title = "Asistente IA local",
-                    subtitle = "${StudyModelSpec.MODEL_NAME} · ${StudyModelSpec.LICENSE} · funciona sin internet",
-                    sizeText = "~639 MB",
-                    stateText = when (studyState) {
-                        StudyModelState.INSTALLED -> "Instalado y listo"
-                        StudyModelState.DOWNLOADING -> "Descargando"
-                        StudyModelState.NOT_INSTALLED -> "No instalado"
-                    },
-                    progress = studyProgress,
-                    installed = studyState == StudyModelState.INSTALLED,
-                    downloading = studyState == StudyModelState.DOWNLOADING,
-                    onDownload = {
-                        runCatching { studyManager.enqueueDownload() }
-                        refreshTick++
-                    },
-                    onRemove = {
-                        runCatching { studyManager.removeModel() }
-                        refreshTick++
+                if (legacyStudyState != StudyModelState.NOT_INSTALLED) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)), shape = RoundedCornerShape(14.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text("Modelo IA local anterior", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                            Text("Qwen ya no se usa como asistente principal. Puedes eliminar su descarga para recuperar aproximadamente 639 MB.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                            OutlinedButton(onClick = { runCatching { legacyStudyManager.removeModel() }; refreshTick++ }) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (legacyStudyState == StudyModelState.DOWNLOADING) "Cancelar y eliminar" else "Eliminar Qwen")
+                            }
+                        }
                     }
-                )
+                }
 
-                Text(
-                    "Whisper y los modelos GGUF usan el gestor de descargas de Android para continuar fuera de NotCan. Se permite la red activa del dispositivo para evitar que una descarga quede pausada al salir de la app; el roaming sigue deshabilitado.",
-                    color = NotCanGray,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text("Las descargas usan el gestor de Android y pueden continuar aunque salgas de NotCan.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -186,7 +238,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = NotCanBlue)
                     Spacer(Modifier.width(8.dp))
-                    Text("Personalidad de la IA", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text("Preferencias del asistente", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                 }
                 OutlinedTextField(
                     value = assistantName,
@@ -198,18 +250,14 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     value = instructions,
                     onValueChange = { instructions = it; preferences.aiInstructions = it },
                     label = { Text("Cómo quiero que responda") },
-                    supportingText = { Text("Ej.: directo, profundo, con vocabulario teológico, citar primero los apuntes…") },
+                    supportingText = { Text("Estas preferencias se añaden al contexto que NotCan envía a tu agente.") },
                     minLines = 4,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text("Nivel de detalle", color = NotCanGray)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     listOf("Breve", "Equilibrado", "Profundo").forEach { option ->
-                        FilterChip(
-                            selected = detail == option,
-                            onClick = { detail = option; preferences.aiDetail = option },
-                            label = { Text(option) }
-                        )
+                        FilterChip(selected = detail == option, onClick = { detail = option; preferences.aiDetail = option }, label = { Text(option) })
                     }
                 }
             }
@@ -227,13 +275,6 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             checked = autoCues,
             onCheckedChange = { autoCues = it; preferences.autoDetectAcademicCues = it }
         )
-
-        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.7f)), shape = RoundedCornerShape(16.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("Procesos en segundo plano", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                Text("Las transcripciones finales usan trabajo persistente con notificación. Los modelos instalados se guardan dentro del almacenamiento privado de NotCan.", color = NotCanGray)
-            }
-        }
     }
 }
 
@@ -249,10 +290,7 @@ private fun DownloadComponentCard(
     onDownload: () -> Unit,
     onRemove: () -> Unit
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)),
-        shape = RoundedCornerShape(14.dp)
-    ) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f)), shape = RoundedCornerShape(14.dp)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.SpatialAudioOff, contentDescription = null, tint = NotCanBlue)
@@ -265,34 +303,22 @@ private fun DownloadComponentCard(
             }
 
             Text(stateText, color = if (installed) NotCanBlue else NotCanGray, style = MaterialTheme.typography.labelMedium)
-
             if (downloading) {
-                LinearProgressIndicator(
-                    progress = { (progress ?: 0) / 100f },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    if (progress != null) "$progress %" else "Preparando descarga…",
-                    color = NotCanGray,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                LinearProgressIndicator(progress = { (progress ?: 0) / 100f }, modifier = Modifier.fillMaxWidth())
+                Text(if (progress != null) "$progress %" else "Preparando descarga…", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                when {
-                    installed -> OutlinedButton(onClick = onRemove) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Eliminar")
-                    }
-                    downloading -> OutlinedButton(onClick = onRemove) {
-                        Text("Cancelar")
-                    }
-                    else -> Button(onClick = onDownload) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Descargar")
-                    }
+            when {
+                installed -> OutlinedButton(onClick = onRemove) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Eliminar")
+                }
+                downloading -> OutlinedButton(onClick = onRemove) { Text("Cancelar") }
+                else -> Button(onClick = onDownload) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Descargar")
                 }
             }
         }
@@ -300,12 +326,7 @@ private fun DownloadComponentCard(
 }
 
 @Composable
-private fun SettingsSwitch(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
+private fun SettingsSwitch(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
