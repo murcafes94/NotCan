@@ -91,7 +91,11 @@ class StudyRepository(private val dao: NotCanDao) {
         val now = System.currentTimeMillis()
         val classNumber = dao.countClassesForSubject(subjectId) + 1
         val subject = dao.getSubject(subjectId)
-        val resolvedTitle = title.trim().ifBlank { "${subject?.name ?: "Clase"} - Clase $classNumber" }
+        val requestedTitle = title.trim()
+        val generatedByOldUi = requestedTitle.matches(Regex("Clase\\s+\\d+", RegexOption.IGNORE_CASE))
+        val resolvedTitle = if (requestedTitle.isBlank() || generatedByOldUi) {
+            "${subject?.name ?: "Clase"} #$classNumber"
+        } else requestedTitle
         val classSession = ClassSessionEntity(
             id = UUID.randomUUID().toString(),
             subjectId = subjectId,
@@ -114,7 +118,7 @@ class StudyRepository(private val dao: NotCanDao) {
         val session = ClassSessionEntity(
             id = UUID.randomUUID().toString(),
             subjectId = subject.id,
-            title = "${subject.name} - Clase $classNumber",
+            title = "${subject.name} #$classNumber",
             startedAtEpochMs = occurrenceStartEpochMs,
             createdAtEpochMs = System.currentTimeMillis(),
             scheduleId = schedule.id,
