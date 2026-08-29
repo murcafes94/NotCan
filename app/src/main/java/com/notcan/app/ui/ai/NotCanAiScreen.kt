@@ -1,7 +1,5 @@
 package com.notcan.app.ui.ai
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,10 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Quiz
@@ -38,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,22 +48,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.notcan.app.ai.MistralCredentialsStore
 import com.notcan.app.ai.NotCanAiService
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.TranscriptEntity
-import com.notcan.app.localai.StudyModelManager
-import com.notcan.app.localai.StudyModelSpec
 import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
+import com.notcan.app.settings.NotCanPreferences
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanSurface
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun NotCanAiScreen(
@@ -97,39 +87,15 @@ fun NotCanAiScreen(
     onAsk: (String) -> Unit,
     onClear: () -> Unit
 ) {
-    var section by remember { mutableIntStateOf(1) }
+    // Legacy local-model arguments are intentionally retained in the public signature during
+    // the 0.7.7 migration so MainActivity remains binary/simple-source compatible.
+    @Suppress("UNUSED_VARIABLE") val legacy = listOf(configured, studyModelState, studyModelProgress, onDownloadStudyModel, onRemoveStudyModel)
+
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var importedStudyModel by remember { mutableStateOf(false) }
-    var importingStudyModel by remember { mutableStateOf(false) }
-    var importMessage by remember { mutableStateOf<String?>(null) }
-
-    val importStudyModelLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && !importingStudyModel) {
-            importingStudyModel = true
-            importMessage = "Importando el modelo que ya tienes…"
-            scope.launch {
-                val outcome = runCatching {
-                    withContext(Dispatchers.IO) {
-                        StudyModelManager(context.applicationContext).importExistingModel(uri)
-                    }
-                }
-                importingStudyModel = false
-                if (outcome.isSuccess) {
-                    importedStudyModel = true
-                    importMessage = "Modelo reutilizado · no se descargó de Internet"
-                } else {
-                    importMessage = outcome.exceptionOrNull()?.message ?: "No se pudo importar el modelo"
-                }
-            }
-        }
-    }
-
-    val effectiveConfigured = configured || importedStudyModel
-    val effectiveStudyModelState = if (importedStudyModel) StudyModelState.INSTALLED else studyModelState
-    val onImportExistingModel = {
-        importStudyModelLauncher.launch(arrayOf("application/octet-stream", "application/*", "*/*"))
-    }
+    val preferences = remember(context) { NotCanPreferences(context.applicationContext) }
+    val credentialStore = remember(context) { MistralCredentialsStore(context.applicationContext) }
+    val onlineConfigured = credentialStore.hasApiKey() && preferences.mistralAgentId.isNotBlank()
+    var section by remember { mutableIntStateOf(1) }
 
     Column(Modifier.fillMaxSize()) {
         when (section) {
@@ -139,46 +105,28 @@ fun NotCanAiScreen(
                 transcripts = transcripts,
                 audioRecordings = audioRecordings,
                 detectedCues = detectedCues,
-                studyModelState = effectiveStudyModelState,
-                studyModelProgress = studyModelProgress,
                 whisperModelState = whisperModelState,
                 whisperModelProgress = whisperModelProgress,
                 localWhisperBusy = localWhisperBusy,
                 localWhisperError = localWhisperError,
-                importingStudyModel = importingStudyModel,
-                importMessage = importMessage,
-                onDownloadStudyModel = onDownloadStudyModel,
-                onImportStudyModel = onImportExistingModel,
-                onRemoveStudyModel = {
-                    importedStudyModel = false
-                    importMessage = null
-                    onRemoveStudyModel()
-                },
                 onDownloadWhisperModel = onDownloadWhisperModel,
                 onRemoveWhisperModel = onRemoveWhisperModel,
                 onTranscribeLocal = onTranscribeLocal
             )
             1 -> AiChat(
-                subjectName,
-                classTitle,
-                effectiveConfigured,
-                busy,
-                error,
-                result,
-                onAsk,
-                onClear,
-                onDownloadStudyModel,
-                onImportExistingModel,
-                importingStudyModel,
-                importMessage
+                subjectName = subjectName,
+                classTitle = classTitle,
+                configured = onlineConfigured,
+                busy = busy,
+                error = error,
+                result = result,
+                onAsk = onAsk,
+                onClear = onClear
             )
             else -> AiStudio(
-                configured = effectiveConfigured,
+                configured = onlineConfigured,
                 busy = busy,
-                onAsk = { prompt ->
-                    onAsk(prompt)
-                    section = 1
-                }
+                onAsk = { prompt -> onAsk(prompt); section = 1 }
             )
         }
 
@@ -197,17 +145,10 @@ private fun AiSources(
     transcripts: List<TranscriptEntity>,
     audioRecordings: List<AudioRecordingEntity>,
     detectedCues: List<DetectedCueEntity>,
-    studyModelState: StudyModelState,
-    studyModelProgress: Int?,
     whisperModelState: WhisperModelState,
     whisperModelProgress: Int?,
     localWhisperBusy: Boolean,
     localWhisperError: String?,
-    importingStudyModel: Boolean,
-    importMessage: String?,
-    onDownloadStudyModel: () -> Unit,
-    onImportStudyModel: () -> Unit,
-    onRemoveStudyModel: () -> Unit,
     onDownloadWhisperModel: () -> Unit,
     onRemoveWhisperModel: () -> Unit,
     onTranscribeLocal: (String) -> Unit
@@ -217,36 +158,16 @@ private fun AiSources(
         item {
             Text(subjectName ?: "Fuentes", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(classTitle ?: "Selecciona una clase", color = NotCanGray)
-            Text("Todos los modelos de esta pantalla funcionan localmente. No usan API ni consumen tokens.", color = NotCanBlue)
+            Text("Tus apuntes y transcripciones siguen siendo la base del asistente. Mistral solo se usa cuando haces una consulta de IA.", color = NotCanBlue)
         }
 
         item {
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Respuesta centrada en tus fuentes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Text("En Chat puedes activar “Solo mis fuentes”: NotCan evita completar huecos con conocimiento general y marca si una afirmación proviene de apuntes o de la transcripción.", color = NotCanGray)
+                    Text("Activa “Solo mis fuentes” para impedir que el agente complete huecos con conocimiento general.", color = NotCanGray)
                 }
             }
-        }
-
-        item {
-            ModelCard(
-                icon = Icons.Default.AutoAwesome,
-                title = StudyModelSpec.DISPLAY_NAME,
-                subtitle = "Tutor, resúmenes, cuestionarios y material de estudio · ~1,1 GB",
-                stateLabel = when (studyModelState) {
-                    StudyModelState.NOT_INSTALLED -> "No encontrado dentro de NotCan"
-                    StudyModelState.DOWNLOADING -> studyModelProgress?.let { "Descargando… $it%" } ?: "Descargando en segundo plano…"
-                    StudyModelState.INSTALLED -> "Instalado · listo offline"
-                },
-                installed = studyModelState == StudyModelState.INSTALLED,
-                downloading = studyModelState == StudyModelState.DOWNLOADING,
-                importing = importingStudyModel,
-                message = importMessage,
-                onDownload = onDownloadStudyModel,
-                onImport = onImportStudyModel,
-                onRemove = onRemoveStudyModel
-            )
         }
 
         item {
@@ -257,20 +178,21 @@ private fun AiSources(
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text("${WhisperModelSpec.DISPLAY_NAME} · transcripción final", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                            Text("Alta calidad local · ~1,5 GB · sin tokens", color = NotCanGray)
+                            Text("Transcripción local · sin usar Mistral", color = NotCanGray)
                         }
                     }
                     when (whisperModelState) {
-                        WhisperModelState.NOT_INSTALLED -> Button(onClick = onDownloadWhisperModel) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar ~1,5 GB") }
+                        WhisperModelState.NOT_INSTALLED -> Button(onClick = onDownloadWhisperModel) { Text("Descargar modelo") }
                         WhisperModelState.DOWNLOADING -> Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp)); Text(whisperModelProgress?.let { "Descargando… $it%" } ?: "Descargando en segundo plano…", color = NotCanGray)
+                            Spacer(Modifier.width(8.dp))
+                            Text(whisperModelProgress?.let { "Descargando… $it%" } ?: "Descargando…", color = NotCanGray)
                         }
                         WhisperModelState.INSTALLED -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(enabled = latestAudio != null && !localWhisperBusy, onClick = { latestAudio?.let { onTranscribeLocal(it.id) } }) {
                                 Text(if (localWhisperBusy) "En cola…" else "Transcribir último audio")
                             }
-                            OutlinedButton(onClick = onRemoveWhisperModel, enabled = !localWhisperBusy) { Icon(Icons.Default.Delete, null); Spacer(Modifier.width(5.dp)); Text("Modelo") }
+                            TextButton(onClick = onRemoveWhisperModel, enabled = !localWhisperBusy) { Text("Eliminar modelo") }
                         }
                     }
                     localWhisperError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -296,60 +218,15 @@ private fun AiSources(
 }
 
 @Composable
-private fun ModelCard(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    stateLabel: String,
-    installed: Boolean,
-    downloading: Boolean,
-    importing: Boolean,
-    message: String?,
-    onDownload: () -> Unit,
-    onImport: () -> Unit,
-    onRemove: () -> Unit
-) {
-    Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = NotCanBlue)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Text(subtitle, color = NotCanGray)
-                }
-            }
-            Text(stateLabel, color = if (installed) NotCanBlue else NotCanGray)
-            when {
-                importing -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp)); Text("Copiando tu GGUF al espacio local de NotCan…", color = NotCanGray)
-                }
-                downloading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp)); Text("Puedes cerrar NotCan; Android continuará la descarga.", color = NotCanGray)
-                }
-                installed -> OutlinedButton(onClick = onRemove) { Icon(Icons.Default.Delete, null); Spacer(Modifier.width(5.dp)); Text("Eliminar modelo") }
-                else -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onDownload) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar") }
-                        OutlinedButton(onClick = onImport) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Usar .gguf existente") }
-                    }
-                    Text("Si conservas el archivo de una instalación anterior, selecciónalo aquí y NotCan lo reutilizará sin volver a descargarlo.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            message?.let { Text(it, color = if (installed || it.startsWith("Modelo reutilizado")) NotCanBlue else NotCanGray, style = MaterialTheme.typography.bodySmall) }
-        }
-    }
-}
-
-@Composable
 private fun SourceRow(icon: ImageVector, title: String, subtitle: String) {
     Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.8f))) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = NotCanBlue)
             Spacer(Modifier.width(10.dp))
-            Column { Text(title, color = NotCanOffWhite, fontWeight = FontWeight.Medium); Text(subtitle, color = NotCanGray) }
+            Column {
+                Text(title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                Text(subtitle, color = NotCanGray)
+            }
         }
     }
 }
@@ -363,11 +240,7 @@ private fun AiChat(
     error: String?,
     result: String,
     onAsk: (String) -> Unit,
-    onClear: () -> Unit,
-    onDownloadModel: () -> Unit,
-    onImportModel: () -> Unit,
-    importingModel: Boolean,
-    importMessage: String?
+    onClear: () -> Unit
 ) {
     var question by remember(classTitle) { mutableStateOf("") }
     var sourceOnly by remember(classTitle) { mutableStateOf(true) }
@@ -379,72 +252,42 @@ private fun AiChat(
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text("NotCan AI", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text(listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Tutor académico local" }, color = NotCanGray)
+                Text(listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Asistente académico · Mistral" }, color = NotCanGray)
             }
-            if (result.isNotBlank()) TextButton(onClick = onClear) { Text("Nuevo") }
+            if (result.isNotBlank()) TextButton(onClick = onClear) { Text("Limpiar") }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(14.dp)) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(if (configured) "Mistral conectado" else "Mistral no configurado", color = if (configured) NotCanBlue else MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                Text(if (configured) "Usando tu agente de Mistral. La API key permanece cifrada en este dispositivo." else "Abre Configuración → Asistente NotCan e introduce tu API key y Agent ID.", color = NotCanGray)
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = sourceOnly,
-                onClick = { sourceOnly = !sourceOnly },
-                label = { Text("Solo mis fuentes") },
-                leadingIcon = { Icon(Icons.Default.Source, contentDescription = null) }
-            )
-            FilterChip(
-                selected = socraticMode,
-                onClick = { socraticMode = !socraticMode },
-                label = { Text("Socrático") },
-                leadingIcon = { Icon(Icons.Default.Quiz, contentDescription = null) }
-            )
+            FilterChip(selected = sourceOnly, onClick = { sourceOnly = !sourceOnly }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
+            FilterChip(selected = socraticMode, onClick = { socraticMode = !socraticMode }, label = { Text("Socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
         }
-        Text(
-            when {
-                socraticMode && sourceOnly -> "Te guía con una pregunta a la vez y se mantiene estrictamente dentro de tus apuntes y transcripciones."
-                socraticMode -> "Te guía con una pregunta a la vez, corrige lo imprescindible y continúa de forma progresiva."
-                sourceOnly -> "Prioriza precisión académica: si algo no aparece en tus fuentes, NotCan debe decirlo."
-                else -> "Puede complementar tus fuentes con conocimiento general, distinguiéndolo del material de clase."
-            },
-            color = NotCanGray,
-            style = MaterialTheme.typography.bodySmall
-        )
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                 if (result.isBlank()) {
                     Icon(Icons.Default.MenuBook, null, tint = NotCanBlue)
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (socraticMode) "Escribe el tema que quieres practicar o responde la pregunta del tutor."
-                        else "Pregunta usando tus apuntes y transcripciones como fuentes.",
-                        color = NotCanOffWhite,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text("El modelo se ejecuta en tu dispositivo. Puedes personalizar nombre, profundidad y estilo desde Configuración.", color = NotCanGray)
-                } else Text(result, color = NotCanOffWhite)
+                    Text("Pregunta, resume, prepara un examen o transforma tus fuentes en material de estudio.", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                    Text("El asistente generativo es online; grabación, apuntes y transcripción local siguen disponibles sin conexión.", color = NotCanGray)
+                } else {
+                    Text(result, color = NotCanOffWhite)
+                }
                 if (busy) {
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
-                        Text("Cargando y generando respuesta local…", color = NotCanGray)
+                        Text("Consultando tu agente de Mistral…", color = NotCanGray)
                     }
                 }
                 error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        }
-
-        if (!configured) {
-            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.75f))) {
-                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("NotCan AI no encuentra el modelo", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                    Text("Si ya conservas el .gguf de la versión anterior, no necesitas descargarlo otra vez.", color = NotCanGray)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onDownloadModel, enabled = !importingModel) { Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Descargar") }
-                        OutlinedButton(onClick = onImportModel, enabled = !importingModel) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Usar archivo existente") }
-                    }
-                    importMessage?.let { Text(it, color = NotCanGray, style = MaterialTheme.typography.bodySmall) }
-                }
             }
         }
 
@@ -466,8 +309,6 @@ private fun AiChat(
                             appendLine("ÚLTIMA INTERVENCIÓN DEL TUTOR:")
                             appendLine(result)
                             appendLine("RESPUESTA DEL ESTUDIANTE:")
-                        } else {
-                            appendLine("INICIO DE SESIÓN SOCRÁTICA. Tema o petición del estudiante:")
                         }
                     }
                     append(question)
@@ -476,91 +317,32 @@ private fun AiChat(
                 question = ""
             },
             modifier = Modifier.fillMaxWidth()
-        ) {
-            if (busy) { CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
-            Text(if (socraticMode) "Continuar tutoría" else "Preguntar offline")
-        }
+        ) { Text(if (socraticMode) "Continuar tutoría" else "Preguntar") }
     }
 }
 
-private data class StudyTool(
-    val title: String,
-    val subtitle: String,
-    val icon: ImageVector,
-    val prompt: String
-)
+private data class StudyTool(val title: String, val subtitle: String, val icon: ImageVector, val prompt: String)
 
 @Composable
 private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit) {
     val options = listOf(
-        StudyTool(
-            "Resumen de clase",
-            "Ideas principales, conceptos y estructura",
-            Icons.Default.GraphicEq,
-            "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones. No agregues contenido que no aparezca en las fuentes."
-        ),
-        StudyTool(
-            "Tarjetas didácticas",
-            "Formato pregunta-respuesta para repaso activo",
-            Icons.Default.Style,
-            "Crea entre 12 y 20 tarjetas didácticas pregunta-respuesta basadas exclusivamente en esta clase. Mezcla definiciones, relaciones, causas, consecuencias y aplicaciones."
-        ),
-        StudyTool(
-            "Cuestionario",
-            "Opción múltiple y desarrollo",
-            Icons.Default.Quiz,
-            "Crea un cuestionario de estudio basado exclusivamente en esta clase. Incluye preguntas de opción múltiple y preguntas de desarrollo, con respuestas separadas al final."
-        ),
-        StudyTool(
-            "Preparar examen oral",
-            "Preguntas progresivas y puntos clave",
-            Icons.Default.MenuBook,
-            "Prepara un examen oral usando solo estas fuentes: organiza los temas, formula preguntas progresivas y da puntos clave que deberían aparecer en una respuesta correcta."
-        ),
-        StudyTool(
-            "Plan de estudio 25/5",
-            "Bloques breves, prioridades y descansos",
-            Icons.Default.Description,
-            "Convierte el material de esta clase en un plan de estudio por bloques de 25 minutos con descansos de 5 minutos. Prioriza lo esencial, indica qué repasar en cada bloque y termina con una comprobación activa."
-        ),
-        StudyTool(
-            "Repaso rápido",
-            "Microtarjetas estilo feed para recorrer el tema",
-            Icons.Default.AutoAwesome,
-            "Transforma esta clase en 10 microtarjetas de repaso rápido. Cada tarjeta debe tener un título breve, una explicación de máximo 3 líneas y una pregunta de comprobación."
-        ),
-        StudyTool(
-            "Mapa mental",
-            "Jerarquía lista para visualizar",
-            Icons.Default.AutoAwesome,
-            "Genera la jerarquía textual de un mapa mental de esta clase: tema central, ramas principales, subramas y conexiones importantes. Usa solamente las fuentes disponibles."
-        ),
-        StudyTool(
-            "Comprobar fuentes",
-            "Detecta afirmaciones fuertes y verifica su respaldo",
-            Icons.Default.Source,
-            "Extrae las afirmaciones académicas más importantes del material y comprueba una por una si están respaldadas por los apuntes, por la transcripción o por ambas. Si algo no puede verificarse, indícalo como 'No consta'. No completes con conocimiento externo."
-        )
+        StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones. No agregues contenido que no aparezca en las fuentes."),
+        StudyTool("Tarjetas didácticas", "Pregunta-respuesta para repaso activo", Icons.Default.Style, "Crea entre 12 y 20 tarjetas didácticas basadas exclusivamente en esta clase."),
+        StudyTool("Cuestionario", "Opción múltiple y desarrollo", Icons.Default.Quiz, "Crea un cuestionario basado exclusivamente en esta clase. Incluye opción múltiple y desarrollo, con respuestas separadas al final."),
+        StudyTool("Preparar examen oral", "Preguntas progresivas y puntos clave", Icons.Default.MenuBook, "Prepara un examen oral usando solo estas fuentes: organiza temas, formula preguntas progresivas y da puntos clave de una respuesta correcta."),
+        StudyTool("Mapa mental", "Tema central, ramas y subramas", Icons.Default.AutoAwesome, "Genera una estructura de mapa mental editable: tema central, ramas principales, subramas y conexiones. Usa solamente las fuentes disponibles."),
+        StudyTool("Mapa conceptual", "Conceptos, enlaces y relaciones cruzadas", Icons.Default.Source, "Genera una estructura de mapa conceptual: conceptos, relaciones con frases de enlace, jerarquías y relaciones cruzadas. Usa solamente las fuentes disponibles."),
+        StudyTool("Comprobar fuentes", "Distingue respaldo y datos no verificables", Icons.Default.Description, "Extrae las afirmaciones académicas importantes y comprueba si están respaldadas por apuntes, transcripción o ambas. Marca como 'No consta' lo que no pueda verificarse.")
     )
 
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text("Estudio", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("Herramientas locales de estudio activo generadas a partir de tus propias fuentes.", color = NotCanGray)
-        }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Diseñado para estudiar, no solo resumir", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Text("Incluye repaso activo, verificación de fuentes, planificación por bloques y formatos breves para recorrer el material con menos fricción.", color = NotCanGray)
-                }
-            }
+            Text("Transforma tus materiales con tu agente de Mistral.", color = NotCanGray)
         }
         items(options) { tool ->
             Card(
-                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) {
-                    onAsk("${NotCanAiService.SOURCE_ONLY_MARKER}\n${tool.prompt}")
-                },
+                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) { onAsk("${NotCanAiService.SOURCE_ONLY_MARKER}\n${tool.prompt}") },
                 colors = CardDefaults.cardColors(containerColor = NotCanSurface),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -574,6 +356,6 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
                 }
             }
         }
-        if (!configured) item { Text("Descarga o reutiliza NotCan AI para activar estas herramientas. No requiere cuenta ni API.", color = NotCanGray) }
+        if (!configured) item { Text("Configura Mistral desde Configuración para activar estas herramientas.", color = NotCanGray) }
     }
 }
