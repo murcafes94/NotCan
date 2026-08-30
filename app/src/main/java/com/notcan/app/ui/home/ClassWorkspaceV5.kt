@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonChecked
@@ -86,11 +86,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Class workspace tuned for actual note-taking during lectures.
- * While recording, tabs disappear and notes become the primary workspace. Moonshine's provisional
- * transcript is shown separately so recognition errors never contaminate the student's own notes.
- */
 @Composable
 internal fun NotCanClassWorkspaceV5(
     modifier: Modifier,
@@ -127,19 +122,17 @@ internal fun NotCanClassWorkspaceV5(
     val liveStatus by RecordingService.aiStatus.collectAsState()
 
     LaunchedEffect(recordingActive, classSession?.id, notePages.size) {
-        if (recordingActive && classSession != null && notePages.isEmpty()) {
-            onCreateNote("Apuntes de clase")
-        }
+        if (recordingActive && classSession != null && notePages.isEmpty()) onCreateNote("Apuntes de clase")
     }
 
     Box(modifier.fillMaxSize()) {
         if (classSession == null) {
             EmptyClassWorkspaceV5(cycleName, subject != null, Modifier.align(Alignment.Center))
         } else {
-            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 8.dp)) {
                 if (recordingActive) {
                     RecordingHeader(subject?.name, classSession.title, liveStatus)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     FocusedRecordingDesk(
                         classSessionId = classSession.id,
                         notePages = notePages,
@@ -154,9 +147,6 @@ internal fun NotCanClassWorkspaceV5(
                         modifier = Modifier.weight(1f)
                     )
                 } else {
-                    Text(listOfNotNull(cycleName, subject?.name).joinToString(" · "), color = NotCanGray, style = MaterialTheme.typography.labelLarge)
-                    Text(classSession.title, color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(10.dp))
                     NormalClassTabs(
                         classSessionId = classSession.id,
                         audioRecordings = audioRecordings,
@@ -199,10 +189,7 @@ internal fun NotCanClassWorkspaceV5(
 @Composable
 private fun RecordingHeader(subject: String?, classTitle: String, liveStatus: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.weight(1f)) {
-            Text("${subject ?: "Clase"} · $classTitle", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-            Text("Modo clase · tus apuntes son el espacio principal", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-        }
+        Text(listOfNotNull(subject, classTitle).joinToString(" · "), color = NotCanGray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
         Surface(color = NotCanRed.copy(alpha = 0.15f), shape = RoundedCornerShape(50)) {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Circle, null, tint = NotCanRed, modifier = Modifier.size(10.dp))
@@ -229,24 +216,28 @@ private fun FocusedRecordingDesk(
 ) {
     val selectedNote = notePages.firstOrNull { it.id == selectedNoteId } ?: notePages.firstOrNull()
     val wide = LocalConfiguration.current.screenWidthDp >= 700
+    var showPages by remember(classSessionId) { mutableStateOf(false) }
 
     Column(modifier.fillMaxSize()) {
-        if (notePages.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = { showPages = !showPages }) {
+                Icon(Icons.Default.Menu, if (showPages) "Ocultar páginas" else "Mostrar páginas", tint = NotCanBlue)
+            }
+        }
+        if (showPages) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
                 items(notePages, key = { it.id }) { note ->
                     Surface(
                         color = if (note.id == selectedNote?.id) NotCanBlue.copy(alpha = 0.18f) else NotCanGraphite,
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.clickable { onSelectNote(note.id) }
+                        modifier = Modifier.clickable { onSelectNote(note.id); showPages = false }
                     ) {
                         Text(note.title.ifBlank { "Apuntes" }, color = if (note.id == selectedNote?.id) NotCanOffWhite else NotCanGray, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), maxLines = 1)
                     }
                 }
-                item {
-                    OutlinedButton(onClick = { onCreateNote("Nueva página") }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text("Página") }
-                }
+                item { OutlinedButton(onClick = { onCreateNote("Nueva página") }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text("Página") } }
             }
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(6.dp))
         }
 
         if (selectedNote == null) {
@@ -276,9 +267,7 @@ private fun FocusedRecordingDesk(
 @Composable
 private fun LiveTranscriptPanel(transcript: String, status: String, modifier: Modifier = Modifier) {
     val scroll = rememberScrollState()
-    LaunchedEffect(transcript.length) {
-        if (scroll.maxValue > 0) scroll.animateScrollTo(scroll.maxValue)
-    }
+    LaunchedEffect(transcript.length) { if (scroll.maxValue > 0) scroll.animateScrollTo(scroll.maxValue) }
 
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanGraphite), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.fillMaxSize().padding(14.dp)) {
@@ -296,8 +285,7 @@ private fun LiveTranscriptPanel(transcript: String, status: String, modifier: Mo
             Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
                 Text(
                     if (transcript.isBlank()) {
-                        if (status.contains("sin transcripción", ignoreCase = true))
-                            "La grabación continúa. Para ver texto provisional instala Moonshine desde la descarga de transcripción en IA → Fuentes."
+                        if (status.contains("sin transcripción", ignoreCase = true)) "La grabación continúa. Para ver texto provisional instala Moonshine desde IA → Fuentes."
                         else "Escuchando… el texto provisional aparecerá aquí sin modificar tus apuntes."
                     } else transcript.takeLast(6000),
                     color = if (transcript.isBlank()) NotCanGray else NotCanOffWhite,
@@ -338,7 +326,7 @@ private fun NormalClassTabs(
         TabRow(selectedTabIndex = selected, containerColor = Color.Transparent, contentColor = NotCanBlue, divider = { }) {
             tabs.forEachIndexed { index, title -> Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) }) }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxSize()) {
             when (selected) {
                 0 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
@@ -364,12 +352,13 @@ private fun NotesContentV5(
 ) {
     val selectedNote = notePages.firstOrNull { it.id == selectedNoteId } ?: notePages.firstOrNull()
     val wide = LocalConfiguration.current.screenWidthDp >= 650
+    var showPages by remember(classSessionId) { mutableStateOf(false) }
 
     if (selectedNote == null) {
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Apuntes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                Text("Crea una página para escribir con formato tipo Writer o importa texto existente.", color = NotCanGray)
+                Text("Crea una página o importa texto/DOCX como apunte editable.", color = NotCanGray)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onCreateNote("Apuntes") }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Crear") }
                     OutlinedButton(onClick = { onImportNote(classSessionId) }) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Importar") }
@@ -379,22 +368,36 @@ private fun NotesContentV5(
         return
     }
 
-    if (wide) {
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            NotePagesRail(notePages, selectedNote.id, onSelectNote, onCreateNote, onImportNote, classSessionId, Modifier.width(160.dp))
-            WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { showPages = !showPages }) {
+                Icon(Icons.Default.Menu, if (showPages) "Ocultar páginas" else "Páginas e importar", tint = NotCanBlue)
+            }
         }
-    } else {
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                items(notePages, key = { it.id }) { note ->
-                    Surface(color = if (note.id == selectedNote.id) NotCanBlue.copy(alpha = 0.18f) else NotCanGraphite, shape = RoundedCornerShape(9.dp), modifier = Modifier.clickable { onSelectNote(note.id) }) {
-                        Text(note.title.ifBlank { "Apuntes" }, color = NotCanOffWhite, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), maxLines = 1)
+        if (wide) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AnimatedVisibility(visible = showPages) {
+                    NotePagesRail(notePages, selectedNote.id, onSelectNote, onCreateNote, onImportNote, classSessionId, Modifier.width(176.dp))
+                }
+                WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
+            }
+        } else {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                AnimatedVisibility(visible = showPages) {
+                    Column(Modifier.fillMaxWidth()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                            items(notePages, key = { it.id }) { note ->
+                                Surface(color = if (note.id == selectedNote.id) NotCanBlue.copy(alpha = 0.18f) else NotCanGraphite, shape = RoundedCornerShape(9.dp), modifier = Modifier.clickable { onSelectNote(note.id); showPages = false }) {
+                                    Text(note.title.ifBlank { "Apuntes" }, color = NotCanOffWhite, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), maxLines = 1)
+                                }
+                            }
+                            item { OutlinedButton(onClick = { onCreateNote("Nueva página") }) { Text("+") } }
+                            item { OutlinedButton(onClick = { onImportNote(classSessionId) }) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(4.dp)); Text("Importar") } }
+                        }
                     }
                 }
-                item { OutlinedButton(onClick = { onCreateNote("Nueva página") }) { Text("+") } }
+                WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
             }
-            WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
         }
     }
 }
