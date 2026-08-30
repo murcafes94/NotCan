@@ -192,8 +192,6 @@ fun NotCanRootV5(
                 }
                 HorizontalDivider(modifier = Modifier.width(1.dp).fillMaxHeight())
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    // Materias, Clases y Workspace ya tienen su propia jerarquía visible.
-                    // Evitamos repetir "NotCan" y recuperamos altura útil para el contenido.
                     if (page != 0) {
                         NotCanTopBar(
                             page = page,
@@ -243,6 +241,12 @@ fun NotCanRootV5(
         }
 
         if (page != 2) {
+            val assistantBottomPadding = when {
+                page == 0 && wide -> 94.dp
+                page == 0 -> 150.dp
+                wide -> 20.dp
+                else -> 82.dp
+            }
             TuNotQuickAssistant(
                 contextTitle = assistantContextForPage(page, assistantContextTitle),
                 offlineEntries = assistantOfflineEntries,
@@ -257,7 +261,7 @@ fun NotCanRootV5(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = if (wide) 22.dp else 16.dp, bottom = if (wide) 20.dp else 82.dp)
+                    .padding(end = if (wide) 22.dp else 16.dp, bottom = assistantBottomPadding)
             )
         }
     }
