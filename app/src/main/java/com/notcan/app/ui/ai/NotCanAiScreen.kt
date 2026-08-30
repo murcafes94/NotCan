@@ -35,7 +35,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -176,7 +175,15 @@ private fun AiSources(
             Text(subjectName ?: "Fuentes", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(classTitle ?: "Selecciona una clase", color = NotCanGray)
             Spacer(Modifier.height(4.dp))
-            Text("Tus apuntes y transcripciones son el contexto de TuNot.", color = NotCanBlue)
+            Text("Tus apuntes, transcripciones y archivos son el contexto de TuNot.", color = NotCanBlue)
+        }
+
+        item {
+            AiExternalSourcesPanel(
+                subjectName = subjectName,
+                classTitle = classTitle,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         item {
@@ -391,7 +398,7 @@ private fun ContextPanel(
             FilterChip(selected = sourceOnly, onClick = { onSourceOnlyChange(!sourceOnly) }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
             FilterChip(selected = socraticMode, onClick = { onSocraticChange(!socraticMode) }, label = { Text("Modo socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
             Spacer(Modifier.weight(1f))
-            Text("Grabación, apuntes y transcripción continúan disponibles sin conexión.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+            Text("Grabación, apuntes, transcripción y fuentes continúan guardadas localmente.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onClear) { Text("Nueva conversación") }
         }
     }
@@ -449,11 +456,7 @@ private fun ConversationPanel(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (messages.isEmpty()) {
-                    item {
-                        EmptyConversation(configured)
-                    }
-                }
+                if (messages.isEmpty()) item { EmptyConversation(configured) }
                 items(messages) { message -> ChatBubble(message) }
                 if (busy) {
                     item {
@@ -666,7 +669,7 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
         StudyTool("Preparar examen oral", "Preguntas progresivas y puntos clave", Icons.Default.MenuBook, "Prepara un examen oral usando solo estas fuentes: organiza temas, formula preguntas progresivas y da puntos clave de una respuesta correcta."),
         StudyTool("Mapa mental", "Tema central, ramas y subramas", Icons.Default.AutoAwesome, "Genera una estructura de mapa mental editable: tema central, ramas principales, subramas y conexiones. Usa solamente las fuentes disponibles."),
         StudyTool("Mapa conceptual", "Conceptos, enlaces y relaciones cruzadas", Icons.Default.Source, "Genera una estructura de mapa conceptual: conceptos, relaciones con frases de enlace, jerarquías y relaciones cruzadas. Usa solamente las fuentes disponibles."),
-        StudyTool("Comprobar fuentes", "Distingue respaldo y datos no verificables", Icons.Default.Description, "Extrae las afirmaciones académicas importantes y comprueba si están respaldadas por apuntes, transcripción o ambas. Marca como 'No consta' lo que no pueda verificarse.")
+        StudyTool("Comprobar fuentes", "Distingue respaldo y datos no verificables", Icons.Default.Description, "Extrae las afirmaciones académicas importantes y comprueba si están respaldadas por apuntes, transcripción o fuentes externas. Marca como 'No consta' lo que no pueda verificarse.")
     )
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
