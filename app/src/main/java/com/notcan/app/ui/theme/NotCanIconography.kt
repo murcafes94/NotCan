@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Source
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.notcan.app.R
@@ -32,7 +33,7 @@ import com.notcan.app.R
 object NotCanIcons {
     val Subjects: ImageVector = Icons.Default.School
     val Calendar: ImageVector = Icons.Default.CalendarMonth
-    val TuNot: ImageVector = Icons.Default.ChatBubbleOutline
+    val TuNot: ImageVector = Icons.Default.SmartToy
     val Grades: ImageVector = Icons.Default.Grade
     val Settings: ImageVector = Icons.Default.Settings
     val Audio: ImageVector = Icons.Default.MicNone
@@ -63,6 +64,7 @@ object NotCanDrawableIcons {
     @DrawableRes val Tasks: Int = R.drawable.ic_notcan_tasks
     @DrawableRes val Exam: Int = R.drawable.ic_notcan_exam
     @DrawableRes val Audio: Int = R.drawable.ic_notcan_mic
+    @DrawableRes val TuNot: Int = R.drawable.ic_notcan_tunot
 }
 
 data class FlaticonReference(
