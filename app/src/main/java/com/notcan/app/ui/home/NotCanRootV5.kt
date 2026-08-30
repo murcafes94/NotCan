@@ -3,32 +3,42 @@ package com.notcan.app.ui.home
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Grade
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,9 +62,21 @@ import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanSurface
+import com.notcan.app.ui.theme.NotCanSurfaceHigh
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
+
+private data class RootDestination(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
+
+private val primaryDestinations = listOf(
+    RootDestination("Materias", Icons.Default.School),
+    RootDestination("Calendario", Icons.Default.CalendarMonth),
+    RootDestination("TuNot", Icons.Default.AutoAwesome)
+)
 
 @Composable
 fun NotCanRootV5(
@@ -106,82 +128,187 @@ fun NotCanRootV5(
     val plannedNow = AcademicSchedule.occurrencesForDate(today, cycle, subjects, schedules, zone)
         .firstOrNull { it.isPreviewVisible(now) }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        if (!focusMode) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TabRow(
-                    selectedTabIndex = page.coerceIn(0, 2),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = NotCanBlue,
-                    modifier = Modifier.weight(1f)
+    BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
+        val wide = maxWidth >= 840.dp
+
+        if (focusMode) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    listOf("Clase", "Calendario", "IA").forEachIndexed { index, label ->
-                        Tab(
+                    TextButton(onClick = { focusMode = false }) {
+                        Icon(Icons.Default.CenterFocusStrong, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Salir de concentración")
+                    }
+                }
+                Box(Modifier.weight(1f)) { classContent() }
+            }
+            return@BoxWithConstraints
+        }
+
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                NavigationRail(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxHeight()
+                ) {
+                    Surface(
+                        color = NotCanBlue.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.padding(vertical = 14.dp)
+                    ) {
+                        Text(
+                            "N",
+                            color = NotCanBlue,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp)
+                        )
+                    }
+                    primaryDestinations.forEachIndexed { index, destination ->
+                        NavigationRailItem(
                             selected = page == index,
                             onClick = {
                                 if (page in 0..2) previousPage = page
                                 page = index
                             },
-                            text = { Text(label, fontWeight = if (page == index) FontWeight.SemiBold else FontWeight.Normal) }
+                            icon = { Icon(destination.icon, destination.label) },
+                            label = { Text(destination.label) }
                         )
                     }
+                    Spacer(Modifier.weight(1f))
+                    NavigationRailItem(
+                        selected = page == 3,
+                        onClick = { previousPage = page.coerceIn(0, 2); page = 3 },
+                        icon = { Icon(Icons.Default.Grade, "Calificaciones") },
+                        label = { Text("Notas") }
+                    )
+                    NavigationRailItem(
+                        selected = page == 4,
+                        onClick = { previousPage = page.coerceIn(0, 2); page = 4 },
+                        icon = { Icon(Icons.Default.Settings, "Configuración") },
+                        label = { Text("Ajustes") }
+                    )
                 }
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "Opciones", tint = NotCanOffWhite) }
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Calificaciones") },
-                            leadingIcon = { Icon(Icons.Default.Grade, null) },
-                            onClick = {
-                                previousPage = page.coerceIn(0, 2)
-                                page = 3
-                                menuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Modo concentración") },
-                            leadingIcon = { Icon(Icons.Default.CenterFocusStrong, null) },
-                            onClick = { page = 0; focusMode = true; menuExpanded = false }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Configuración") },
-                            leadingIcon = { Icon(Icons.Default.Settings, null) },
-                            onClick = {
-                                previousPage = page.coerceIn(0, 2)
-                                page = 4
-                                menuExpanded = false
-                            }
-                        )
+                HorizontalDivider(modifier = Modifier.width(1.dp).fillMaxHeight())
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    NotCanTopBar(
+                        page = page,
+                        menuExpanded = menuExpanded,
+                        onMenuExpanded = { menuExpanded = it },
+                        onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
+                        onFocus = { page = 0; focusMode = true },
+                        onSettings = { previousPage = page.coerceIn(0, 2); page = 4 }
+                    )
+                    if (page == 0 && plannedNow != null) {
+                        PlannedClassBanner(plannedNow, { onOpenPlannedClass(plannedNow) }, { onRecordPlannedClass(plannedNow) })
                     }
+                    RootPage(page, classContent, calendarContent, aiContent, gradesContent, settingsContent, Modifier.weight(1f))
                 }
             }
         } else {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { focusMode = false }) {
-                    Icon(Icons.Default.CenterFocusStrong, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Salir de concentración")
+            Column(Modifier.fillMaxSize()) {
+                NotCanTopBar(
+                    page = page,
+                    menuExpanded = menuExpanded,
+                    onMenuExpanded = { menuExpanded = it },
+                    onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
+                    onFocus = { page = 0; focusMode = true },
+                    onSettings = { previousPage = page.coerceIn(0, 2); page = 4 }
+                )
+                if (page == 0 && plannedNow != null) {
+                    PlannedClassBanner(plannedNow, { onOpenPlannedClass(plannedNow) }, { onRecordPlannedClass(plannedNow) })
+                }
+                RootPage(page, classContent, calendarContent, aiContent, gradesContent, settingsContent, Modifier.weight(1f))
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    primaryDestinations.forEachIndexed { index, destination ->
+                        NavigationBarItem(
+                            selected = page == index,
+                            onClick = {
+                                if (page in 0..2) previousPage = page
+                                page = index
+                            },
+                            icon = { Icon(destination.icon, destination.label) },
+                            label = { Text(destination.label) }
+                        )
+                    }
                 }
             }
         }
+    }
+}
 
-        if (!focusMode && page == 0 && plannedNow != null) {
-            PlannedClassBanner(
-                occurrence = plannedNow,
-                onOpen = { onOpenPlannedClass(plannedNow) },
-                onRecord = { onRecordPlannedClass(plannedNow) }
-            )
-        }
-
-        Box(Modifier.weight(1f)) {
-            when {
-                focusMode -> classContent()
-                page == 0 -> classContent()
-                page == 1 -> calendarContent()
-                page == 2 -> aiContent()
-                page == 3 -> gradesContent()
-                else -> settingsContent()
+@Composable
+private fun NotCanTopBar(
+    page: Int,
+    menuExpanded: Boolean,
+    onMenuExpanded: (Boolean) -> Unit,
+    onGrades: () -> Unit,
+    onFocus: () -> Unit,
+    onSettings: () -> Unit
+) {
+    val title = when (page) {
+        0 -> "NotCan"
+        1 -> "Calendario académico"
+        2 -> "TuNot"
+        3 -> "Calificaciones"
+        else -> "Configuración"
+    }
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge)
+                if (page == 0) Text("Tu espacio de estudio", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                if (page == 2) Text("Tutor académico católico", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
+            Box {
+                IconButton(onClick = { onMenuExpanded(true) }) {
+                    Icon(Icons.Default.MoreVert, "Más opciones", tint = NotCanOffWhite)
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { onMenuExpanded(false) }) {
+                    DropdownMenuItem(
+                        text = { Text("Calificaciones") },
+                        leadingIcon = { Icon(Icons.Default.Grade, null) },
+                        onClick = { onGrades(); onMenuExpanded(false) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Modo concentración") },
+                        leadingIcon = { Icon(Icons.Default.CenterFocusStrong, null) },
+                        onClick = { onFocus(); onMenuExpanded(false) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Configuración") },
+                        leadingIcon = { Icon(Icons.Default.Settings, null) },
+                        onClick = { onSettings(); onMenuExpanded(false) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RootPage(
+    page: Int,
+    classContent: @Composable () -> Unit,
+    calendarContent: @Composable () -> Unit,
+    aiContent: @Composable () -> Unit,
+    gradesContent: @Composable () -> Unit,
+    settingsContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier) {
+        when (page) {
+            0 -> classContent()
+            1 -> calendarContent()
+            2 -> aiContent()
+            3 -> gradesContent()
+            else -> settingsContent()
         }
     }
 }
@@ -193,19 +320,22 @@ private fun PlannedClassBanner(
     onRecord: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = NotCanSurface)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = NotCanSurfaceHigh),
+        shape = RoundedCornerShape(18.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(Icons.Default.Schedule, contentDescription = null, tint = NotCanBlue)
+            Surface(color = NotCanBlue.copy(alpha = 0.15f), shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = NotCanBlue, modifier = Modifier.padding(10.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(occurrence.subject.name, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Prevista ${AcademicSchedule.formatMinutes(occurrence.schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(occurrence.schedule.endMinuteOfDay)} · aún no se ha creado",
+                    "${AcademicSchedule.formatMinutes(occurrence.schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(occurrence.schedule.endMinuteOfDay)} · próxima clase",
                     color = NotCanGray,
                     style = MaterialTheme.typography.bodySmall
                 )
