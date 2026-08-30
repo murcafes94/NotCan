@@ -172,4 +172,5 @@ class StudyRepository(private val dao: NotCanDao) {
     suspend fun deletePdfInkStroke(strokeId: String) = dao.deletePdfInkStroke(strokeId)
     suspend fun clearPdfInkPage(documentId: String, pageIndex: Int) = dao.clearPdfInkPage(documentId, pageIndex)
     suspend fun saveTranscript(transcript: TranscriptEntity) = dao.insertTranscript(transcript)
+    suspend fun deleteTranscript(transcriptId: String) = dao.deleteTranscript(transcriptId)
 }
