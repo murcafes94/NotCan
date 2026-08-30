@@ -183,7 +183,7 @@ internal fun NotCanClassWorkspaceV5(
             onResume = onResumeRecording,
             onStop = onStopRecording,
             onMark = onMarkMoment,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)
+            modifier = Modifier.align(Alignment.BottomStart).padding(18.dp)
         )
     }
 }
