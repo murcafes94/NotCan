@@ -39,6 +39,7 @@ class NotCanAiService(private val context: Context) {
             .replace(SOURCE_ONLY_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
             .trim()
+        val mapRequest = isMapRequest(cleanQuestion)
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
@@ -79,6 +80,20 @@ class NotCanAiService(private val context: Context) {
                 appendLine("MODO SOCRÁTICO ACTIVADO.")
                 appendLine("Evalúa brevemente la respuesta del estudiante y termina con UNA sola pregunta concreta y progresiva.")
                 appendLine("No reveles de inmediato una solución completa si puede alcanzarse mediante preguntas guiadas.")
+            }
+
+            if (mapRequest) {
+                appendLine("MODO ARTEFACTO MAPA ACTIVADO.")
+                appendLine("El usuario quiere un mapa que NotCan renderizará de forma interactiva.")
+                appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_MAP>>> y <<<END_NOTCAN_MAP>>>.")
+                appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown y sin comentarios.")
+                appendLine("Esquema obligatorio:")
+                appendLine("{\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
+                appendLine("Para mapa mental usa por defecto layout horizontal y relaciones sin etiqueta cuando no sean necesarias.")
+                appendLine("Para mapa conceptual incluye etiquetas breves y semánticas en edges.")
+                appendLine("Usa entre 6 y 24 nodos normalmente. Prioriza claridad, jerarquía y conceptos realmente importantes.")
+                appendLine("Cada nodo debe tener id único y todo edge debe referirse a ids existentes.")
+                appendLine("No incluyas texto antes ni después de los marcadores.")
             }
 
             if (sourceText.isNotBlank()) {
@@ -202,6 +217,23 @@ class NotCanAiService(private val context: Context) {
             return name to arguments
         }
         return null
+    }
+
+    private fun isMapRequest(value: String): Boolean {
+        val normalized = value.lowercase()
+        val asksForMap = listOf(
+            "mapa mental",
+            "mapa conceptual",
+            "haz un mapa",
+            "hazme un mapa",
+            "crea un mapa",
+            "creame un mapa",
+            "créame un mapa",
+            "organiza en un mapa",
+            "organízalo en un mapa",
+            "ponlo en un mapa"
+        ).any(normalized::contains)
+        return asksForMap
     }
 
     private fun sourcePlainText(value: String): String {
