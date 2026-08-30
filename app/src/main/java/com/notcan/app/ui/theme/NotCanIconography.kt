@@ -3,7 +3,6 @@ package com.notcan.app.ui.theme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -25,25 +24,18 @@ import androidx.compose.ui.graphics.vector.ImageVector
 /**
  * Iconografía unificada de NotCan.
  *
- * Dirección visual: iconos académicos simples, redondeados y de lectura rápida,
- * tomando como referencia principal familias gratuitas de Flaticon de estilo
- * Basic Rounded / Special Lineal. Mientras los assets binarios de Flaticon no se
- * integren directamente al repositorio, estos símbolos Material equivalentes
- * mantienen una silueta y peso coherentes y funcionan 100 % offline.
- *
- * Referencias Flaticon revisadas (licencia gratuita con atribución):
- * - Estudiar #566944 / #2825038
- * - Chatbot #9485982
- * - Micrófono #2097645
- * - Ajustes #535679
- *
- * Si se sustituyen por SVG/PNG originales de Flaticon, conservar la atribución
- * correspondiente en Ajustes → Créditos visuales.
+ * La identidad visual principal toma como referencia UIcons/Flaticon. Las clases CSS
+ * de Flaticon son referencias web y no se pueden dibujar directamente en Jetpack
+ * Compose; hasta integrar los SVG individuales usamos equivalentes Material offline.
  */
 object NotCanIcons {
     val Subjects: ImageVector = Icons.Default.School
     val Calendar: ImageVector = Icons.Default.CalendarMonth
-    val TuNot: ImageVector = Icons.Default.AutoAwesome
+
+    // TuNot debe verse como chatbot, no como una función genérica de “IA/magia”.
+    // Referencia definitiva elegida: fi fi-rr-chatbot.
+    val TuNot: ImageVector = Icons.Default.ChatBubbleOutline
+
     val Grades: ImageVector = Icons.Default.Grade
     val Settings: ImageVector = Icons.Default.Settings
 
@@ -64,15 +56,22 @@ object NotCanIcons {
     val Next: ImageVector = Icons.Default.ChevronRight
 }
 
-data class NotCanVisualCredit(
-    val resource: String,
-    val authorOrPack: String,
-    val sourceUrl: String
+data class FlaticonReference(
+    val purpose: String,
+    val cssClass: String,
+    val note: String = "Referencia visual UIcons/Flaticon; integrar SVG individual y conservar atribución según licencia del recurso."
 )
 
-val NotCanVisualCredits = listOf(
-    NotCanVisualCredit("Estudiar", "Flaticon · Time management / University", "https://www.flaticon.es/icono-gratis/estudiar_566944"),
-    NotCanVisualCredit("Chatbot", "Flaticon · Technology of the Future", "https://www.flaticon.es/icono-gratis/chatbot_9485982"),
-    NotCanVisualCredit("Micrófono", "Flaticon · Freepik · Basic Rounded Lineal", "https://www.flaticon.es/icono-gratis/microfono_2097645"),
-    NotCanVisualCredit("Ajustes", "Flaticon · Tomas Knop", "https://www.flaticon.es/icono-gratis/ajustes_535679")
+val NotCanFlaticonReferences = listOf(
+    FlaticonReference("Clases", "fi fi-ts-workshop"),
+    FlaticonReference("Estudio", "fi fi-ss-user-graduate"),
+    FlaticonReference("Materias", "fi fi-ts-diary-bookmark-down"),
+    FlaticonReference("TuNot", "fi fi-rr-chatbot"),
+    FlaticonReference("Calendario", "fi fi-tr-calendar-clock"),
+    FlaticonReference("Menú", "fi fi-tr-square-ellipsis-vertical"),
+    FlaticonReference("Grabación", "fi fi-rr-microphone"),
+    FlaticonReference("Transcripción", "fi fi-tr-transcription"),
+    FlaticonReference("Apuntes", "fi fi-tr-pen-field"),
+    FlaticonReference("Calificaciones", "fi fi-ts-notebook-alt"),
+    FlaticonReference("Ajustes", "fi fi-tc-admin-alt")
 )
