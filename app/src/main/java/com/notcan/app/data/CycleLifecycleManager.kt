@@ -5,10 +5,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
+import com.notcan.app.data.local.AcademicVocabularyTermEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.sources.ClassSourceStore
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -20,6 +22,15 @@ class CycleLifecycleManager(context: Context) {
     private val repository = StudyRepository(NotCanDatabase.getInstance(app).dao())
     private val sourceStore = ClassSourceStore(app)
 
+    data class CyclePreview(
+        val subjects: Int,
+        val classes: Int,
+        val physicalFiles: Int,
+        val physicalBytes: Long,
+        val calendarEvents: Int,
+        val cycleVocabulary: List<AcademicVocabularyTermEntity>
+    )
+
     data class CleanupResult(
         val filesFound: Int,
         val filesDeleted: Int,
@@ -27,6 +38,28 @@ class CycleLifecycleManager(context: Context) {
         val calendarEventsFound: Int,
         val calendarEventsDeleted: Int
     )
+
+    suspend fun previewCycle(cycleId: String): CyclePreview = withContext(Dispatchers.IO) {
+        val subjects = repository.cycleSubjects(cycleId)
+        val classes = repository.cycleClasses(cycleId)
+        val paths = repository.cycleFilePaths(cycleId)
+        val bytes = paths.sumOf { path -> File(path).takeIf { it.exists() }?.length() ?: 0L }
+        val events = repository.cycleCalendarEventIds(cycleId)
+        val vocabulary = repository.observeVocabularyForCycle(cycleId).first()
+            .filter { it.scope == AcademicVocabularyTermEntity.SCOPE_CYCLE && it.cycleId == cycleId }
+        CyclePreview(
+            subjects = subjects.size,
+            classes = classes.size,
+            physicalFiles = paths.size,
+            physicalBytes = bytes,
+            calendarEvents = events.size,
+            cycleVocabulary = vocabulary
+        )
+    }
+
+    suspend fun keepVocabularyTermPermanently(termId: String) = withContext(Dispatchers.IO) {
+        repository.keepVocabularyTermPermanently(termId)
+    }
 
     suspend fun deleteCycleCompletely(cycleId: String): CleanupResult = withContext(Dispatchers.IO) {
         val subjects = repository.cycleSubjects(cycleId)
@@ -44,9 +77,9 @@ class CycleLifecycleManager(context: Context) {
 
         // Las fuentes de TuNot usan un almacén independiente de Room, por eso se limpian aparte.
         var deletedScopes = 0
-        classes.forEach { classSession ->
-            val subjectName = subjectsById[classSession.subjectId]?.name
-            val key = sourceStore.scopeKey(subjectName, classSession.title)
+        classes.map { classSession ->
+            sourceStore.scopeKey(subjectsById[classSession.subjectId]?.name, classSession.title)
+        }.distinct().forEach { key ->
             if (sourceStore.deleteScope(key)) deletedScopes++
         }
 
@@ -65,8 +98,8 @@ class CycleLifecycleManager(context: Context) {
             }
         }
 
-        // Solo después de intentar borrar los archivos físicos eliminamos los registros.
-        // Las FK CASCADE limpian todo el árbol académico del ciclo.
+        // Solo después de intentar borrar archivos y fuentes físicas eliminamos los registros.
+        // Las FK CASCADE limpian todo el árbol académico y el vocabulario CYCLE.
         repository.deleteCycleData(cycleId)
 
         CleanupResult(
