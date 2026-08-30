@@ -20,6 +20,8 @@ import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
+import com.notcan.app.sources.ClassSourceStore
+import com.notcan.app.ui.home.NoteDocxImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +40,7 @@ import java.util.UUID
 class NotCanViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = StudyRepository(NotCanDatabase.getInstance(application).dao())
     private val aiService = NotCanAiService(application)
+    private val sourceStore = ClassSourceStore(application)
     private val studyModelManager = StudyModelManager(application)
     private val whisperModelManager = WhisperModelManager(application)
     private val localWhisper = LocalWhisperEngine(application)
@@ -230,7 +233,13 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
             val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
                 if (c.moveToFirst()) c.getString(0) else null
             } ?: "Apuntes importados"
-            val body = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: return@launch
+            val mimeType = resolver.getType(uri).orEmpty()
+            val isDocx = displayName.endsWith(".docx", ignoreCase = true) || mimeType.contains("wordprocessingml", ignoreCase = true)
+            val body = resolver.openInputStream(uri)?.use { input ->
+                if (isDocx) NoteDocxImporter.toHtml(input)
+                else input.bufferedReader().use { it.readText() }
+            } ?: return@launch
+            if (body.isBlank()) return@launch
             val title = displayName.substringBeforeLast('.').ifBlank { "Apuntes importados" }
             val note = repository.createNotePage(classSessionId, title)
             repository.saveNotePage(note.copy(body = body, updatedAtEpochMs = System.currentTimeMillis()))
@@ -351,13 +360,22 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val notesText = notePages.value.joinToString("\n\n") { "${it.title}\n${it.body}" }
-                val transcriptText = transcripts.value.joinToString("\n\n") { it.body }
                 val subjectName = subjects.value.firstOrNull { it.id == _selectedSubjectId.value }?.name
+                val classTitle = classes.value.firstOrNull { it.id == _selectedClassId.value }?.title
+                val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
+                val externalSources = sourceStore.combinedContext(scopeKey)
+                val transcriptText = buildString {
+                    append(transcripts.value.joinToString("\n\n") { it.body })
+                    if (externalSources.isNotBlank()) {
+                        appendLine("\n\nARCHIVOS EXTERNOS INDEXADOS PARA ESTA CLASE:")
+                        append(externalSources)
+                    }
+                }
                 _aiResult.value = aiService.studyAssistant(subjectName, notesText, transcriptText, question)
                 _aiConfigured.value = true
             } catch (t: Throwable) {
                 _aiConfigured.value = aiService.isConfigured()
-                _aiError.value = t.message ?: "No se pudo ejecutar la IA local"
+                _aiError.value = t.message ?: "No se pudo ejecutar la IA"
             } finally {
                 _aiBusy.value = false
             }
