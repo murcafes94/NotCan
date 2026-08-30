@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.7.9-test"
+          TAG="v0.8.0-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.7.9-test.apk" \
+            "$APK#NotCan-v0.8.0-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.7.9 · prueba" \
-            --notes "APK de prueba de NotCan v0.7.9. Simplifica el calendario, separa horario de creación de clases y numera cada clase por materia con formato Materia #N. Al pulsar grabar desde una materia, crea automáticamente la siguiente clase antes de iniciar la grabación; la creación manual con + usa la misma secuencia."
+            --title "NotCan v0.8.0 · prueba" \
+            --notes "APK de prueba de NotCan v0.8.0. Rediseña Materias y Clases, compacta Apuntes con navegación de páginas bajo menú, añade importación DOCX editable y exportación DOCX/PDF, incorpora fuentes PDF/DOCX/EPUB indexadas para TuNot, búsqueda interna, borrado independiente de transcripciones y navegación Atrás coherente entre áreas."
