@@ -169,6 +169,9 @@ class MainActivity : ComponentActivity() {
                             onShareNote = ::shareNote,
                             onShareAudio = ::shareAudio,
                             onDeleteAudio = studyViewModel::deleteAudio,
+                            onDeleteTranscript = { transcriptId ->
+                                lifecycleScope.launch { recordingRepository.deleteTranscript(transcriptId) }
+                            },
                             onTranscribeLocal = ::enqueueBackgroundTranscription,
                             onImportDocument = ::requestDocumentImport,
                             onOpenDocument = ::openDocument,
