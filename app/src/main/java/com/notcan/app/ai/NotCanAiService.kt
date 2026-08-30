@@ -82,8 +82,12 @@ class NotCanAiService(private val context: Context) {
                 appendLine("Distingue [Apuntes], [Transcripción] o [Apuntes + Transcripción] cuando atribuyas afirmaciones importantes.")
                 appendLine("En este modo no complementes con web, biblioteca base ni conocimiento general salvo que el usuario lo pida explícitamente después.")
             } else {
-                appendLine("Puedes complementar el material de clase con conocimiento católico general y, cuando esté disponible, con biblioteca base o búsqueda web católica autorizada.")
-                appendLine("Prioridad de contexto: 1) fuentes de la clase, 2) biblioteca católica base, 3) fuentes oficiales/católicas de la lista blanca, 4) conocimiento general del modelo.")
+                appendLine("MODO DE RESPUESTA LIBRE ACTIVADO.")
+                appendLine("El material de clase incluido debajo es contexto opcional: úsalo cuando sea pertinente, pero no fuerces la respuesta a salir de apuntes, transcripciones o archivos.")
+                appendLine("Si la pregunta es general, conceptual o pide una explicación más amplia, responde con el conocimiento fiable necesario y complementa con el material de clase solo cuando aporte valor.")
+                appendLine("No presentes los apuntes del estudiante como autoridad por defecto ni repitas posibles errores de esos apuntes sin advertirlos.")
+                appendLine("Cuando uses material de clase, intégralo de forma natural y distingue una cita o atribución solo si realmente procede de ese material.")
+                appendLine("Puedes apoyarte en biblioteca católica base, fuentes oficiales/católicas autorizadas y conocimiento general del modelo según la naturaleza de la pregunta.")
                 appendLine("Si utilizas conocimiento general del modelo sin respaldo documental, no lo presentes como cita ni como declaración magisterial textual.")
             }
 
@@ -116,9 +120,9 @@ class NotCanAiService(private val context: Context) {
             }
 
             if (sourceText.isNotBlank()) {
-                appendLine("\n--- FUENTES DE NOTCAN ---")
+                appendLine("\n--- MATERIAL DE CLASE DISPONIBLE ---")
                 appendLine(sourceText)
-                appendLine("--- FIN DE FUENTES ---\n")
+                appendLine("--- FIN DEL MATERIAL DE CLASE ---\n")
             }
 
             appendLine("SOLICITUD DEL USUARIO:")
