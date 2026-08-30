@@ -1,11 +1,8 @@
 package com.notcan.app.ui.home
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.text.Html
 import android.text.TextUtils
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -13,14 +10,15 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,7 +30,6 @@ import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -57,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.notcan.app.data.local.NotePageEntity
@@ -77,19 +75,17 @@ internal fun WriterNoteEditor(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var title by remember(note.id) { mutableStateOf(note.title.ifBlank { "Apuntes" }) }
+    val title = note.title.ifBlank { "Apuntes" }
     var html by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
-    var lastSavedTitle by remember(note.id) { mutableStateOf(note.title) }
     var lastSavedHtml by remember(note.id) { mutableStateOf(note.body) }
     var webView by remember(note.id) { mutableStateOf<WebView?>(null) }
     var confirmDelete by remember(note.id) { mutableStateOf(false) }
-    var toolsOpen by remember(note.id) { mutableStateOf(false) }
+    var shareMenu by remember(note.id) { mutableStateOf(false) }
 
-    LaunchedEffect(note.id, title, html) {
+    LaunchedEffect(note.id, html) {
         delay(500)
-        if (title != lastSavedTitle || html != lastSavedHtml) {
-            onUpdateNote(note.id, title.ifBlank { "Apuntes" }, html)
-            lastSavedTitle = title.ifBlank { "Apuntes" }
+        if (html != lastSavedHtml) {
+            onUpdateNote(note.id, title, html)
             lastSavedHtml = html
         }
     }
@@ -111,22 +107,37 @@ internal fun WriterNoteEditor(
     Card(modifier = modifier.fillMaxSize(), colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
-                IconButton(onClick = { toolsOpen = true }) { Icon(Icons.Default.Menu, "Formato, estructura y bloques", tint = NotCanBlue) }
-                DropdownMenu(expanded = toolsOpen, onDismissRequest = { toolsOpen = false }) {
-                    DropdownMenuItem(text = { Text("Título 1") }, onClick = { command("formatBlock", "H1"); toolsOpen = false })
-                    DropdownMenuItem(text = { Text("Título 2") }, onClick = { command("formatBlock", "H2"); toolsOpen = false })
-                    DropdownMenuItem(text = { Text("Párrafo") }, onClick = { command("formatBlock", "P"); toolsOpen = false })
-                    DropdownMenuItem(text = { Text("Lista con viñetas") }, onClick = { command("insertUnorderedList"); toolsOpen = false })
-                    DropdownMenuItem(text = { Text("Lista numerada") }, onClick = { command("insertOrderedList"); toolsOpen = false })
-                    DropdownMenuItem(text = { Text("Quitar formato") }, onClick = { command("removeFormat"); toolsOpen = false })
-                    DropdownMenuItem(text = { Text("Compartir") }, onClick = { toolsOpen = false; runCatching { shareHtmlNote(context, title, html) }.onFailure { onShareFallback() } })
-                    DropdownMenuItem(text = { Text("Eliminar apunte", color = NotCanRed) }, onClick = { toolsOpen = false; confirmDelete = true })
+                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                Box {
+                    IconButton(onClick = { shareMenu = true }) { Icon(Icons.Default.Share, "Compartir apunte", tint = NotCanBlue) }
+                    DropdownMenu(expanded = shareMenu, onDismissRequest = { shareMenu = false }) {
+                        DropdownMenuItem(text = { Text("Compartir como DOCX") }, onClick = {
+                            shareMenu = false
+                            runCatching { NoteFileExport.share(context, title, html, NoteFileExport.Format.DOCX) }.onFailure { onShareFallback() }
+                        })
+                        DropdownMenuItem(text = { Text("Compartir como PDF") }, onClick = {
+                            shareMenu = false
+                            runCatching { NoteFileExport.share(context, title, html, NoteFileExport.Format.PDF) }.onFailure { onShareFallback() }
+                        })
+                        DropdownMenuItem(text = { Text("Compartir como texto") }, onClick = {
+                            shareMenu = false
+                            runCatching { NoteFileExport.share(context, title, html, NoteFileExport.Format.TEXT) }.onFailure { onShareFallback() }
+                        })
+                    }
                 }
+                IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Eliminar apunte", tint = NotCanRed) }
             }
 
             Divider(color = NotCanGray.copy(alpha = 0.20f))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                WriterStructureButton("T1") { command("formatBlock", "H1") }
+                WriterStructureButton("T2") { command("formatBlock", "H2") }
+                WriterStructureButton("P") { command("formatBlock", "P") }
+                Spacer(Modifier.width(4.dp))
                 IconButton(onClick = { command("bold") }) { Icon(Icons.Default.FormatBold, "Negrita") }
                 IconButton(onClick = { command("italic") }) { Icon(Icons.Default.FormatItalic, "Cursiva") }
                 IconButton(onClick = { command("underline") }) { Icon(Icons.Default.FormatUnderlined, "Subrayado") }
@@ -134,6 +145,7 @@ internal fun WriterNoteEditor(
                 IconButton(onClick = { command("insertUnorderedList") }) { Icon(Icons.Default.FormatListBulleted, "Viñetas") }
                 IconButton(onClick = { command("insertOrderedList") }) { Icon(Icons.Default.FormatListNumbered, "Numeración") }
                 IconButton(onClick = { command("removeFormat") }) { Icon(Icons.Default.FormatClear, "Limpiar formato") }
+                Spacer(Modifier.width(6.dp))
                 WriterColorButton(Color(0xFFFFE066)) { command("hiliteColor", "#FFE066") }
                 WriterColorButton(Color(0xFF8EE39A)) { command("hiliteColor", "#8EE39A") }
                 WriterColorButton(Color(0xFF7EC8FF)) { command("hiliteColor", "#7EC8FF") }
@@ -173,19 +185,27 @@ internal fun WriterNoteEditor(
     )
 }
 
-@Composable private fun WriterColorButton(color: Color, onClick: () -> Unit) {
+@Composable
+private fun WriterStructureButton(label: String, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.padding(horizontal = 2.dp).size(width = 38.dp, height = 34.dp).clickable(onClick = onClick),
+        color = NotCanGray.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(7.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Text(label, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+private fun WriterColorButton(color: Color, onClick: () -> Unit) {
     Surface(modifier = Modifier.padding(horizontal = 4.dp).size(24.dp).clickable(onClick = onClick), color = color, shape = RoundedCornerShape(5.dp)) { }
 }
 
 private class NoteBridge(private val onChanged: (String) -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     @JavascriptInterface fun onContentChanged(value: String) { main.post { onChanged(value) } }
-}
-
-private fun shareHtmlNote(context: Context, title: String, html: String) {
-    val plain = Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString().trim()
-    val intent = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, title).putExtra(Intent.EXTRA_TEXT, "$title\n\n$plain")
-    context.startActivity(Intent.createChooser(intent, "Compartir apuntes"))
 }
 
 private fun normalizeStoredBody(value: String): String {
