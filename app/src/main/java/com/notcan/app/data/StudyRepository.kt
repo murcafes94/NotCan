@@ -166,9 +166,10 @@ class StudyRepository(private val dao: NotCanDao) {
     suspend fun deleteVocabularyTerm(termId: String) = dao.deleteVocabularyTerm(termId)
     suspend fun keepVocabularyTermPermanently(termId: String) = dao.keepVocabularyTermPermanently(termId)
 
+    suspend fun cycleSubjects(cycleId: String): List<SubjectEntity> = dao.getSubjectsForCycle(cycleId)
+    suspend fun cycleClasses(cycleId: String): List<ClassSessionEntity> = dao.getClassesForCycle(cycleId)
     suspend fun cycleFilePaths(cycleId: String): List<String> =
         (dao.getAudioPathsForCycle(cycleId) + dao.getDocumentPathsForCycle(cycleId)).distinct()
-
     suspend fun cycleCalendarEventIds(cycleId: String): List<Long> = dao.getCalendarEventIdsForCycle(cycleId)
     suspend fun deleteCycleData(cycleId: String) = dao.deleteCycleData(cycleId)
 
