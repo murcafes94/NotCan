@@ -1,5 +1,6 @@
 package com.notcan.app.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -109,6 +110,14 @@ fun NotCanHomeScreen(
     val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
     val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
     val selectedClass = classes.firstOrNull { it.id == selectedClassId }
+
+    BackHandler(enabled = level != HomeLevel.SUBJECTS) {
+        level = when (level) {
+            HomeLevel.WORKSPACE -> HomeLevel.CLASSES
+            HomeLevel.CLASSES -> HomeLevel.SUBJECTS
+            HomeLevel.SUBJECTS -> HomeLevel.SUBJECTS
+        }
+    }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
