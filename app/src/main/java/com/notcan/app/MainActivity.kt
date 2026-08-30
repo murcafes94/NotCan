@@ -17,6 +17,7 @@ import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.notcan.app.ai.MistralCredentialsStore
 import com.notcan.app.calendar.CalendarSync
 import com.notcan.app.data.StudyRepository
 import com.notcan.app.data.local.AudioRecordingEntity
@@ -30,6 +31,7 @@ import com.notcan.app.settings.NotCanPreferences
 import com.notcan.app.ui.AcademicExtrasViewModel
 import com.notcan.app.ui.NotCanViewModel
 import com.notcan.app.ui.ai.NotCanAiScreen
+import com.notcan.app.ui.ai.TuNotOfflineEntry
 import com.notcan.app.ui.calendar.AcademicCalendarScreen
 import com.notcan.app.ui.grades.GradesScreen
 import com.notcan.app.ui.home.NotCanHomeScreen
@@ -44,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private val studyViewModel: NotCanViewModel by viewModels()
     private val extrasViewModel: AcademicExtrasViewModel by viewModels()
     private val preferences by lazy { NotCanPreferences(this) }
+    private val mistralCredentials by lazy { MistralCredentialsStore(this) }
     private val recordingRepository by lazy { StudyRepository(NotCanDatabase.getInstance(this).dao()) }
     private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
@@ -122,6 +125,45 @@ class MainActivity : ComponentActivity() {
                 val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
                 val selectedClass = classes.firstOrNull { it.id == selectedClassId }
                 val recordingActive = recordingState is RecordingState.Recording || recordingState is RecordingState.Paused
+                val assistantContextTitle = listOfNotNull(selectedSubject?.name, selectedClass?.title)
+                    .joinToString(" · ")
+                    .ifBlank { selectedCycle?.name ?: "NotCan" }
+                val assistantOfflineEntries = buildList {
+                    selectedSubject?.let { subject ->
+                        add(TuNotOfflineEntry(subject.name, "Materia", subject.name))
+                    }
+                    selectedClass?.let { session ->
+                        add(TuNotOfflineEntry(session.title, "Clase", session.title))
+                    }
+                    notePages.forEach { note ->
+                        add(
+                            TuNotOfflineEntry(
+                                title = note.title.ifBlank { "Apuntes" },
+                                subtitle = "Apunte guardado",
+                                text = markdownToPlainText(note.body)
+                            )
+                        )
+                    }
+                    transcripts.forEachIndexed { index, transcript ->
+                        add(
+                            TuNotOfflineEntry(
+                                title = "Transcripción ${index + 1}",
+                                subtitle = selectedClass?.title ?: "Transcripción guardada",
+                                text = transcript.body
+                            )
+                        )
+                    }
+                    documents.forEach { document ->
+                        add(
+                            TuNotOfflineEntry(
+                                title = document.displayName,
+                                subtitle = "Documento local · ${document.documentType}",
+                                text = document.displayName
+                            )
+                        )
+                    }
+                }
+                val assistantOnlineConfigured = mistralCredentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
 
                 NotCanRootV5(
                     cycle = selectedCycle,
@@ -135,6 +177,12 @@ class MainActivity : ComponentActivity() {
                             requestPermissionsAndStart(session.id, occurrence.endEpochMs, occurrence.schedule.autoStopMode, occurrence.schedule.autoStopGraceMinutes)
                         }
                     },
+                    assistantContextTitle = assistantContextTitle,
+                    assistantOfflineEntries = assistantOfflineEntries,
+                    assistantOnlineConfigured = assistantOnlineConfigured,
+                    assistantBusy = aiBusy,
+                    assistantResult = aiResult,
+                    onAssistantAsk = studyViewModel::askAi,
                     classContent = {
                         NotCanHomeScreen(
                             recordingState = recordingState,
