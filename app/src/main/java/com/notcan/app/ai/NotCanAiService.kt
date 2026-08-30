@@ -88,11 +88,15 @@ class NotCanAiService(private val context: Context) {
                 appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_MAP>>> y <<<END_NOTCAN_MAP>>>.")
                 appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown y sin comentarios.")
                 appendLine("Esquema obligatorio:")
-                appendLine("{\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
-                appendLine("Para mapa mental usa por defecto layout horizontal y relaciones sin etiqueta cuando no sean necesarias.")
-                appendLine("Para mapa conceptual incluye etiquetas breves y semánticas en edges.")
+                appendLine("{\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|radial_cards|ideas|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
+                appendLine("Para mapa mental académico usa por defecto layout horizontal.")
+                appendLine("Usa radial_cards cuando el usuario pida algo más visual, presentable o con tarjetas explicativas.")
+                appendLine("Usa ideas cuando el usuario pida mapa de ideas, estilo creativo, esquema visual sencillo o presentación tipo infografía.")
+                appendLine("Para mapa conceptual usa tree cuando predomine la jerarquía y añade etiquetas breves y semánticas en edges.")
+                appendLine("El contenido y el layout son independientes: no sacrifiques relaciones académicas por decorar el mapa.")
                 appendLine("Usa entre 6 y 24 nodos normalmente. Prioriza claridad, jerarquía y conceptos realmente importantes.")
                 appendLine("Cada nodo debe tener id único y todo edge debe referirse a ids existentes.")
+                appendLine("En source_refs usa nombres breves como 'Apuntes' o 'Transcripción' solo cuando el nodo tenga respaldo en esa fuente.")
                 appendLine("No incluyas texto antes ni después de los marcadores.")
             }
 
@@ -221,9 +225,10 @@ class NotCanAiService(private val context: Context) {
 
     private fun isMapRequest(value: String): Boolean {
         val normalized = value.lowercase()
-        val asksForMap = listOf(
+        return listOf(
             "mapa mental",
             "mapa conceptual",
+            "mapa de ideas",
             "haz un mapa",
             "hazme un mapa",
             "crea un mapa",
@@ -231,9 +236,11 @@ class NotCanAiService(private val context: Context) {
             "créame un mapa",
             "organiza en un mapa",
             "organízalo en un mapa",
-            "ponlo en un mapa"
+            "ponlo en un mapa",
+            "hazlo más visual",
+            "muéstralo como mapa",
+            "muestralo como mapa"
         ).any(normalized::contains)
-        return asksForMap
     }
 
     private fun sourcePlainText(value: String): String {
