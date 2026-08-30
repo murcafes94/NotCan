@@ -366,8 +366,8 @@ private fun AiChat(
                     error = error,
                     messages = messages,
                     question = question,
-                    onQuestionChange = { question = it },
-                    onSubmit = ::submit,
+                    onQuestionChange = onQuestionChange,
+                    onSubmit = onSubmit,
                     listState = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
@@ -532,7 +532,7 @@ private fun ChatBubble(message: ChatMessage) {
             Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (user) "Tú" else "TuNot", color = if (user) NotCanBlue else NotCanGray, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                 if (message.content.isNotBlank()) {
-                    Text(message.content, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
+                    TuNotRichText(message.content, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
                 }
                 message.mapArtifact?.let { artifact ->
                     Card(
@@ -543,7 +543,7 @@ private fun ChatBubble(message: ChatMessage) {
                         StudyMapScreen(
                             map = artifact.map,
                             initialLayout = artifact.preferredLayout,
-                            modifier = Modifier.fillMaxWidth().height(430.dp)
+                            modifier = Modifier.fillMaxWidth().height(540.dp)
                         )
                     }
                     Text(
