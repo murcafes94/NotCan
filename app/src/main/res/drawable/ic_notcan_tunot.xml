@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Circular enclosure -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,2.2 C17.41,2.2 21.8,6.59 21.8,12 C21.8,17.41 17.41,21.8 12,21.8 C6.59,21.8 2.2,17.41 2.2,12 C2.2,6.59 6.59,2.2 12,2.2 Z" />
+
+    <!-- Antenna -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M11.55,4.55 L12.45,4.55 L12.45,6.45 L11.55,6.45 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M12,3.45 C12.58,3.45 13.05,3.92 13.05,4.5 C13.05,5.08 12.58,5.55 12,5.55 C11.42,5.55 10.95,5.08 10.95,4.5 C10.95,3.92 11.42,3.45 12,3.45 Z" />
+
+    <!-- Robot head outline -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8.1,6.6 L15.9,6.6 C17.83,6.6 19.4,8.17 19.4,10.1 L19.4,14.3 C19.4,16.23 17.83,17.8 15.9,17.8 L8.1,17.8 C6.17,17.8 4.6,16.23 4.6,14.3 L4.6,10.1 C4.6,8.17 6.17,6.6 8.1,6.6 Z" />
+
+    <!-- Side modules -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M4.6,9.45 L3.95,9.45 C3.28,9.45 2.75,9.98 2.75,10.65 L2.75,13.75 C2.75,14.42 3.28,14.95 3.95,14.95 L4.6,14.95" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M19.4,9.45 L20.05,9.45 C20.72,9.45 21.25,9.98 21.25,10.65 L21.25,13.75 C21.25,14.42 20.72,14.95 20.05,14.95 L19.4,14.95" />
+
+    <!-- Eyes -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M9,10.65 C9.66,10.65 10.2,11.19 10.2,11.85 C10.2,12.51 9.66,13.05 9,13.05 C8.34,13.05 7.8,12.51 7.8,11.85 C7.8,11.19 8.34,10.65 9,10.65 Z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M15,10.65 C15.66,10.65 16.2,11.19 16.2,11.85 C16.2,12.51 15.66,13.05 15,13.05 C14.34,13.05 13.8,12.51 13.8,11.85 C13.8,11.19 14.34,10.65 15,10.65 Z" />
+</vector>
