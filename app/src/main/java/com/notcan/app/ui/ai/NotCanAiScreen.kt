@@ -535,10 +535,10 @@ private fun ChatBubble(message: ChatMessage) {
                     Text(message.content, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
                 }
                 message.mapArtifact?.let { artifact ->
-                    Surface(
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(18.dp)
                     ) {
                         StudyMapScreen(
                             map = artifact.map,
@@ -547,7 +547,7 @@ private fun ChatBubble(message: ChatMessage) {
                         )
                     }
                     Text(
-                        "Mapa interactivo · toca una rama para contraerla o expandirla · usa ⋮ para compartir PNG/PDF",
+                        "Mapa interactivo · toca una rama para contraerla o expandirla · pellizca para zoom · usa ⋮ para compartir PNG/PDF",
                         color = NotCanGray,
                         style = MaterialTheme.typography.labelSmall
                     )
