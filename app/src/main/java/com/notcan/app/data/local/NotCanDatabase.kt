@@ -20,9 +20,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PdfInkStrokeEntity::class,
         TranscriptEntity::class,
         GradeItemEntity::class,
-        DetectedCueEntity::class
+        DetectedCueEntity::class,
+        AcademicVocabularyTermEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class NotCanDatabase : RoomDatabase() {
@@ -165,6 +166,31 @@ abstract class NotCanDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `academic_vocabulary` (
+                        `id` TEXT NOT NULL,
+                        `term` TEXT NOT NULL,
+                        `normalizedTerm` TEXT NOT NULL,
+                        `language` TEXT NOT NULL,
+                        `area` TEXT NOT NULL,
+                        `scope` TEXT NOT NULL,
+                        `cycleId` TEXT,
+                        `subjectId` TEXT,
+                        `source` TEXT NOT NULL,
+                        `weight` REAL NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_academic_vocabulary_scope` ON `academic_vocabulary` (`scope`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_academic_vocabulary_cycleId` ON `academic_vocabulary` (`cycleId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_academic_vocabulary_subjectId` ON `academic_vocabulary` (`subjectId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_academic_vocabulary_normalizedTerm_language_area` ON `academic_vocabulary` (`normalizedTerm`, `language`, `area`)")
+            }
+        }
+
         fun getInstance(context: Context): NotCanDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -172,7 +198,7 @@ abstract class NotCanDatabase : RoomDatabase() {
                     NotCanDatabase::class.java,
                     "notcan.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }

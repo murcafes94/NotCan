@@ -39,6 +39,7 @@ class NotCanAiService(private val context: Context) {
             .replace(SOURCE_ONLY_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
             .trim()
+        val mapRequest = isMapRequest(cleanQuestion)
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
@@ -61,24 +62,51 @@ class NotCanAiService(private val context: Context) {
 
         val prompt = buildString {
             appendLine("CONTEXTO DE NOTCAN")
+            appendLine("TuNot es un tutor académico católico orientado principalmente a teología, filosofía, Sagrada Escritura y derecho canónico.")
+            appendLine("Su objetivo es ayudar a estudiar con rigor, fidelidad doctrinal y claridad pedagógica; no debe responder como un asistente religioso genérico.")
             appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
             if (preferences.aiInstructions.isNotBlank()) appendLine("Preferencias del usuario: ${preferences.aiInstructions}")
             appendLine("No muestres cadena de pensamiento, reflexiones internas ni monólogos. Entrega directamente el resultado útil.")
             appendLine("No inventes citas, páginas, autores, fechas, referencias ni afirmaciones ausentes de las fuentes.")
             appendLine("Si el usuario indica que puede haber un error, no inventes una corrección: corrige solo cuando tengas fundamento suficiente.")
+            appendLine("Cuando una cuestión sea doctrinal, distingue con precisión entre: enseñanza oficial de la Iglesia, disciplina eclesiástica vigente, opinión teológica e interpretación académica.")
+            appendLine("Si existe tensión entre una formulación secundaria y una fuente oficial de la Iglesia, da prioridad a la fuente oficial.")
+            appendLine()
+            appendLine(TuNotCatholicSourcePolicy.promptPolicy())
 
             if (strictSources) {
                 appendLine("MODO SOLO MIS FUENTES ACTIVADO.")
                 appendLine("Usa exclusivamente el material incluido debajo. Si el dato no consta, responde: 'No consta en las fuentes disponibles'.")
                 appendLine("Distingue [Apuntes], [Transcripción] o [Apuntes + Transcripción] cuando atribuyas afirmaciones importantes.")
+                appendLine("En este modo no complementes con web, biblioteca base ni conocimiento general salvo que el usuario lo pida explícitamente después.")
             } else {
-                appendLine("Puedes complementar con conocimiento general, pero distingue con claridad lo aportado por las fuentes del usuario.")
+                appendLine("Puedes complementar el material de clase con conocimiento católico general y, cuando esté disponible, con biblioteca base o búsqueda web católica autorizada.")
+                appendLine("Prioridad de contexto: 1) fuentes de la clase, 2) biblioteca católica base, 3) fuentes oficiales/católicas de la lista blanca, 4) conocimiento general del modelo.")
+                appendLine("Si utilizas conocimiento general del modelo sin respaldo documental, no lo presentes como cita ni como declaración magisterial textual.")
             }
 
             if (socraticMode) {
                 appendLine("MODO SOCRÁTICO ACTIVADO.")
                 appendLine("Evalúa brevemente la respuesta del estudiante y termina con UNA sola pregunta concreta y progresiva.")
                 appendLine("No reveles de inmediato una solución completa si puede alcanzarse mediante preguntas guiadas.")
+            }
+
+            if (mapRequest) {
+                appendLine("MODO ARTEFACTO MAPA ACTIVADO.")
+                appendLine("El usuario quiere un mapa que NotCan renderizará de forma interactiva.")
+                appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_MAP>>> y <<<END_NOTCAN_MAP>>>.")
+                appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown y sin comentarios.")
+                appendLine("Esquema obligatorio:")
+                appendLine("{\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|radial_cards|ideas|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
+                appendLine("Para mapa mental académico usa por defecto layout horizontal.")
+                appendLine("Usa radial_cards cuando el usuario pida algo más visual, presentable o con tarjetas explicativas.")
+                appendLine("Usa ideas cuando el usuario pida mapa de ideas, estilo creativo, esquema visual sencillo o presentación tipo infografía.")
+                appendLine("Para mapa conceptual usa tree cuando predomine la jerarquía y añade etiquetas breves y semánticas en edges.")
+                appendLine("El contenido y el layout son independientes: no sacrifiques relaciones académicas por decorar el mapa.")
+                appendLine("Usa entre 6 y 24 nodos normalmente. Prioriza claridad, jerarquía y conceptos realmente importantes.")
+                appendLine("Cada nodo debe tener id único y todo edge debe referirse a ids existentes.")
+                appendLine("En source_refs usa nombres breves como 'Apuntes' o 'Transcripción' solo cuando el nodo tenga respaldo en esa fuente.")
+                appendLine("No incluyas texto antes ni después de los marcadores.")
             }
 
             if (sourceText.isNotBlank()) {
@@ -202,6 +230,26 @@ class NotCanAiService(private val context: Context) {
             return name to arguments
         }
         return null
+    }
+
+    private fun isMapRequest(value: String): Boolean {
+        val normalized = value.lowercase()
+        return listOf(
+            "mapa mental",
+            "mapa conceptual",
+            "mapa de ideas",
+            "haz un mapa",
+            "hazme un mapa",
+            "crea un mapa",
+            "creame un mapa",
+            "créame un mapa",
+            "organiza en un mapa",
+            "organízalo en un mapa",
+            "ponlo en un mapa",
+            "hazlo más visual",
+            "muéstralo como mapa",
+            "muestralo como mapa"
+        ).any(normalized::contains)
     }
 
     private fun sourcePlainText(value: String): String {

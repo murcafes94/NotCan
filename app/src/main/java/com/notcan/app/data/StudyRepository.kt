@@ -1,5 +1,6 @@
 package com.notcan.app.data
 
+import com.notcan.app.data.local.AcademicVocabularyTermEntity
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
 import com.notcan.app.data.local.DetectedCueEntity
@@ -29,6 +30,8 @@ class StudyRepository(private val dao: NotCanDao) {
     fun observeTranscripts(classSessionId: String): Flow<List<TranscriptEntity>> = dao.observeTranscripts(classSessionId)
     fun observeGradeItems(subjectId: String): Flow<List<GradeItemEntity>> = dao.observeGradeItems(subjectId)
     fun observeDetectedCues(classSessionId: String): Flow<List<DetectedCueEntity>> = dao.observeDetectedCues(classSessionId)
+    fun observeVocabularyForCycle(cycleId: String): Flow<List<AcademicVocabularyTermEntity>> = dao.observeVocabularyForCycle(cycleId)
+    fun observePermanentVocabulary(): Flow<List<AcademicVocabularyTermEntity>> = dao.observePermanentVocabulary()
 
     suspend fun createCycle(name: String, makeActive: Boolean = true): StudyCycleEntity {
         val now = System.currentTimeMillis()
@@ -158,6 +161,17 @@ class StudyRepository(private val dao: NotCanDao) {
         dao.insertGradeItem(item)
         return item
     }
+
+    suspend fun addVocabularyTerm(term: AcademicVocabularyTermEntity) = dao.insertVocabularyTerm(term)
+    suspend fun deleteVocabularyTerm(termId: String) = dao.deleteVocabularyTerm(termId)
+    suspend fun keepVocabularyTermPermanently(termId: String) = dao.keepVocabularyTermPermanently(termId)
+
+    suspend fun cycleSubjects(cycleId: String): List<SubjectEntity> = dao.getSubjectsForCycle(cycleId)
+    suspend fun cycleClasses(cycleId: String): List<ClassSessionEntity> = dao.getClassesForCycle(cycleId)
+    suspend fun cycleFilePaths(cycleId: String): List<String> =
+        (dao.getAudioPathsForCycle(cycleId) + dao.getDocumentPathsForCycle(cycleId)).distinct()
+    suspend fun cycleCalendarEventIds(cycleId: String): List<Long> = dao.getCalendarEventIdsForCycle(cycleId)
+    suspend fun deleteCycleData(cycleId: String) = dao.deleteCycleData(cycleId)
 
     suspend fun deleteGradeItem(itemId: String) = dao.deleteGradeItem(itemId)
     suspend fun saveDetectedCue(cue: DetectedCueEntity) = dao.insertDetectedCue(cue)

@@ -1,9 +1,7 @@
 package com.notcan.app.ui.ai
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -59,11 +56,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.notcan.app.ai.MistralCredentialsStore
@@ -75,6 +67,9 @@ import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.settings.NotCanPreferences
+import com.notcan.app.ui.maps.ParsedStudyMapArtifact
+import com.notcan.app.ui.maps.StudyMapArtifactParser
+import com.notcan.app.ui.maps.StudyMapScreen
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
@@ -173,7 +168,10 @@ private fun AiSources(
     onTranscribeLocal: (String) -> Unit
 ) {
     val latestAudio = audioRecordings.firstOrNull()
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
             Text(subjectName ?: "Fuentes", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(classTitle ?: "Selecciona una clase", color = NotCanGray)
@@ -187,15 +185,6 @@ private fun AiSources(
                 classTitle = classTitle,
                 modifier = Modifier.fillMaxWidth()
             )
-        }
-
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(18.dp)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Respuesta centrada en tus fuentes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Text("Activa “Solo mis fuentes” cuando quieras que TuNot no complete huecos con conocimiento general.", color = NotCanGray)
-                }
-            }
         }
 
         item {
@@ -231,17 +220,7 @@ private fun AiSources(
         item { Text("Material de esta clase", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
         item { SourceRow(Icons.Default.GraphicEq, "Audios", "${audioRecordings.size} grabación(es)") }
         item { SourceRow(Icons.Default.Description, "Transcripciones", "${transcripts.size} texto(s) guardado(s)") }
-        item { SourceRow(Icons.Default.AutoAwesome, "Señales académicas", "${detectedCues.size} tarea(s), examen(es) o énfasis detectado(s)") }
-        if (detectedCues.isNotEmpty()) {
-            items(detectedCues.take(12), key = { it.id }) { cue ->
-                Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                        Text(cue.label, color = NotCanBlue, fontWeight = FontWeight.SemiBold)
-                        Text(cue.excerpt, color = NotCanOffWhite)
-                    }
-                }
-            }
-        }
+        item { SourceRow(Icons.Default.AutoAwesome, "Señales académicas", "${detectedCues.size} señal(es)") }
     }
 }
 
@@ -260,7 +239,13 @@ private fun SourceRow(icon: ImageVector, title: String, subtitle: String) {
 }
 
 private enum class ChatRole { USER, ASSISTANT }
-private data class ChatMessage(val role: ChatRole, val content: String)
+
+private data class ChatMessage(
+    val role: ChatRole,
+    val content: String,
+    val rawContent: String = content,
+    val mapArtifact: ParsedStudyMapArtifact? = null
+)
 
 @Composable
 private fun AiChat(
@@ -281,8 +266,19 @@ private fun AiChat(
     val listState = rememberLazyListState()
 
     LaunchedEffect(result) {
-        if (result.isNotBlank() && messages.lastOrNull()?.content != result) messages.add(ChatMessage(ChatRole.ASSISTANT, result))
+        if (result.isBlank() || messages.lastOrNull()?.rawContent == result) return@LaunchedEffect
+        val artifact = StudyMapArtifactParser.parse(result)
+        val visibleText = if (artifact != null) StudyMapArtifactParser.stripArtifact(result) else result
+        messages.add(
+            ChatMessage(
+                role = ChatRole.ASSISTANT,
+                content = visibleText,
+                rawContent = result,
+                mapArtifact = artifact
+            )
+        )
     }
+
     LaunchedEffect(messages.size, busy) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
@@ -315,7 +311,10 @@ private fun AiChat(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 720.dp
-        Column(Modifier.fillMaxSize().padding(horizontal = if (wide) 18.dp else 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = if (wide) 18.dp else 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             CompactChatHeader(
                 subjectName = subjectName,
                 classTitle = classTitle,
@@ -327,16 +326,14 @@ private fun AiChat(
             if (wide) {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     AnimatedVisibility(visible = toolsOpen) {
-                        ContextPanel(
-                            subjectName = subjectName,
-                            classTitle = classTitle,
-                            configured = configured,
+                        CompactAiTools(
                             sourceOnly = sourceOnly,
                             socraticMode = socraticMode,
+                            hasMessages = messages.isNotEmpty(),
                             onSourceOnlyChange = { sourceOnly = it },
                             onSocraticChange = { socraticMode = it },
                             onClear = ::clearConversation,
-                            modifier = Modifier.width(250.dp).fillMaxSize()
+                            modifier = Modifier.width(250.dp)
                         )
                     }
                     ConversationPanel(
@@ -359,7 +356,8 @@ private fun AiChat(
                         hasMessages = messages.isNotEmpty(),
                         onSourceOnlyChange = { sourceOnly = it },
                         onSocraticChange = { socraticMode = it },
-                        onClear = ::clearConversation
+                        onClear = ::clearConversation,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
                 ConversationPanel(
@@ -385,10 +383,11 @@ private fun CompactAiTools(
     hasMessages: Boolean,
     onSourceOnlyChange: (Boolean) -> Unit,
     onSocraticChange: (Boolean) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = sourceOnly, onClick = { onSourceOnlyChange(!sourceOnly) }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
             FilterChip(selected = socraticMode, onClick = { onSocraticChange(!socraticMode) }, label = { Text("Socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
             if (hasMessages) TextButton(onClick = onClear) { Text("Nueva conversación") }
@@ -397,40 +396,13 @@ private fun CompactAiTools(
 }
 
 @Composable
-private fun ContextPanel(
+private fun CompactChatHeader(
     subjectName: String?,
     classTitle: String?,
     configured: Boolean,
-    sourceOnly: Boolean,
-    socraticMode: Boolean,
-    onSourceOnlyChange: (Boolean) -> Unit,
-    onSocraticChange: (Boolean) -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier
+    toolsOpen: Boolean,
+    onToggleTools: () -> Unit
 ) {
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoAwesome, null, tint = NotCanBlue)
-                Spacer(Modifier.width(9.dp))
-                Text("Opciones de TuNot", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            }
-            ConnectionBadge(configured)
-            Divider(color = NotCanGray.copy(alpha = 0.25f))
-            Text("Contexto", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
-            Text(subjectName ?: "Sin materia seleccionada", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-            classTitle?.let { Text(it, color = NotCanGray) }
-            FilterChip(selected = sourceOnly, onClick = { onSourceOnlyChange(!sourceOnly) }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
-            FilterChip(selected = socraticMode, onClick = { onSocraticChange(!socraticMode) }, label = { Text("Modo socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
-            Spacer(Modifier.weight(1f))
-            Text("Grabación, apuntes, transcripción y fuentes continúan guardadas localmente.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = onClear) { Text("Nueva conversación") }
-        }
-    }
-}
-
-@Composable
-private fun CompactChatHeader(subjectName: String?, classTitle: String?, configured: Boolean, toolsOpen: Boolean, onToggleTools: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(shape = RoundedCornerShape(13.dp), color = NotCanBlue.copy(alpha = 0.13f)) {
             Icon(Icons.Default.AutoAwesome, null, tint = NotCanBlue, modifier = Modifier.padding(9.dp))
@@ -526,16 +498,19 @@ private fun ConversationPanel(
 
 @Composable
 private fun EmptyConversation(configured: Boolean) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Surface(shape = RoundedCornerShape(18.dp), color = NotCanBlue.copy(alpha = 0.12f)) {
             Icon(Icons.Default.MenuBook, null, tint = NotCanBlue, modifier = Modifier.padding(14.dp))
         }
         Text("¿Qué estudiamos hoy?", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            if (configured) "Pregunta, traduce, resume, prepara un examen o transforma tus fuentes en material de estudio."
+            if (configured) "Pregunta, resume o pídele a TuNot un mapa mental, conceptual o de ideas."
             else "Configura tu API key y Agent ID de Mistral desde Configuración.",
-            color = NotCanGray,
-            style = MaterialTheme.typography.bodyMedium
+            color = NotCanGray
         )
     }
 }
@@ -552,159 +527,67 @@ private fun ChatBubble(message: ChatMessage) {
                 bottomStart = if (user) 18.dp else 5.dp,
                 bottomEnd = if (user) 5.dp else 18.dp
             ),
-            modifier = Modifier.fillMaxWidth(if (user) 0.78f else 0.94f)
+            modifier = Modifier.fillMaxWidth(if (user) 0.78f else 0.98f)
         ) {
-            Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp)) {
+            Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (user) "Tú" else "TuNot", color = if (user) NotCanBlue else NotCanGray, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                if (user) Text(message.content, color = NotCanOffWhite) else MarkdownDocument(message.content)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MarkdownDocument(markdown: String) {
-    val lines = markdown.replace("\r\n", "\n").lines()
-    var index = 0
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        while (index < lines.size) {
-            val line = lines[index]
-            val trimmed = line.trim()
-            when {
-                trimmed.isBlank() -> Unit
-                trimmed == "---" || trimmed == "___" -> Divider(color = NotCanGray.copy(alpha = 0.25f))
-                trimmed.startsWith("### ") -> Text(richInline(trimmed.removePrefix("### ")), color = NotCanOffWhite, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                trimmed.startsWith("## ") -> Text(richInline(trimmed.removePrefix("## ")), color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                trimmed.startsWith("# ") -> Text(richInline(trimmed.removePrefix("# ")), color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                trimmed.startsWith(">") -> Surface(color = NotCanBlue.copy(alpha = 0.08f), shape = RoundedCornerShape(10.dp)) {
-                    Text(richInline(trimmed.removePrefix(">").trim()), color = NotCanOffWhite, modifier = Modifier.padding(10.dp), fontStyle = FontStyle.Italic)
+                if (message.content.isNotBlank()) {
+                    Text(message.content, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
                 }
-                isMarkdownTableStart(lines, index) -> {
-                    val tableLines = mutableListOf<String>()
-                    while (index < lines.size && lines[index].contains('|') && lines[index].isNotBlank()) {
-                        tableLines.add(lines[index])
-                        index++
+                message.mapArtifact?.let { artifact ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        StudyMapScreen(
+                            map = artifact.map,
+                            initialLayout = artifact.preferredLayout,
+                            modifier = Modifier.fillMaxWidth().height(430.dp)
+                        )
                     }
-                    MarkdownTable(tableLines)
-                    index--
-                }
-                trimmed.startsWith("- ") || trimmed.startsWith("* ") -> Row(verticalAlignment = Alignment.Top) {
-                    Text("•", color = NotCanBlue, modifier = Modifier.width(18.dp))
-                    Text(richInline(trimmed.drop(2)), color = NotCanOffWhite, modifier = Modifier.weight(1f))
-                }
-                Regex("^\\d+[.)]\\s+.*").matches(trimmed) -> {
-                    val match = Regex("^(\\d+[.)])\\s+(.*)").find(trimmed)
-                    Row(verticalAlignment = Alignment.Top) {
-                        Text(match?.groupValues?.get(1).orEmpty(), color = NotCanBlue, modifier = Modifier.width(30.dp))
-                        Text(richInline(match?.groupValues?.get(2).orEmpty()), color = NotCanOffWhite, modifier = Modifier.weight(1f))
-                    }
-                }
-                trimmed.startsWith("```") -> {
-                    val code = mutableListOf<String>()
-                    index++
-                    while (index < lines.size && !lines[index].trim().startsWith("```")) {
-                        code.add(lines[index]); index++
-                    }
-                    Surface(color = Color.Black.copy(alpha = 0.22f), shape = RoundedCornerShape(10.dp)) {
-                        Text(code.joinToString("\n"), color = NotCanOffWhite, fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(10.dp))
-                    }
-                }
-                else -> Text(richInline(trimmed), color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
-            }
-            index++
-        }
-    }
-}
-
-private fun isMarkdownTableStart(lines: List<String>, index: Int): Boolean {
-    if (index + 1 >= lines.size || !lines[index].contains('|')) return false
-    val next = lines[index + 1].trim().replace(" ", "")
-    return next.contains('|') && next.replace("|", "").replace(":", "").all { it == '-' }
-}
-
-@Composable
-private fun MarkdownTable(lines: List<String>) {
-    val rows = lines
-        .filterNot { it.trim().replace(" ", "").replace("|", "").replace(":", "").all { c -> c == '-' } }
-        .map { it.trim().trim('|').split('|').map(String::trim) }
-    val columns = rows.maxOfOrNull { it.size } ?: return
-    Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).clip(RoundedCornerShape(10.dp)).background(Color.Black.copy(alpha = 0.10f))) {
-        rows.forEachIndexed { rowIndex, row ->
-            Row(Modifier.width((columns * 150).dp).padding(horizontal = 8.dp, vertical = 7.dp)) {
-                repeat(columns) { col ->
                     Text(
-                        richInline(row.getOrElse(col) { "" }),
-                        color = NotCanOffWhite,
-                        fontWeight = if (rowIndex == 0) FontWeight.SemiBold else FontWeight.Normal,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.width(142.dp).padding(end = 8.dp)
+                        "Mapa interactivo · toca una rama para contraerla o expandirla · pellizca para zoom · usa ⋮ para compartir PNG/PDF",
+                        color = NotCanGray,
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
             }
-            if (rowIndex == 0) Divider(color = NotCanGray.copy(alpha = 0.25f))
         }
     }
 }
 
-private fun richInline(text: String): AnnotatedString = buildAnnotatedString {
-    var i = 0
-    while (i < text.length) {
-        when {
-            text.startsWith("**", i) -> {
-                val end = text.indexOf("**", i + 2)
-                if (end > i + 2) {
-                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                    append(text.substring(i + 2, end))
-                    pop()
-                    i = end + 2
-                } else { append(text[i]); i++ }
-            }
-            text[i] == '`' -> {
-                val end = text.indexOf('`', i + 1)
-                if (end > i + 1) {
-                    pushStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color.Black.copy(alpha = 0.16f)))
-                    append(text.substring(i + 1, end))
-                    pop()
-                    i = end + 1
-                } else { append(text[i]); i++ }
-            }
-            text[i] == '*' -> {
-                val end = text.indexOf('*', i + 1)
-                if (end > i + 1) {
-                    pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
-                    append(text.substring(i + 1, end))
-                    pop()
-                    i = end + 1
-                } else { append(text[i]); i++ }
-            }
-            else -> { append(text[i]); i++ }
-        }
-    }
-}
-
-private data class StudyTool(val title: String, val subtitle: String, val icon: ImageVector, val prompt: String)
+private data class StudyTool(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val prompt: String
+)
 
 @Composable
 private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit) {
     val options = listOf(
-        StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones. No agregues contenido que no aparezca en las fuentes."),
+        StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones."),
         StudyTool("Tarjetas didácticas", "Pregunta-respuesta para repaso activo", Icons.Default.Style, "Crea entre 12 y 20 tarjetas didácticas basadas exclusivamente en esta clase."),
         StudyTool("Cuestionario", "Opción múltiple y desarrollo", Icons.Default.Quiz, "Crea un cuestionario basado exclusivamente en esta clase. Incluye opción múltiple y desarrollo, con respuestas separadas al final."),
-        StudyTool("Preparar examen oral", "Preguntas progresivas y puntos clave", Icons.Default.MenuBook, "Prepara un examen oral usando solo estas fuentes: organiza temas, formula preguntas progresivas y da puntos clave de una respuesta correcta."),
-        StudyTool("Mapa mental", "Tema central, ramas y subramas", Icons.Default.AutoAwesome, "Genera una estructura de mapa mental editable: tema central, ramas principales, subramas y conexiones. Usa solamente las fuentes disponibles."),
-        StudyTool("Mapa conceptual", "Conceptos, enlaces y relaciones cruzadas", Icons.Default.Source, "Genera una estructura de mapa conceptual: conceptos, relaciones con frases de enlace, jerarquías y relaciones cruzadas. Usa solamente las fuentes disponibles."),
-        StudyTool("Comprobar fuentes", "Distingue respaldo y datos no verificables", Icons.Default.Description, "Extrae las afirmaciones académicas importantes y comprueba si están respaldadas por apuntes, transcripción o fuentes externas. Marca como 'No consta' lo que no pueda verificarse.")
+        StudyTool("Mapa mental", "Ramas y subramas interactivas", Icons.Default.AutoAwesome, "Hazme un mapa mental de esta clase. Organiza el tema central, ramas principales y subramas. Usa solamente las fuentes disponibles."),
+        StudyTool("Mapa conceptual", "Conceptos y relaciones etiquetadas", Icons.Default.Source, "Hazme un mapa conceptual de esta clase con conceptos, jerarquías y frases de enlace. Usa solamente las fuentes disponibles."),
+        StudyTool("Mapa de ideas", "Presentación visual en tarjetas", Icons.Default.Description, "Hazme un mapa de ideas de esta clase, más visual y sencillo, usando tarjetas radiales. Usa solamente las fuentes disponibles.")
     )
 
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
             Text("Herramientas de estudio", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text("Convierte tus fuentes en material listo para estudiar.", color = NotCanGray)
         }
         items(options) { tool ->
             Card(
-                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) { onAsk("${NotCanAiService.SOURCE_ONLY_MARKER}\n${tool.prompt}") },
+                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) {
+                    onAsk("${NotCanAiService.SOURCE_ONLY_MARKER}\n${tool.prompt}")
+                },
                 colors = CardDefaults.cardColors(containerColor = NotCanSurface),
                 shape = RoundedCornerShape(18.dp)
             ) {

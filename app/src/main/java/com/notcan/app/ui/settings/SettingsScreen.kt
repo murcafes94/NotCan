@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Key
@@ -22,6 +23,9 @@ import androidx.compose.material.icons.filled.SpatialAudioOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,12 +34,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +53,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.notcan.app.ai.MistralCredentialsStore
+import com.notcan.app.data.local.NotCanDatabase
+import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.StudyModelManager
@@ -57,15 +67,26 @@ import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanSurface
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(preferences: NotCanPreferences) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val whisperManager = remember(context) { WhisperModelManager(context.applicationContext) }
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
     val legacyStudyManager = remember(context) { StudyModelManager(context.applicationContext) }
     val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
+    val cycleDao = remember(context) { NotCanDatabase.getInstance(context.applicationContext).dao() }
+    val cycles by cycleDao.observeCycles().collectAsState(initial = emptyList())
+    val activeCycle = cycles.firstOrNull { it.isActive } ?: cycles.firstOrNull()
+    val cycleEnded = activeCycle?.let { it.endEpochDay > 0L && LocalDate.now().toEpochDay() > it.endEpochDay } == true
 
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
@@ -103,6 +124,19 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 Text("Configuración", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text("Ajusta NotCan a tu forma de estudiar.", color = NotCanGray)
             }
+        }
+
+        AcademicPeriodSettings(
+            cycle = activeCycle,
+            onSave = { start, end ->
+                activeCycle?.let { cycle ->
+                    scope.launch { cycleDao.updateCycleDates(cycle.id, start.toEpochDay(), end.toEpochDay()) }
+                }
+            }
+        )
+
+        if (cycleEnded) {
+            CycleClosureSection(activeCycle)
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
@@ -276,6 +310,104 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             onCheckedChange = { autoCues = it; preferences.autoDetectAcademicCues = it }
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AcademicPeriodSettings(cycle: StudyCycleEntity?, onSave: (LocalDate, LocalDate) -> Unit) {
+    var startDate by remember(cycle?.id, cycle?.startEpochDay) {
+        mutableStateOf(cycle?.startEpochDay?.takeIf { it > 0 }?.let(LocalDate::ofEpochDay))
+    }
+    var endDate by remember(cycle?.id, cycle?.endEpochDay) {
+        mutableStateOf(cycle?.endEpochDay?.takeIf { it > 0 }?.let(LocalDate::ofEpochDay))
+    }
+    var startPickerOpen by remember { mutableStateOf(false) }
+    var endPickerOpen by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = NotCanBlue)
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Período académico", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        cycle?.name ?: "Crea o selecciona un ciclo para definir sus fechas.",
+                        color = NotCanGray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PeriodDateButton("Inicio", startDate, { startPickerOpen = true }, Modifier.weight(1f))
+                PeriodDateButton("Fin", endDate, { endPickerOpen = true }, Modifier.weight(1f))
+            }
+            Text(
+                "Estas fechas determinan cuándo aparecen las clases del ciclo y cuándo NotCan ofrece cerrar el semestre y liberar espacio.",
+                color = NotCanGray,
+                style = MaterialTheme.typography.bodySmall
+            )
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(
+                enabled = cycle != null && startDate != null && endDate != null,
+                onClick = {
+                    val start = startDate
+                    val end = endDate
+                    if (start != null && end != null) {
+                        if (end.isBefore(start)) error = "La fecha final debe ser igual o posterior al inicio."
+                        else {
+                            onSave(start, end)
+                            error = null
+                        }
+                    }
+                }
+            ) { Text("Guardar período") }
+        }
+    }
+
+    if (startPickerOpen) {
+        SettingsDateDialog(startDate, { startPickerOpen = false }) {
+            startDate = it
+            startPickerOpen = false
+            error = null
+        }
+    }
+    if (endPickerOpen) {
+        SettingsDateDialog(endDate, { endPickerOpen = false }) {
+            endDate = it
+            endPickerOpen = false
+            error = null
+        }
+    }
+}
+
+@Composable
+private fun PeriodDateButton(label: String, date: LocalDate?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    OutlinedButton(onClick = onClick, modifier = modifier) {
+        Column(horizontalAlignment = Alignment.Start) {
+            Text(label, style = MaterialTheme.typography.labelSmall)
+            Text(date?.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())) ?: "Elegir")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsDateDialog(initial: LocalDate?, onDismiss: () -> Unit, onSelected: (LocalDate) -> Unit) {
+    val initialMillis = initial?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+    val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { millis ->
+                    onSelected(Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate())
+                }
+            }) { Text("Aceptar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    ) { DatePicker(state = state) }
 }
 
 @Composable

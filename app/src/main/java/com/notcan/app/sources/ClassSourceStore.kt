@@ -110,6 +110,13 @@ class ClassSourceStore(private val context: Context) {
         writeManifest(scopeKey, current.filterNot { it.id == sourceId })
     }
 
+    /** Borra el archivo original copiado, su índice y el manifiesto de una clase. */
+    fun deleteScope(scopeKey: String): Boolean {
+        val dir = scopeDir(scopeKey)
+        if (!dir.exists()) return true
+        return dir.deleteRecursively()
+    }
+
     fun search(scopeKey: String, query: String, maxHits: Int = 24): List<SearchHit> {
         val needle = query.trim()
         if (needle.length < 2) return emptyList()
@@ -137,9 +144,7 @@ class ClassSourceStore(private val context: Context) {
         return result
     }
 
-    /**
-     * Context sent to TuNot. Capped per file and globally to avoid flooding the provider context.
-     */
+    /** Context sent to TuNot. Capped per file and globally to avoid flooding the provider context. */
     fun combinedContext(scopeKey: String, perSourceChars: Int = 32_000, totalChars: Int = 96_000): String {
         val out = StringBuilder()
         for (item in list(scopeKey).filter { it.enabled && it.indexed }) {

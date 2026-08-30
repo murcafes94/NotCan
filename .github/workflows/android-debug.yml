@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/**", "fix/**", "notcan-v0.7.7-mistral" ]
+    branches: [ "main", "feature/**", "feature-study-maps", "fix/**", "notcan-v0.7.7-mistral" ]
   workflow_dispatch:
 
 jobs:

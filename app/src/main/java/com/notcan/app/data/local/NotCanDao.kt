@@ -45,6 +45,12 @@ interface NotCanDao {
     @Query("SELECT * FROM detected_cues WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs ASC")
     fun observeDetectedCues(classSessionId: String): Flow<List<DetectedCueEntity>>
 
+    @Query("SELECT * FROM academic_vocabulary WHERE scope != 'CYCLE' OR cycleId = :cycleId ORDER BY weight DESC, term COLLATE NOCASE ASC")
+    fun observeVocabularyForCycle(cycleId: String): Flow<List<AcademicVocabularyTermEntity>>
+
+    @Query("SELECT * FROM academic_vocabulary WHERE scope IN ('BASE','PERMANENT','PERSONAL') ORDER BY weight DESC, term COLLATE NOCASE ASC")
+    fun observePermanentVocabulary(): Flow<List<AcademicVocabularyTermEntity>>
+
     @Query("SELECT * FROM class_sessions WHERE subjectId = :subjectId AND plannedStartEpochMs = :plannedStart LIMIT 1")
     suspend fun findMaterializedSession(subjectId: String, plannedStart: Long): ClassSessionEntity?
 
@@ -57,54 +63,57 @@ interface NotCanDao {
     @Query("SELECT * FROM class_sessions WHERE id = :classId LIMIT 1")
     suspend fun getClassSession(classId: String): ClassSessionEntity?
 
+    @Query("SELECT * FROM subjects WHERE cycleId = :cycleId")
+    suspend fun getSubjectsForCycle(cycleId: String): List<SubjectEntity>
+
+    @Query("SELECT c.* FROM class_sessions c INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
+    suspend fun getClassesForCycle(cycleId: String): List<ClassSessionEntity>
+
     @Query("SELECT COUNT(*) FROM class_sessions WHERE subjectId = :subjectId")
     suspend fun countClassesForSubject(subjectId: String): Int
 
+    @Query("SELECT a.localPath FROM audio_recordings a INNER JOIN class_sessions c ON a.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
+    suspend fun getAudioPathsForCycle(cycleId: String): List<String>
+
+    @Query("SELECT d.localPath FROM document_resources d INNER JOIN class_sessions c ON d.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
+    suspend fun getDocumentPathsForCycle(cycleId: String): List<String>
+
+    @Query("SELECT calendarEventId FROM subject_schedules WHERE cycleId = :cycleId AND calendarEventId IS NOT NULL")
+    suspend fun getCalendarEventIdsForCycle(cycleId: String): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCycle(cycle: StudyCycleEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubject(subject: SubjectEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSchedule(schedule: SubjectScheduleEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertClassSession(classSession: ClassSessionEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAudioRecording(audioRecording: AudioRecordingEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertImportantMoment(moment: ImportantMomentEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotePage(notePage: NotePageEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDocument(document: DocumentResourceEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPdfInkStroke(stroke: PdfInkStrokeEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTranscript(transcript: TranscriptEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGradeItem(item: GradeItemEntity)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDetectedCue(cue: DetectedCueEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVocabularyTerm(term: AcademicVocabularyTermEntity)
 
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
-
     @Query("UPDATE study_cycles SET isActive = 1 WHERE id = :cycleId")
     suspend fun activateCycle(cycleId: String)
-
     @Query("UPDATE study_cycles SET startEpochDay = :startEpochDay, endEpochDay = :endEpochDay WHERE id = :cycleId")
     suspend fun updateCycleDates(cycleId: String, startEpochDay: Long, endEpochDay: Long)
-
     @Query("UPDATE subject_schedules SET calendarEventId = :eventId WHERE id = :scheduleId")
     suspend fun setScheduleCalendarEvent(scheduleId: String, eventId: Long?)
 
@@ -116,10 +125,8 @@ interface NotCanDao {
 
     @Query("DELETE FROM subject_schedules WHERE id = :scheduleId")
     suspend fun deleteSchedule(scheduleId: String)
-
     @Query("DELETE FROM audio_recordings WHERE id = :audioId")
     suspend fun deleteAudioRecording(audioId: String)
-
     @Query("DELETE FROM important_moments WHERE audioId = :audioId")
     suspend fun deleteImportantMomentsForAudio(audioId: String)
 
@@ -131,22 +138,16 @@ interface NotCanDao {
 
     @Query("DELETE FROM note_pages WHERE id = :noteId")
     suspend fun deleteNotePage(noteId: String)
-
     @Query("DELETE FROM document_resources WHERE id = :documentId")
     suspend fun deleteDocument(documentId: String)
-
     @Query("DELETE FROM pdf_ink_strokes WHERE id = :strokeId")
     suspend fun deletePdfInkStroke(strokeId: String)
-
     @Query("DELETE FROM pdf_ink_strokes WHERE documentId = :documentId AND pageIndex = :pageIndex")
     suspend fun clearPdfInkPage(documentId: String, pageIndex: Int)
-
     @Query("DELETE FROM grade_items WHERE id = :itemId")
     suspend fun deleteGradeItem(itemId: String)
-
     @Query("DELETE FROM detected_cues WHERE transcriptId = :transcriptId")
     suspend fun deleteDetectedCuesForTranscript(transcriptId: String)
-
     @Query("DELETE FROM transcripts WHERE id = :transcriptId")
     suspend fun deleteTranscriptRecord(transcriptId: String)
 
@@ -154,5 +155,26 @@ interface NotCanDao {
     suspend fun deleteTranscript(transcriptId: String) {
         deleteDetectedCuesForTranscript(transcriptId)
         deleteTranscriptRecord(transcriptId)
+    }
+
+    @Query("DELETE FROM academic_vocabulary WHERE id = :termId")
+    suspend fun deleteVocabularyTerm(termId: String)
+    @Query("DELETE FROM academic_vocabulary WHERE scope = 'CYCLE' AND cycleId = :cycleId")
+    suspend fun deleteCycleVocabulary(cycleId: String)
+    @Query("UPDATE academic_vocabulary SET scope = 'PERMANENT', cycleId = NULL, subjectId = NULL WHERE id = :termId")
+    suspend fun keepVocabularyTermPermanently(termId: String)
+    @Query("DELETE FROM study_cycles WHERE id = :cycleId")
+    suspend fun deleteCycleRecord(cycleId: String)
+
+    /**
+     * Borra datos relacionales del ciclo. Las FK CASCADE eliminan materias, horarios,
+     * clases, audios registrados, momentos, apuntes, documentos, tinta PDF,
+     * transcripciones, calificaciones y cues. El vocabulario permanente/personal/base
+     * queda fuera del ciclo y sobrevive.
+     */
+    @Transaction
+    suspend fun deleteCycleData(cycleId: String) {
+        deleteCycleVocabulary(cycleId)
+        deleteCycleRecord(cycleId)
     }
 }

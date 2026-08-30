@@ -7,7 +7,6 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.ZonedDateTime
 
 data class PlannedClassOccurrence(
     val schedule: SubjectScheduleEntity,
@@ -22,7 +21,34 @@ data class PlannedClassOccurrence(
     }
 }
 
+data class AcademicTimeSlot(
+    val startMinuteOfDay: Int,
+    val endMinuteOfDay: Int,
+    val label: String
+)
+
 object AcademicSchedule {
+    /**
+     * Horario habitual del Instituto: bloques de 45 minutos.
+     * Entre los tres primeros bloques hay 5 minutos; a las 10:40 hay receso hasta 10:55.
+     * Se conserva el bloque vespertino 15:15–16:00 tal como aparece en el horario institucional.
+     */
+    val institutionalTimeSlots: List<AcademicTimeSlot> = listOf(
+        AcademicTimeSlot(minuteOfDay(8, 15), minuteOfDay(9, 0), "08:15–09:00"),
+        AcademicTimeSlot(minuteOfDay(9, 5), minuteOfDay(9, 50), "09:05–09:50"),
+        AcademicTimeSlot(minuteOfDay(9, 55), minuteOfDay(10, 40), "09:55–10:40"),
+        AcademicTimeSlot(minuteOfDay(10, 55), minuteOfDay(11, 40), "10:55–11:40"),
+        AcademicTimeSlot(minuteOfDay(11, 45), minuteOfDay(12, 30), "11:45–12:30"),
+        AcademicTimeSlot(minuteOfDay(14, 30), minuteOfDay(15, 15), "14:30–15:15"),
+        AcademicTimeSlot(minuteOfDay(15, 15), minuteOfDay(16, 0), "15:15–16:00")
+    )
+
+    fun institutionalSlotStartingAt(startMinute: Int): AcademicTimeSlot? =
+        institutionalTimeSlots.firstOrNull { it.startMinuteOfDay == startMinute }
+
+    fun calculatedEndMinute(startMinute: Int): Int =
+        institutionalSlotStartingAt(startMinute)?.endMinuteOfDay ?: (startMinute + 45).coerceAtMost(24 * 60 - 1)
+
     fun occurrencesForDate(
         date: LocalDate,
         cycle: StudyCycleEntity?,
