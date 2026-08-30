@@ -12,9 +12,81 @@ object StudyMapLayoutEngine {
         canvasWidth: Float,
         canvasHeight: Float
     ): List<PositionedStudyMapNode> = when (style) {
+        StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> horizontalBranches(map, canvasWidth, canvasHeight)
         StudyMapLayoutStyle.RADIAL -> radial(map, canvasWidth, canvasHeight)
         StudyMapLayoutStyle.TREE -> tree(map, canvasWidth, canvasHeight)
         StudyMapLayoutStyle.CONSTELLATION -> constellation(map, canvasWidth, canvasHeight)
+    }
+
+    private fun horizontalBranches(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
+        val byId = map.nodes.associateBy { it.id }
+        val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
+        val result = mutableListOf<PositionedStudyMapNode>()
+        val root = byId[map.rootNodeId] ?: return emptyList()
+        val rootWidth = 205f
+        val rootHeight = 86f
+        val rootX = 54f
+        val rootY = (height / 2f) - rootHeight / 2f
+        result += PositionedStudyMapNode(root, rootX, rootY, rootWidth, rootHeight)
+
+        val leafCountCache = mutableMapOf<String, Int>()
+        fun leafCount(id: String, visiting: MutableSet<String> = mutableSetOf()): Int {
+            leafCountCache[id]?.let { return it }
+            if (!visiting.add(id)) return 1
+            val childIds = children[id].orEmpty()
+            val count = if (childIds.isEmpty()) 1 else childIds.sumOf { leafCount(it, visiting.toMutableSet()) }
+            return count.coerceAtLeast(1).also { leafCountCache[id] = it }
+        }
+
+        val totalLeaves = children[map.rootNodeId].orEmpty().sumOf { leafCount(it) }.coerceAtLeast(1)
+        val top = 38f
+        val bottom = (height - 38f).coerceAtLeast(top + 260f)
+        val availableHeight = bottom - top
+        val maxDepth = depthOf(map.rootNodeId, children).coerceAtLeast(1)
+        val horizontalStep = ((width - rootX - rootWidth - 80f) / maxDepth).coerceIn(205f, 285f)
+
+        fun placeChildren(parentId: String, depth: Int, bandTop: Float, bandBottom: Float, visiting: Set<String>) {
+            val childIds = children[parentId].orEmpty().filterNot { it in visiting }
+            if (childIds.isEmpty()) return
+            val totalWeight = childIds.sumOf { leafCount(it) }.coerceAtLeast(1)
+            var cursor = bandTop
+
+            childIds.forEach { childId ->
+                val node = byId[childId] ?: return@forEach
+                val weight = leafCount(childId)
+                val fraction = weight.toFloat() / totalWeight.toFloat()
+                val bandHeight = (bandBottom - bandTop) * fraction
+                val centerY = cursor + bandHeight / 2f
+                val cardWidth = when {
+                    depth <= 1 -> 190f
+                    depth == 2 -> 168f
+                    else -> 152f
+                }
+                val cardHeight = when {
+                    depth <= 1 -> 76f
+                    depth == 2 -> 68f
+                    else -> 62f
+                }
+                val x = rootX + rootWidth + 42f + (depth - 1) * horizontalStep
+                val y = centerY - cardHeight / 2f
+
+                result += PositionedStudyMapNode(node, x, y, cardWidth, cardHeight)
+                placeChildren(
+                    parentId = childId,
+                    depth = depth + 1,
+                    bandTop = cursor,
+                    bandBottom = cursor + bandHeight,
+                    visiting = visiting + childId
+                )
+                cursor += bandHeight
+            }
+        }
+
+        val rootChildren = children[map.rootNodeId].orEmpty()
+        if (rootChildren.isNotEmpty()) {
+            placeChildren(map.rootNodeId, 1, top, top + availableHeight * (totalLeaves.toFloat() / totalLeaves), setOf(map.rootNodeId))
+        }
+        return result
     }
 
     private fun radial(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
@@ -85,6 +157,16 @@ object StudyMapLayoutEngine {
                 y = positioned.y + ((((index * 53) % 29) - 14) * 4f)
             )
         }
+    }
+
+    private fun depthOf(rootId: String, children: Map<String, List<String>>): Int {
+        fun visit(id: String, seen: Set<String>): Int {
+            if (id in seen) return 0
+            val next = children[id].orEmpty()
+            if (next.isEmpty()) return 0
+            return 1 + (next.maxOfOrNull { visit(it, seen + id) } ?: 0)
+        }
+        return visit(rootId, emptySet())
     }
 
     private fun collectLevels(
