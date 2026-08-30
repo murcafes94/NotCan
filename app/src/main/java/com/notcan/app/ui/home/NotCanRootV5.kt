@@ -192,14 +192,18 @@ fun NotCanRootV5(
                 }
                 HorizontalDivider(modifier = Modifier.width(1.dp).fillMaxHeight())
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    NotCanTopBar(
-                        page = page,
-                        menuExpanded = menuExpanded,
-                        onMenuExpanded = { menuExpanded = it },
-                        onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
-                        onFocus = { page = 0; focusMode = true },
-                        onSettings = { previousPage = page.coerceIn(0, 2); page = 4 }
-                    )
+                    // Materias, Clases y Workspace ya tienen su propia jerarquía visible.
+                    // Evitamos repetir "NotCan" y recuperamos altura útil para el contenido.
+                    if (page != 0) {
+                        NotCanTopBar(
+                            page = page,
+                            menuExpanded = menuExpanded,
+                            onMenuExpanded = { menuExpanded = it },
+                            onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
+                            onFocus = { page = 0; focusMode = true },
+                            onSettings = { previousPage = page.coerceIn(0, 2); page = 4 }
+                        )
+                    }
                     if (page == 0 && plannedNow != null) {
                         PlannedClassBanner(plannedNow, { onOpenPlannedClass(plannedNow) }, { onRecordPlannedClass(plannedNow) })
                     }
@@ -208,14 +212,16 @@ fun NotCanRootV5(
             }
         } else {
             Column(Modifier.fillMaxSize()) {
-                NotCanTopBar(
-                    page = page,
-                    menuExpanded = menuExpanded,
-                    onMenuExpanded = { menuExpanded = it },
-                    onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
-                    onFocus = { page = 0; focusMode = true },
-                    onSettings = { previousPage = page.coerceIn(0, 2); page = 4 }
-                )
+                if (page != 0) {
+                    NotCanTopBar(
+                        page = page,
+                        menuExpanded = menuExpanded,
+                        onMenuExpanded = { menuExpanded = it },
+                        onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
+                        onFocus = { page = 0; focusMode = true },
+                        onSettings = { previousPage = page.coerceIn(0, 2); page = 4 }
+                    )
+                }
                 if (page == 0 && plannedNow != null) {
                     PlannedClassBanner(plannedNow, { onOpenPlannedClass(plannedNow) }, { onRecordPlannedClass(plannedNow) })
                 }
@@ -296,7 +302,6 @@ private fun NotCanTopBar(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge)
-                if (page == 0) Text("Tu espacio de estudio", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                 if (page == 2) Text("Tutor académico católico", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
             Box {
