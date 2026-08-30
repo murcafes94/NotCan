@@ -366,7 +366,7 @@ private fun AiChat(
                     error = error,
                     messages = messages,
                     question = question,
-                    onQuestionChange = onQuestionChange,
+                    onQuestionChange = { question = it },
                     onSubmit = ::submit,
                     listState = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth()
