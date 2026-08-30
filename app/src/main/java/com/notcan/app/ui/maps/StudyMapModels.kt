@@ -3,7 +3,7 @@ package com.notcan.app.ui.maps
 import java.util.UUID
 
 enum class StudyMapType { MIND_MAP, CONCEPT_MAP }
-enum class StudyMapLayoutStyle { RADIAL, TREE, CONSTELLATION }
+enum class StudyMapLayoutStyle { HORIZONTAL_BRANCHES, RADIAL, TREE, CONSTELLATION }
 
 data class StudyMap(
     val id: String,
@@ -45,7 +45,7 @@ object StudyMapGenerator {
         val edges = mutableListOf<StudyMapEdge>()
 
         val concepts = extractConcepts(rawText)
-        concepts.forEachIndexed { index, concept ->
+        concepts.forEach { concept ->
             val childId = UUID.randomUUID().toString()
             nodes += StudyMapNode(
                 id = childId,
