@@ -48,6 +48,8 @@ import com.notcan.app.calendar.PlannedClassOccurrence
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.SubjectScheduleEntity
+import com.notcan.app.ui.ai.TuNotOfflineEntry
+import com.notcan.app.ui.ai.TuNotQuickAssistant
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanIcons
@@ -77,6 +79,12 @@ fun NotCanRootV5(
     autoFocusOnRecording: () -> Boolean = { true },
     onOpenPlannedClass: (PlannedClassOccurrence) -> Unit,
     onRecordPlannedClass: (PlannedClassOccurrence) -> Unit,
+    assistantContextTitle: String = "NotCan",
+    assistantOfflineEntries: List<TuNotOfflineEntry> = emptyList(),
+    assistantOnlineConfigured: Boolean = false,
+    assistantBusy: Boolean = false,
+    assistantResult: String = "",
+    onAssistantAsk: (String) -> Unit = {},
     classContent: @Composable () -> Unit,
     calendarContent: @Composable () -> Unit,
     aiContent: @Composable () -> Unit,
@@ -227,7 +235,42 @@ fun NotCanRootV5(
                 }
             }
         }
+
+        if (page != 2) {
+            TuNotQuickAssistant(
+                contextTitle = assistantContextForPage(page, assistantContextTitle),
+                offlineEntries = assistantOfflineEntries,
+                onlineConfigured = assistantOnlineConfigured,
+                onlineBusy = assistantBusy,
+                onlineResult = assistantResult,
+                suggestions = assistantSuggestions(page),
+                onAskOnline = onAssistantAsk,
+                onOpenFullChat = {
+                    if (page in 0..2) previousPage = page
+                    page = 2
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = if (wide) 22.dp else 16.dp, bottom = if (wide) 20.dp else 82.dp)
+            )
+        }
     }
+}
+
+private fun assistantContextForPage(page: Int, base: String): String = when (page) {
+    0 -> base
+    1 -> "Calendario académico · $base"
+    3 -> "Calificaciones · $base"
+    4 -> "Ajustes de NotCan"
+    else -> base
+}
+
+private fun assistantSuggestions(page: Int): List<String> = when (page) {
+    0 -> listOf("Buscar tema", "Resumir", "Explicar", "Crear preguntas")
+    1 -> listOf("¿Qué tengo mañana?", "Organizar estudio", "Próxima clase")
+    3 -> listOf("Analizar rendimiento", "¿Qué nota necesito?", "Priorizar materias")
+    4 -> listOf("¿Cómo funciona NotCan?", "Ayuda con TuNot")
+    else -> listOf("Preguntar", "Buscar tema")
 }
 
 @Composable
