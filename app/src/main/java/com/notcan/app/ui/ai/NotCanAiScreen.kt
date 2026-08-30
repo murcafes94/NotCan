@@ -130,7 +130,7 @@ private fun AiSources(subjectName: String?, classTitle: String?, transcripts: Li
         item {
             Text(subjectName ?: "Fuentes", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(classTitle ?: "Selecciona una clase", color = NotCanGray)
-            Spacer(Modifier.height(4.dp)); Text("Tus apuntes, transcripciones y archivos son el contexto de TuNot.", color = NotCanBlue)
+            Spacer(Modifier.height(4.dp)); Text("Tus apuntes, transcripciones y archivos están disponibles para TuNot cuando quieras usarlos como fuentes.", color = NotCanBlue)
         }
         item { AiExternalSourcesPanel(subjectName = subjectName, classTitle = classTitle, modifier = Modifier.fillMaxWidth()) }
         item {
@@ -162,7 +162,7 @@ private data class ChatMessage(val role: ChatRole, val content: String, val rawC
 
 @Composable
 private fun AiChat(subjectName: String?, classTitle: String?, configured: Boolean, busy: Boolean, error: String?, result: String, onAsk: (String) -> Unit, onClear: () -> Unit) {
-    var question by remember(classTitle) { mutableStateOf("") }; var sourceOnly by remember(classTitle) { mutableStateOf(true) }; var socraticMode by remember(classTitle) { mutableStateOf(false) }; var toolsOpen by remember(classTitle) { mutableStateOf(false) }
+    var question by remember(classTitle) { mutableStateOf("") }; var sourceOnly by remember(classTitle) { mutableStateOf(false) }; var socraticMode by remember(classTitle) { mutableStateOf(false) }; var toolsOpen by remember(classTitle) { mutableStateOf(false) }
     val messages = remember(classTitle) { mutableStateListOf<ChatMessage>() }; val listState = rememberLazyListState()
     LaunchedEffect(result) { if (result.isBlank() || messages.lastOrNull()?.rawContent == result) return@LaunchedEffect; val artifact = StudyMapArtifactParser.parse(result); val visibleText = if (artifact != null) StudyMapArtifactParser.stripArtifact(result) else result; messages.add(ChatMessage(ChatRole.ASSISTANT, visibleText, result, artifact)) }
     LaunchedEffect(messages.size, busy) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex) }
