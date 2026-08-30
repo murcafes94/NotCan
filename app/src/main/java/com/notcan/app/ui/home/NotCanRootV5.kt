@@ -241,12 +241,7 @@ fun NotCanRootV5(
         }
 
         if (page != 2) {
-            val assistantBottomPadding = when {
-                page == 0 && wide -> 94.dp
-                page == 0 -> 150.dp
-                wide -> 20.dp
-                else -> 82.dp
-            }
+            val assistantBottomPadding = if (wide) 20.dp else 82.dp
             TuNotQuickAssistant(
                 contextTitle = assistantContextForPage(page, assistantContextTitle),
                 offlineEntries = assistantOfflineEntries,
