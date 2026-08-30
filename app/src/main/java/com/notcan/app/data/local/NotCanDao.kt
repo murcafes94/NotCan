@@ -146,4 +146,13 @@ interface NotCanDao {
 
     @Query("DELETE FROM detected_cues WHERE transcriptId = :transcriptId")
     suspend fun deleteDetectedCuesForTranscript(transcriptId: String)
+
+    @Query("DELETE FROM transcripts WHERE id = :transcriptId")
+    suspend fun deleteTranscriptRecord(transcriptId: String)
+
+    @Transaction
+    suspend fun deleteTranscript(transcriptId: String) {
+        deleteDetectedCuesForTranscript(transcriptId)
+        deleteTranscriptRecord(transcriptId)
+    }
 }
