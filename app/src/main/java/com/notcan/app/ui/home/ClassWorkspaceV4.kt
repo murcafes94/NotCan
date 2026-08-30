@@ -55,7 +55,7 @@ internal fun NotCanClassWorkspaceV4(
     onShareNote: (NotePageEntity) -> Unit,
     onShareAudio: (AudioRecordingEntity) -> Unit,
     onDeleteAudio: (String) -> Unit,
-    onDeleteTranscript: (String) -> Unit,
+    onDeleteTranscript: (String) -> Unit = {},
     onTranscribeLocal: (String) -> Unit,
     onImportDocument: (String) -> Unit,
     onOpenDocument: (DocumentResourceEntity) -> Unit,
