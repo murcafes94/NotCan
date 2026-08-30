@@ -36,6 +36,8 @@ internal object StudyMapArtifactParser {
         }
         val preferredLayout = when (root.optString("layout").lowercase()) {
             "radial" -> StudyMapLayoutStyle.RADIAL
+            "radial_cards", "cards", "tarjetas", "visual_cards" -> StudyMapLayoutStyle.RADIAL_CARDS
+            "ideas", "idea_board", "mapa_de_ideas", "visual", "creative" -> StudyMapLayoutStyle.IDEA_BOARD
             "tree", "árbol", "arbol" -> StudyMapLayoutStyle.TREE
             "constellation", "constelacion", "constelación" -> StudyMapLayoutStyle.CONSTELLATION
             else -> StudyMapLayoutStyle.HORIZONTAL_BRANCHES
