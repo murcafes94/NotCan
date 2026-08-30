@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,6 +43,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.notcan.app.ai.OfflineTuNotEngine
+import com.notcan.app.ui.maps.ParsedStudyMapArtifact
+import com.notcan.app.ui.maps.StudyMapArtifactParser
+import com.notcan.app.ui.maps.StudyMapScreen
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanGreen
@@ -78,6 +84,8 @@ fun TuNotQuickAssistant(
     var expanded by remember { mutableStateOf(false) }
     var question by remember(contextTitle) { mutableStateOf("") }
     var localMatches by remember(contextTitle) { mutableStateOf<List<TuNotOfflineMatch>>(emptyList()) }
+    var localAnswer by remember(contextTitle) { mutableStateOf("") }
+    var localMap by remember(contextTitle) { mutableStateOf<ParsedStudyMapArtifact?>(null) }
     var lastOnlinePrompt by remember { mutableStateOf<String?>(null) }
     var online by remember(expanded) { mutableStateOf(isOnline(context)) }
 
@@ -85,13 +93,50 @@ fun TuNotQuickAssistant(
         if (expanded) online = isOnline(context)
     }
 
+    val onlineMap = remember(onlineResult) { StudyMapArtifactParser.parse(onlineResult) }
+    val visibleOnlineText = remember(onlineResult) {
+        if (onlineMap != null) StudyMapArtifactParser.stripArtifact(onlineResult) else onlineResult
+    }
+
+    fun submit() {
+        val clean = question.trim()
+        if (clean.isBlank() || onlineBusy) return
+        localAnswer = ""
+        localMap = null
+        localMatches = emptyList()
+
+        if (online && onlineConfigured) {
+            lastOnlinePrompt = clean
+            onAskOnline(
+                "CONSULTA RÁPIDA DESDE NOTCAN\n" +
+                    "Contexto visible: $contextTitle\n" +
+                    "Responde de forma breve y útil para una ventana compacta.\n" +
+                    clean
+            )
+        } else {
+            lastOnlinePrompt = null
+            if (OfflineTuNotEngine.isMapRequest(clean)) {
+                val result = OfflineTuNotEngine.answerEntries(contextTitle, offlineEntries, clean)
+                localMap = StudyMapArtifactParser.parse(result)
+                localAnswer = if (localMap != null) {
+                    "Mapa generado localmente con el material guardado."
+                } else result
+            } else {
+                localMatches = searchOffline(clean, offlineEntries)
+                if (localMatches.isEmpty()) {
+                    localAnswer = OfflineTuNotEngine.answerEntries(contextTitle, offlineEntries, clean)
+                }
+            }
+        }
+    }
+
     Box(modifier) {
         if (expanded) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .widthIn(min = 300.dp, max = 390.dp)
-                    .heightIn(max = 500.dp)
+                    .widthIn(min = 310.dp, max = 430.dp)
+                    .heightIn(max = 620.dp)
                     .padding(bottom = 62.dp),
                 colors = CardDefaults.cardColors(containerColor = NotCanSurfaceHigh),
                 shape = RoundedCornerShape(22.dp),
@@ -138,9 +183,9 @@ fun TuNotQuickAssistant(
 
                     Text(
                         if (online && onlineConfigured)
-                            "Pregunta algo o dame una indicación. Si pierdes conexión, aún puedo localizar contenido guardado."
+                            "Pregunta, resume o crea mapas. Si pierdes conexión, TuNot cambia al material local."
                         else
-                            "Sin conexión generativa. Puedo buscar temas, palabras y frases en el material guardado de esta clase.",
+                            "Modo local: busca en tu material y genera mapas mentales o conceptuales sin Internet.",
                         color = NotCanGray,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -158,76 +203,93 @@ fun TuNotQuickAssistant(
                         value = question,
                         onValueChange = { question = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Pregunta o busca un tema…") },
+                        placeholder = { Text("Pregunta o pide un mapa…") },
                         minLines = 1,
                         maxLines = 4,
                         trailingIcon = {
-                            IconButton(
-                                enabled = question.isNotBlank() && !onlineBusy,
-                                onClick = {
-                                    val clean = question.trim()
-                                    if (clean.isBlank()) return@IconButton
-                                    if (online && onlineConfigured) {
-                                        lastOnlinePrompt = clean
-                                        localMatches = emptyList()
-                                        onAskOnline(
-                                            "CONSULTA RÁPIDA DESDE NOTCAN\n" +
-                                                "Contexto visible: $contextTitle\n" +
-                                                "Responde de forma breve y útil para una ventana compacta.\n" +
-                                                clean
-                                        )
-                                    } else {
-                                        lastOnlinePrompt = null
-                                        localMatches = searchOffline(clean, offlineEntries)
-                                    }
-                                }
-                            ) {
+                            IconButton(enabled = question.isNotBlank() && !onlineBusy, onClick = ::submit) {
                                 Icon(NotCanIcons.Next, contentDescription = "Enviar", tint = NotCanBlue)
                             }
                         }
                     )
 
-                    if (onlineBusy && lastOnlinePrompt != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text("  TuNot está pensando…", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    when {
+                        onlineBusy && lastOnlinePrompt != null -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text("  TuNot está pensando…", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
-                    } else if (lastOnlinePrompt != null && onlineResult.isNotBlank()) {
-                        HorizontalDivider()
-                        Text(
-                            onlineResult.take(900),
-                            color = NotCanOffWhite,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 12,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    } else if (localMatches.isNotEmpty()) {
-                        HorizontalDivider()
-                        Text("Encontré esto en tu material", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                        localMatches.take(3).forEach { match ->
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                shape = RoundedCornerShape(13.dp)
+                        lastOnlinePrompt != null && onlineMap != null -> {
+                            HorizontalDivider()
+                            Text(visibleOnlineText, color = NotCanOffWhite, style = MaterialTheme.typography.bodySmall)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                                    Text(match.entry.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                                    Text(match.entry.subtitle, color = NotCanBlue, style = MaterialTheme.typography.labelSmall)
-                                    Text(
-                                        match.snippet,
-                                        color = NotCanGray,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 4,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                StudyMapScreen(
+                                    map = onlineMap!!.map,
+                                    initialLayout = onlineMap!!.preferredLayout,
+                                    modifier = Modifier.fillMaxWidth().height(300.dp)
+                                )
+                            }
+                        }
+                        lastOnlinePrompt != null && visibleOnlineText.isNotBlank() -> {
+                            HorizontalDivider()
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 230.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(visibleOnlineText, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        localMap != null -> {
+                            HorizontalDivider()
+                            Text(localAnswer, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                StudyMapScreen(
+                                    map = localMap!!.map,
+                                    initialLayout = localMap!!.preferredLayout,
+                                    modifier = Modifier.fillMaxWidth().height(300.dp)
+                                )
+                            }
+                        }
+                        localMatches.isNotEmpty() -> {
+                            HorizontalDivider()
+                            Text("Encontré esto en tu material", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                            Column(
+                                Modifier.fillMaxWidth().heightIn(max = 245.dp).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                localMatches.take(5).forEach { match ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                        shape = RoundedCornerShape(13.dp)
+                                    ) {
+                                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                                            Text(match.entry.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                                            Text(match.entry.subtitle, color = NotCanBlue, style = MaterialTheme.typography.labelSmall)
+                                            Text(match.snippet, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
                                 }
                             }
                         }
-                    } else if (question.isNotBlank() && !online && localMatches.isEmpty()) {
-                        Text(
-                            "Escribe el tema o palabra y pulsa enviar para buscarla localmente.",
-                            color = NotCanGray,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        localAnswer.isNotBlank() -> {
+                            HorizontalDivider()
+                            Column(
+                                Modifier.fillMaxWidth().heightIn(max = 230.dp).verticalScroll(rememberScrollState())
+                            ) {
+                                Text(localAnswer, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
                     }
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -275,7 +337,7 @@ private fun makeSnippet(text: String, tokens: List<String>): String {
     val normalized = normalize(clean)
     val hit = tokens.map { normalized.indexOf(it) }.filter { it >= 0 }.minOrNull() ?: 0
     val start = (hit - 90).coerceAtLeast(0)
-    val end = (hit + 240).coerceAtMost(clean.length)
+    val end = (hit + 300).coerceAtMost(clean.length)
     return buildString {
         if (start > 0) append("…")
         append(clean.substring(start, end))

@@ -25,9 +25,12 @@ object StudyMapLayoutEngine {
         val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
         val result = mutableListOf<PositionedStudyMapNode>()
         val root = byId[map.rootNodeId] ?: return emptyList()
-        val rootWidth = 205f
-        val rootHeight = 86f
-        val rootX = 54f
+        val maxDepth = depthOf(map.rootNodeId, children).coerceAtLeast(1)
+        val rootWidth = 240f
+        val rootHeight = 96f
+        val horizontalStep = ((width - rootWidth - 140f) / maxDepth).coerceIn(235f, 315f)
+        val estimatedContentWidth = rootWidth + 52f + maxDepth * horizontalStep + 230f
+        val rootX = ((width - estimatedContentWidth) / 2f).coerceAtLeast(40f)
         val rootY = (height / 2f) - rootHeight / 2f
         result += PositionedStudyMapNode(root, rootX, rootY, rootWidth, rootHeight)
 
@@ -40,12 +43,8 @@ object StudyMapLayoutEngine {
             return count.coerceAtLeast(1).also { leafCountCache[id] = it }
         }
 
-        val totalLeaves = children[map.rootNodeId].orEmpty().sumOf { leafCount(it) }.coerceAtLeast(1)
-        val top = 38f
-        val bottom = (height - 38f).coerceAtLeast(top + 260f)
-        val availableHeight = bottom - top
-        val maxDepth = depthOf(map.rootNodeId, children).coerceAtLeast(1)
-        val horizontalStep = ((width - rootX - rootWidth - 80f) / maxDepth).coerceIn(205f, 285f)
+        val top = 48f
+        val bottom = (height - 48f).coerceAtLeast(top + 300f)
 
         fun placeChildren(parentId: String, depth: Int, bandTop: Float, bandBottom: Float, visiting: Set<String>) {
             val childIds = children[parentId].orEmpty().filterNot { it in visiting }
@@ -60,17 +59,17 @@ object StudyMapLayoutEngine {
                 val bandHeight = (bandBottom - bandTop) * fraction
                 val centerY = cursor + bandHeight / 2f
                 val cardWidth = when {
-                    depth <= 1 -> 190f
-                    depth == 2 -> 168f
-                    else -> 152f
+                    depth <= 1 -> 230f
+                    depth == 2 -> 210f
+                    else -> 190f
                 }
                 val cardHeight = when {
-                    depth <= 1 -> 76f
-                    depth == 2 -> 68f
-                    else -> 62f
+                    depth <= 1 -> 92f
+                    depth == 2 -> 82f
+                    else -> 74f
                 }
-                val x = rootX + rootWidth + 42f + (depth - 1) * horizontalStep
-                val y = centerY - cardHeight / 2f
+                val x = rootX + rootWidth + 52f + (depth - 1) * horizontalStep
+                val y = (centerY - cardHeight / 2f).coerceAtLeast(18f)
 
                 result += PositionedStudyMapNode(node, x, y, cardWidth, cardHeight)
                 placeChildren(
@@ -84,10 +83,7 @@ object StudyMapLayoutEngine {
             }
         }
 
-        val rootChildren = children[map.rootNodeId].orEmpty()
-        if (rootChildren.isNotEmpty()) {
-            placeChildren(map.rootNodeId, 1, top, top + availableHeight * (totalLeaves.toFloat() / totalLeaves), setOf(map.rootNodeId))
-        }
+        placeChildren(map.rootNodeId, 1, top, bottom, setOf(map.rootNodeId))
         return result
     }
 
@@ -102,23 +98,17 @@ object StudyMapLayoutEngine {
         levels.forEach { (depth, ids) ->
             if (depth == 0) {
                 val root = byId[ids.firstOrNull()] ?: return@forEach
-                result += PositionedStudyMapNode(root, centerX - 95f, centerY - 42f, 190f, 84f)
+                result += PositionedStudyMapNode(root, centerX - 115f, centerY - 48f, 230f, 96f)
             } else {
-                val radius = 190f + (depth - 1) * 190f
+                val radius = 220f + (depth - 1) * 225f
                 ids.forEachIndexed { index, id ->
                     val node = byId[id] ?: return@forEachIndexed
                     val angle = (2.0 * PI / max(ids.size, 1)) * index - PI / 2.0
                     val x = centerX + radius * cos(angle).toFloat()
                     val y = centerY + radius * sin(angle).toFloat()
-                    val cardWidth = if (depth == 1) 180f else 156f
-                    val cardHeight = if (depth == 1) 78f else 68f
-                    result += PositionedStudyMapNode(
-                        node,
-                        x - cardWidth / 2f,
-                        y - cardHeight / 2f,
-                        cardWidth,
-                        cardHeight
-                    )
+                    val cardWidth = if (depth == 1) 210f else 185f
+                    val cardHeight = if (depth == 1) 90f else 78f
+                    result += PositionedStudyMapNode(node, x - cardWidth / 2f, y - cardHeight / 2f, cardWidth, cardHeight)
                 }
             }
         }
@@ -132,51 +122,38 @@ object StudyMapLayoutEngine {
         val root = byId[map.rootNodeId] ?: return emptyList()
         val centerX = width / 2f
         val centerY = height / 2f
-        val rootWidth = 210f
-        val rootHeight = 100f
+        val rootWidth = 240f
+        val rootHeight = 108f
         result += PositionedStudyMapNode(root, centerX - rootWidth / 2f, centerY - rootHeight / 2f, rootWidth, rootHeight)
 
         val firstLevel = children[map.rootNodeId].orEmpty()
-        val radiusX = (width * 0.34f).coerceIn(280f, 480f)
-        val radiusY = (height * 0.34f).coerceIn(210f, 340f)
+        val radiusX = (width * 0.35f).coerceIn(300f, 520f)
+        val radiusY = (height * 0.35f).coerceIn(230f, 370f)
 
         firstLevel.forEachIndexed { index, id ->
             val node = byId[id] ?: return@forEachIndexed
             val angle = (2.0 * PI / max(firstLevel.size, 1)) * index - PI / 2.0
             val centerNodeX = centerX + radiusX * cos(angle).toFloat()
             val centerNodeY = centerY + radiusY * sin(angle).toFloat()
-            val cardWidth = 205f
-            val cardHeight = 116f
-            val x = centerNodeX - cardWidth / 2f
-            val y = centerNodeY - cardHeight / 2f
-            result += PositionedStudyMapNode(node, x, y, cardWidth, cardHeight)
+            val cardWidth = 225f
+            val cardHeight = 124f
+            result += PositionedStudyMapNode(node, centerNodeX - cardWidth / 2f, centerNodeY - cardHeight / 2f, cardWidth, cardHeight)
 
-            val grandchildren = children[id].orEmpty()
-            if (grandchildren.isNotEmpty()) {
-                val outwardX = cos(angle).toFloat()
-                val outwardY = sin(angle).toFloat()
-                val tangentX = -outwardY
-                val tangentY = outwardX
-                val childBaseX = centerNodeX + outwardX * 185f
-                val childBaseY = centerNodeY + outwardY * 135f
-                val spacing = 86f
-                val offsetStart = -(grandchildren.size - 1) * spacing / 2f
-
-                grandchildren.take(5).forEachIndexed { childIndex, childId ->
-                    val child = byId[childId] ?: return@forEachIndexed
-                    val offset = offsetStart + childIndex * spacing
-                    val childCenterX = childBaseX + tangentX * offset
-                    val childCenterY = childBaseY + tangentY * offset
-                    val childWidth = 150f
-                    val childHeight = 68f
-                    result += PositionedStudyMapNode(
-                        child,
-                        childCenterX - childWidth / 2f,
-                        childCenterY - childHeight / 2f,
-                        childWidth,
-                        childHeight
-                    )
-                }
+            val grandchildren = children[id].orEmpty().take(5)
+            val outwardX = cos(angle).toFloat()
+            val outwardY = sin(angle).toFloat()
+            val tangentX = -outwardY
+            val tangentY = outwardX
+            val childBaseX = centerNodeX + outwardX * 200f
+            val childBaseY = centerNodeY + outwardY * 150f
+            val spacing = 96f
+            val offsetStart = -(grandchildren.size - 1) * spacing / 2f
+            grandchildren.forEachIndexed { childIndex, childId ->
+                val child = byId[childId] ?: return@forEachIndexed
+                val offset = offsetStart + childIndex * spacing
+                val childCenterX = childBaseX + tangentX * offset
+                val childCenterY = childBaseY + tangentY * offset
+                result += PositionedStudyMapNode(child, childCenterX - 90f, childCenterY - 40f, 180f, 80f)
             }
         }
         return result
@@ -189,38 +166,19 @@ object StudyMapLayoutEngine {
         val root = byId[map.rootNodeId] ?: return emptyList()
         val centerX = width / 2f
         val centerY = height / 2f
-        val rootWidth = 230f
-        val rootHeight = 120f
-        result += PositionedStudyMapNode(root, centerX - rootWidth / 2f, centerY - rootHeight / 2f, rootWidth, rootHeight)
+        result += PositionedStudyMapNode(root, centerX - 125f, centerY - 65f, 250f, 130f)
 
         val firstLevel = children[map.rootNodeId].orEmpty().take(8)
-        val slots = listOf(
-            -PI / 2.0,
-            -PI / 6.0,
-            PI / 6.0,
-            PI / 2.0,
-            5.0 * PI / 6.0,
-            -5.0 * PI / 6.0,
-            0.0,
-            PI
-        )
-        val radiusX = (width * 0.34f).coerceIn(300f, 500f)
-        val radiusY = (height * 0.34f).coerceIn(230f, 360f)
+        val slots = listOf(-PI / 2.0, -PI / 6.0, PI / 6.0, PI / 2.0, 5.0 * PI / 6.0, -5.0 * PI / 6.0, 0.0, PI)
+        val radiusX = (width * 0.35f).coerceIn(320f, 540f)
+        val radiusY = (height * 0.35f).coerceIn(250f, 390f)
 
         firstLevel.forEachIndexed { index, id ->
             val node = byId[id] ?: return@forEachIndexed
             val angle = slots[index % slots.size]
             val cx = centerX + radiusX * cos(angle).toFloat()
             val cy = centerY + radiusY * sin(angle).toFloat()
-            val cardWidth = 220f
-            val cardHeight = 132f
-            result += PositionedStudyMapNode(
-                node,
-                cx - cardWidth / 2f,
-                cy - cardHeight / 2f,
-                cardWidth,
-                cardHeight
-            )
+            result += PositionedStudyMapNode(node, cx - 120f, cy - 72f, 240f, 144f)
 
             val details = children[id].orEmpty().take(3)
             details.forEachIndexed { detailIndex, detailId ->
@@ -229,18 +187,10 @@ object StudyMapLayoutEngine {
                 val outwardY = sin(angle).toFloat()
                 val tangentX = -outwardY
                 val tangentY = outwardX
-                val spread = (detailIndex - (details.size - 1) / 2f) * 72f
-                val detailCx = cx + outwardX * 165f + tangentX * spread
-                val detailCy = cy + outwardY * 125f + tangentY * spread
-                val detailWidth = 148f
-                val detailHeight = 64f
-                result += PositionedStudyMapNode(
-                    detail,
-                    detailCx - detailWidth / 2f,
-                    detailCy - detailHeight / 2f,
-                    detailWidth,
-                    detailHeight
-                )
+                val spread = (detailIndex - (details.size - 1) / 2f) * 82f
+                val detailCx = cx + outwardX * 185f + tangentX * spread
+                val detailCy = cy + outwardY * 145f + tangentY * spread
+                result += PositionedStudyMapNode(detail, detailCx - 90f, detailCy - 40f, 180f, 80f)
             }
         }
         return result
@@ -251,20 +201,22 @@ object StudyMapLayoutEngine {
         val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
         val levels = collectLevels(map.rootNodeId, children)
         val result = mutableListOf<PositionedStudyMapNode>()
-        val usableHeight = (height - 80f).coerceAtLeast(300f)
+        val usableHeight = (height - 100f).coerceAtLeast(340f)
         val maxDepth = (levels.keys.maxOrNull() ?: 0).coerceAtLeast(1)
-        val horizontalStep = ((width - 260f).coerceAtLeast(260f)) / maxDepth
+        val horizontalStep = ((width - 300f).coerceAtLeast(300f)) / maxDepth
 
         levels.forEach { (depth, ids) ->
             val verticalStep = usableHeight / (ids.size + 1)
             ids.forEachIndexed { index, id ->
                 val node = byId[id] ?: return@forEachIndexed
+                val cardWidth = if (depth == 0) 230f else 205f
+                val cardHeight = if (depth == 0) 96f else 84f
                 result += PositionedStudyMapNode(
                     node = node,
-                    x = 40f + depth * horizontalStep,
-                    y = 40f + verticalStep * (index + 1),
-                    width = if (depth == 0) 190f else 170f,
-                    height = if (depth == 0) 84f else 72f
+                    x = 50f + depth * horizontalStep,
+                    y = 36f + verticalStep * (index + 1) - cardHeight / 2f,
+                    width = cardWidth,
+                    height = cardHeight
                 )
             }
         }
@@ -292,15 +244,11 @@ object StudyMapLayoutEngine {
         return visit(rootId, emptySet())
     }
 
-    private fun collectLevels(
-        rootId: String,
-        children: Map<String, List<String>>
-    ): Map<Int, List<String>> {
+    private fun collectLevels(rootId: String, children: Map<String, List<String>>): Map<Int, List<String>> {
         val result = linkedMapOf<Int, MutableList<String>>()
         val queue = ArrayDeque<Pair<String, Int>>()
         val visited = mutableSetOf<String>()
         queue.addLast(rootId to 0)
-
         while (queue.isNotEmpty()) {
             val (id, depth) = queue.removeFirst()
             if (!visited.add(id)) continue

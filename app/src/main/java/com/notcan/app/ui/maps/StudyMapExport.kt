@@ -42,8 +42,8 @@ internal data class StudyMapExportOptions(
 )
 
 internal object StudyMapExportManager {
-    private const val FULL_WIDTH = 2200
-    private const val FULL_HEIGHT = 1400
+    private const val FULL_WIDTH = 2600
+    private const val FULL_HEIGHT = 1600
     private const val EXPORT_MARGIN = 72f
     private const val HEADER_HEIGHT = 150f
 
@@ -62,15 +62,8 @@ internal object StudyMapExportManager {
     }
 
     fun share(context: Context, file: File, format: StudyMapExportFormat) {
-        val uri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.files",
-            file
-        )
-        val mime = when (format) {
-            StudyMapExportFormat.PNG -> "image/png"
-            StudyMapExportFormat.PDF -> "application/pdf"
-        }
+        val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val mime = if (format == StudyMapExportFormat.PNG) "image/png" else "application/pdf"
         val send = Intent(Intent.ACTION_SEND)
             .setType(mime)
             .putExtra(Intent.EXTRA_STREAM, uri)
@@ -100,15 +93,13 @@ internal object StudyMapExportManager {
         val titleOffset = if (options.includeTitle) HEADER_HEIGHT else EXPORT_MARGIN
         if (options.includeTitle) drawHeader(canvas, map, palette, width.toFloat(), options.includeSources)
 
-        val layoutHeight = (height.toFloat() - titleOffset - EXPORT_MARGIN).coerceAtLeast(360f)
+        val layoutHeight = (height.toFloat() - titleOffset - EXPORT_MARGIN).coerceAtLeast(420f)
         val nodes = StudyMapLayoutEngine.layout(
             map = map,
             style = style,
             canvasWidth = width.toFloat() - EXPORT_MARGIN * 2f,
             canvasHeight = layoutHeight
-        ).map {
-            it.copy(x = it.x + EXPORT_MARGIN, y = it.y + titleOffset)
-        }
+        ).map { it.copy(x = it.x + EXPORT_MARGIN, y = it.y + titleOffset) }
         val byId = nodes.associateBy { it.node.id }
 
         val transformZoom = if (options.scope == StudyMapExportScope.CURRENT_VIEW) viewport?.zoom ?: 1f else 1f
@@ -121,16 +112,31 @@ internal object StudyMapExportManager {
         drawEdges(canvas, map, byId, palette, style)
         nodes.forEach { drawNode(canvas, it, palette, style) }
         canvas.restore()
-        return bitmap
+
+        if (options.scope == StudyMapExportScope.CURRENT_VIEW || nodes.isEmpty()) return bitmap
+        return cropToContent(bitmap, nodes, options.includeTitle)
     }
 
-    private fun drawHeader(
-        canvas: Canvas,
-        map: StudyMap,
-        palette: ExportPalette,
-        width: Float,
-        includeSources: Boolean
-    ) {
+    private fun cropToContent(bitmap: Bitmap, nodes: List<PositionedStudyMapNode>, includeTitle: Boolean): Bitmap {
+        val minX = nodes.minOf { it.x }
+        val maxX = nodes.maxOf { it.x + it.width }
+        val minY = nodes.minOf { it.y }
+        val maxY = nodes.maxOf { it.y + it.height }
+        val left = (minX - 90f).coerceAtLeast(0f).toInt()
+        val right = (maxX + 90f).coerceAtMost(bitmap.width.toFloat()).toInt()
+        val top = if (includeTitle) 0 else (minY - 90f).coerceAtLeast(0f).toInt()
+        val bottom = (maxY + 90f).coerceAtMost(bitmap.height.toFloat()).toInt()
+        val cropWidth = (right - left).coerceAtLeast(320)
+        val cropHeight = (bottom - top).coerceAtLeast(260)
+        if (left == 0 && top == 0 && cropWidth >= bitmap.width && cropHeight >= bitmap.height) return bitmap
+        val safeWidth = cropWidth.coerceAtMost(bitmap.width - left)
+        val safeHeight = cropHeight.coerceAtMost(bitmap.height - top)
+        val cropped = Bitmap.createBitmap(bitmap, left, top, safeWidth, safeHeight)
+        if (cropped !== bitmap) bitmap.recycle()
+        return cropped
+    }
+
+    private fun drawHeader(canvas: Canvas, map: StudyMap, palette: ExportPalette, width: Float, includeSources: Boolean) {
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.text
             textSize = 44f
@@ -147,15 +153,9 @@ internal object StudyMapExportManager {
                 if (sources > 0) append(" · $sources fuentes")
             }
         }
-        val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = palette.muted
-            textSize = 24f
-        }
+        val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.muted; textSize = 24f }
         canvas.drawText(meta, EXPORT_MARGIN, 108f, metaPaint)
-        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = palette.border
-            strokeWidth = 2f
-        }
+        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.border; strokeWidth = 2f }
         canvas.drawLine(EXPORT_MARGIN, 132f, width - EXPORT_MARGIN, 132f, linePaint)
     }
 
@@ -173,11 +173,10 @@ internal object StudyMapExportManager {
             strokeCap = Paint.Cap.ROUND
             pathEffect = if (style == StudyMapLayoutStyle.IDEA_BOARD) DashPathEffect(floatArrayOf(15f, 10f), 0f) else null
         }
-        val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = palette.muted
-            textSize = 19f
-        }
+        val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.muted; textSize = 19f }
+        val labelBackground = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.background; this.style = Paint.Style.FILL }
         val horizontal = style == StudyMapLayoutStyle.HORIZONTAL_BRANCHES || style == StudyMapLayoutStyle.TREE
+
         map.edges.forEach { edge ->
             val from = byId[edge.from] ?: return@forEach
             val to = byId[edge.to] ?: return@forEach
@@ -188,28 +187,23 @@ internal object StudyMapExportManager {
             val dx = endX - startX
             val path = Path().apply {
                 moveTo(startX, startY)
-                cubicTo(
-                    startX + dx * 0.38f,
-                    startY,
-                    startX + dx * 0.62f,
-                    endY,
-                    endX,
-                    endY
-                )
+                cubicTo(startX + dx * 0.38f, startY, startX + dx * 0.62f, endY, endX, endY)
             }
             canvas.drawPath(path, linePaint)
+
             edge.label?.takeIf { it.isNotBlank() }?.let { label ->
-                canvas.drawText(label.take(28), startX + dx * 0.45f, (startY + endY) / 2f - 8f, labelPaint)
+                val visible = label.take(24)
+                val x = startX + dx * 0.50f
+                val y = (startY + endY) / 2f - 10f
+                val textWidth = labelPaint.measureText(visible)
+                val rect = RectF(x - 8f, y - 23f, x + textWidth + 8f, y + 7f)
+                canvas.drawRoundRect(rect, 8f, 8f, labelBackground)
+                canvas.drawText(visible, x, y, labelPaint)
             }
         }
     }
 
-    private fun drawNode(
-        canvas: Canvas,
-        positioned: PositionedStudyMapNode,
-        palette: ExportPalette,
-        style: StudyMapLayoutStyle
-    ) {
+    private fun drawNode(canvas: Canvas, positioned: PositionedStudyMapNode, palette: ExportPalette, style: StudyMapLayoutStyle) {
         val node = positioned.node
         val visual = style == StudyMapLayoutStyle.RADIAL_CARDS || style == StudyMapLayoutStyle.IDEA_BOARD
         val rect = RectF(positioned.x, positioned.y, positioned.x + positioned.width, positioned.y + positioned.height)
@@ -235,40 +229,42 @@ internal object StudyMapExportManager {
             textSize = if (node.level == 0) 27f else if (node.level == 1) 23f else 20f
             typeface = Typeface.create(Typeface.DEFAULT, if (node.level <= 1) Typeface.BOLD else Typeface.NORMAL)
         }
-        val textWidth = (positioned.width - 28f).toInt().coerceAtLeast(60)
-        val layout = StaticLayout.Builder.obtain(node.title, 0, node.title.length, textPaint, textWidth)
+        val textWidth = (positioned.width - 30f).toInt().coerceAtLeast(80)
+        val title = compact(node.title, if (node.level == 0) 82 else 64)
+        val layout = StaticLayout.Builder.obtain(title, 0, title.length, textPaint, textWidth)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setIncludePad(false)
             .setMaxLines(if (visual) 5 else if (node.level == 0) 3 else 4)
+            .setEllipsize(android.text.TextUtils.TruncateAt.END)
             .build()
         canvas.save()
-        canvas.translate(positioned.x + 14f, positioned.y + 13f)
+        canvas.translate(positioned.x + 15f, positioned.y + 14f)
         layout.draw(canvas)
         canvas.restore()
     }
 
+    private fun compact(value: String, max: Int): String {
+        val clean = value.replace(Regex("\\s+"), " ").trim()
+        if (clean.length <= max) return clean
+        return clean.take(max).substringBeforeLast(' ', clean.take(max)).trimEnd() + "…"
+    }
+
     private fun writePng(context: Context, map: StudyMap, bitmap: Bitmap): File {
-        val directory = exportDirectory(context)
-        val file = File(directory, "${safeName(map.title)}_${System.currentTimeMillis()}.png")
-        FileOutputStream(file).use { output ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-        }
+        val file = File(exportDirectory(context), "${safeName(map.title)}_${System.currentTimeMillis()}.png")
+        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
         return file
     }
 
     private fun writePdf(context: Context, map: StudyMap, bitmap: Bitmap, landscape: Boolean): File {
-        val directory = exportDirectory(context)
-        val file = File(directory, "${safeName(map.title)}_${System.currentTimeMillis()}.pdf")
+        val file = File(exportDirectory(context), "${safeName(map.title)}_${System.currentTimeMillis()}.pdf")
         val pageWidth = if (landscape) 842 else 595
         val pageHeight = if (landscape) 595 else 842
         val document = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
-        val page = document.startPage(pageInfo)
-        val pageCanvas = page.canvas
-        pageCanvas.drawColor(Color.WHITE)
-        val target = fitRect(bitmap.width.toFloat(), bitmap.height.toFloat(), pageWidth.toFloat(), pageHeight.toFloat(), 26f)
-        pageCanvas.drawBitmap(bitmap, null, target, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        val page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
+        page.canvas.drawColor(Color.WHITE)
+        val target = fitRect(bitmap.width.toFloat(), bitmap.height.toFloat(), pageWidth.toFloat(), pageHeight.toFloat(), 18f)
+        page.canvas.drawBitmap(bitmap, null, target, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
         document.finishPage(page)
         FileOutputStream(file).use { document.writeTo(it) }
         document.close()
@@ -287,8 +283,7 @@ internal object StudyMapExportManager {
         return RectF(left, top, left + w, top + h)
     }
 
-    private fun exportDirectory(context: Context): File =
-        File(context.filesDir, "documents/maps").apply { mkdirs() }
+    private fun exportDirectory(context: Context): File = File(context.filesDir, "documents/maps").apply { mkdirs() }
 
     private fun safeName(value: String): String = value
         .trim()
@@ -310,24 +305,14 @@ internal object StudyMapExportManager {
 
     private fun palette(theme: StudyMapExportTheme): ExportPalette = when (theme) {
         StudyMapExportTheme.LIGHT -> ExportPalette(
-            background = Color.rgb(250, 251, 253),
-            card = Color.WHITE,
-            visualCard = Color.rgb(244, 247, 253),
-            root = Color.rgb(232, 240, 255),
-            text = Color.rgb(24, 31, 43),
-            muted = Color.rgb(92, 104, 122),
-            border = Color.rgb(214, 221, 232),
-            connector = Color.rgb(52, 120, 246)
+            background = Color.rgb(250, 251, 253), card = Color.WHITE, visualCard = Color.rgb(244, 247, 253),
+            root = Color.rgb(232, 240, 255), text = Color.rgb(24, 31, 43), muted = Color.rgb(92, 104, 122),
+            border = Color.rgb(214, 221, 232), connector = Color.rgb(52, 120, 246)
         )
         StudyMapExportTheme.DARK -> ExportPalette(
-            background = Color.rgb(8, 13, 21),
-            card = Color.rgb(19, 29, 42),
-            visualCard = Color.rgb(24, 36, 52),
-            root = Color.rgb(20, 43, 82),
-            text = Color.rgb(244, 247, 251),
-            muted = Color.rgb(167, 178, 195),
-            border = Color.rgb(38, 54, 76),
-            connector = Color.rgb(52, 120, 246)
+            background = Color.rgb(8, 13, 21), card = Color.rgb(19, 29, 42), visualCard = Color.rgb(24, 36, 52),
+            root = Color.rgb(20, 43, 82), text = Color.rgb(244, 247, 251), muted = Color.rgb(167, 178, 195),
+            border = Color.rgb(38, 54, 76), connector = Color.rgb(52, 120, 246)
         )
     }
 }

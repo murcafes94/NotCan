@@ -9,8 +9,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Online academic assistant backed by the user's own Mistral Agent.
- * The API key is stored locally with Android Keystore encryption and is never committed to the APK.
+ * Asistente académico online con fallback local. Si Mistral no está disponible,
+ * TuNot sigue pudiendo recuperar material guardado y generar mapas sin Internet.
  */
 class NotCanAiService(private val context: Context) {
     private val appContext = context.applicationContext
@@ -39,7 +39,7 @@ class NotCanAiService(private val context: Context) {
             .replace(SOURCE_ONLY_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
             .trim()
-        val mapRequest = isMapRequest(cleanQuestion)
+        val mapRequest = OfflineTuNotEngine.isMapRequest(cleanQuestion)
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
@@ -119,7 +119,15 @@ class NotCanAiService(private val context: Context) {
             append(cleanQuestion)
         }
 
-        return sendToMistral(prompt)
+        return runCatching { sendToMistral(prompt) }
+            .getOrElse {
+                OfflineTuNotEngine.answer(
+                    subjectName = subjectName,
+                    notes = plainNotes,
+                    transcript = plainTranscript,
+                    question = cleanQuestion
+                )
+            }
     }
 
     private fun sendToMistral(prompt: String): String {
@@ -230,26 +238,6 @@ class NotCanAiService(private val context: Context) {
             return name to arguments
         }
         return null
-    }
-
-    private fun isMapRequest(value: String): Boolean {
-        val normalized = value.lowercase()
-        return listOf(
-            "mapa mental",
-            "mapa conceptual",
-            "mapa de ideas",
-            "haz un mapa",
-            "hazme un mapa",
-            "crea un mapa",
-            "creame un mapa",
-            "créame un mapa",
-            "organiza en un mapa",
-            "organízalo en un mapa",
-            "ponlo en un mapa",
-            "hazlo más visual",
-            "muéstralo como mapa",
-            "muestralo como mapa"
-        ).any(normalized::contains)
     }
 
     private fun sourcePlainText(value: String): String {
