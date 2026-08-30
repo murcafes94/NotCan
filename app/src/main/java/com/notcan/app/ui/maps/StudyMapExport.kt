@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -117,8 +118,8 @@ internal object StudyMapExportManager {
         canvas.save()
         canvas.translate(transformX, transformY)
         canvas.scale(transformZoom, transformZoom)
-        drawEdges(canvas, map, byId, palette)
-        nodes.forEach { drawNode(canvas, it, palette) }
+        drawEdges(canvas, map, byId, palette, style)
+        nodes.forEach { drawNode(canvas, it, palette, style) }
         canvas.restore()
         return bitmap
     }
@@ -162,24 +163,27 @@ internal object StudyMapExportManager {
         canvas: Canvas,
         map: StudyMap,
         byId: Map<String, PositionedStudyMapNode>,
-        palette: ExportPalette
+        palette: ExportPalette,
+        style: StudyMapLayoutStyle
     ) {
         val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.connector
-            style = Paint.Style.STROKE
-            strokeWidth = 5f
+            this.style = Paint.Style.STROKE
+            strokeWidth = if (style == StudyMapLayoutStyle.HORIZONTAL_BRANCHES) 5.5f else 4.5f
             strokeCap = Paint.Cap.ROUND
+            pathEffect = if (style == StudyMapLayoutStyle.IDEA_BOARD) DashPathEffect(floatArrayOf(15f, 10f), 0f) else null
         }
         val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.muted
             textSize = 19f
         }
+        val horizontal = style == StudyMapLayoutStyle.HORIZONTAL_BRANCHES || style == StudyMapLayoutStyle.TREE
         map.edges.forEach { edge ->
             val from = byId[edge.from] ?: return@forEach
             val to = byId[edge.to] ?: return@forEach
-            val startX = from.x + from.width
+            val startX = if (horizontal) from.x + from.width else from.x + from.width / 2f
             val startY = from.y + from.height / 2f
-            val endX = to.x
+            val endX = if (horizontal) to.x else to.x + to.width / 2f
             val endY = to.y + to.height / 2f
             val dx = endX - startX
             val path = Path().apply {
@@ -200,20 +204,31 @@ internal object StudyMapExportManager {
         }
     }
 
-    private fun drawNode(canvas: Canvas, positioned: PositionedStudyMapNode, palette: ExportPalette) {
+    private fun drawNode(
+        canvas: Canvas,
+        positioned: PositionedStudyMapNode,
+        palette: ExportPalette,
+        style: StudyMapLayoutStyle
+    ) {
         val node = positioned.node
+        val visual = style == StudyMapLayoutStyle.RADIAL_CARDS || style == StudyMapLayoutStyle.IDEA_BOARD
         val rect = RectF(positioned.x, positioned.y, positioned.x + positioned.width, positioned.y + positioned.height)
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (node.level == 0) palette.root else palette.card
-            style = Paint.Style.FILL
+            color = when {
+                node.level == 0 -> palette.root
+                visual -> palette.visualCard
+                else -> palette.card
+            }
+            this.style = Paint.Style.FILL
         }
         val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = if (node.level == 0) palette.connector else palette.border
-            style = Paint.Style.STROKE
+            this.style = Paint.Style.STROKE
             strokeWidth = if (node.level == 0) 3f else 2f
         }
-        canvas.drawRoundRect(rect, 24f, 24f, fill)
-        canvas.drawRoundRect(rect, 24f, 24f, border)
+        val radius = if (visual) 36f else 24f
+        canvas.drawRoundRect(rect, radius, radius, fill)
+        canvas.drawRoundRect(rect, radius, radius, border)
 
         val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.text
@@ -224,7 +239,7 @@ internal object StudyMapExportManager {
         val layout = StaticLayout.Builder.obtain(node.title, 0, node.title.length, textPaint, textWidth)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setIncludePad(false)
-            .setMaxLines(if (node.level == 0) 3 else 4)
+            .setMaxLines(if (visual) 5 else if (node.level == 0) 3 else 4)
             .build()
         canvas.save()
         canvas.translate(positioned.x + 14f, positioned.y + 13f)
@@ -285,6 +300,7 @@ internal object StudyMapExportManager {
     private data class ExportPalette(
         val background: Int,
         val card: Int,
+        val visualCard: Int,
         val root: Int,
         val text: Int,
         val muted: Int,
@@ -296,6 +312,7 @@ internal object StudyMapExportManager {
         StudyMapExportTheme.LIGHT -> ExportPalette(
             background = Color.rgb(250, 251, 253),
             card = Color.WHITE,
+            visualCard = Color.rgb(244, 247, 253),
             root = Color.rgb(232, 240, 255),
             text = Color.rgb(24, 31, 43),
             muted = Color.rgb(92, 104, 122),
@@ -305,6 +322,7 @@ internal object StudyMapExportManager {
         StudyMapExportTheme.DARK -> ExportPalette(
             background = Color.rgb(8, 13, 21),
             card = Color.rgb(19, 29, 42),
+            visualCard = Color.rgb(24, 36, 52),
             root = Color.rgb(20, 43, 82),
             text = Color.rgb(244, 247, 251),
             muted = Color.rgb(167, 178, 195),
