@@ -16,7 +16,9 @@ data class TuNotWebSource(
     val authority: TuNotSourceAuthority,
     val priority: Int,
     val topics: Set<String> = emptySet(),
-    val preferredLanguage: String = "es"
+    val preferredLanguage: String = "es",
+    val searchable: Boolean = true,
+    val note: String? = null
 )
 
 /**
@@ -61,8 +63,10 @@ object TuNotCatholicSourcePolicy {
             domain = "magisterium.com",
             label = "Magisterium AI",
             authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
-            priority = 87,
-            topics = setOf("magisterio", "catecismo", "teologia", "patristica", "doctrina")
+            priority = 40,
+            topics = setOf("magisterio", "catecismo", "teologia", "patristica", "doctrina"),
+            searchable = false,
+            note = "Solo referencia conceptual. No invocar su IA, API ni servicios con cobro por tokens desde TuNot."
         ),
         TuNotWebSource(
             domain = "newadvent.org",
@@ -213,12 +217,15 @@ object TuNotCatholicSourcePolicy {
         )
     ).sortedByDescending { it.priority }
 
-    private val allowedDomains = sources.map { it.domain.lowercase() }.toSet()
+    private val searchableDomains = sources
+        .filter { it.searchable }
+        .map { it.domain.lowercase() }
+        .toSet()
 
     fun isAllowedUrl(url: String): Boolean {
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         if (host.isBlank()) return false
-        return allowedDomains.any { domain -> host == domain || host.endsWith(".$domain") }
+        return searchableDomains.any { domain -> host == domain || host.endsWith(".$domain") }
     }
 
     fun sourceForUrl(url: String): TuNotWebSource? {
@@ -230,7 +237,7 @@ object TuNotCatholicSourcePolicy {
     fun promptPolicy(): String = buildString {
         appendLine("POLÍTICA CATÓLICA DE FUENTES WEB DE TUNOT")
         appendLine("TuNot es un tutor académico católico. Para consultas doctrinales no debe presentar como doctrina católica una opinión cristiana general, ecuménica o de otra confesión.")
-        appendLine("Si existe búsqueda web, utiliza únicamente dominios de la lista blanca de NotCan y respeta el siguiente orden de autoridad:")
+        appendLine("Si existe búsqueda web, utiliza únicamente dominios de la lista blanca de NotCan marcados como buscables y respeta el siguiente orden de autoridad:")
         appendLine("1. Santa Sede y documentos oficiales de la Iglesia.")
         appendLine("2. Fuentes católicas de referencia y textos primarios.")
         appendLine("3. Universidades e instituciones académicas católicas.")
@@ -241,12 +248,15 @@ object TuNotCatholicSourcePolicy {
         appendLine("No atribuyas al Magisterio una conclusión que solo aparezca en una fuente secundaria.")
         appendLine("No uses como fundamento doctrinal páginas protestantes, evangélicas, ortodoxas, ecuménicas generales, wikis, foros, Reddit, redes sociales, directorios de enlaces o sitios sin autoridad identificable.")
         appendLine("No uses bancos de imágenes o sitios devocionales como fuente doctrinal.")
+        appendLine("Magisterium AI queda SOLO COMO REFERENCIA CONCEPTUAL: TuNot no debe invocar su IA, API ni ningún servicio de Magisterium que genere cargos por tokens. Si una idea conocida por esa plataforma resulta útil, debe preferirse la fuente primaria católica equivalente disponible en la lista blanca.")
         appendLine("IDIOMA: responde siempre en español. Si una fuente está en inglés, francés, italiano, alemán u otro idioma moderno, extrae su contenido relevante y tradúcelo o sintetízalo al español antes de presentarlo. No muestres bloques de texto en otro idioma salvo petición explícita del usuario.")
         appendLine("LATÍN: no muestres términos, frases ni bloques en latín por defecto. Tradúcelos al español y conserva solo la referencia de la obra/documento. Muestra latín únicamente cuando el usuario lo pida explícitamente, cuando solicite formato latín-español, cuando la tarea sea específicamente lingüística, o cuando trabaje con una fuente cuyo texto latino sea parte esencial de la consulta (por ejemplo, Código de Derecho Canónico latino-español).")
         appendLine("Si el usuario pide una frase, oración o texto en latín-español, presenta ambos de forma clara y equivalente. Si no lo pide, la respuesta visible debe quedar completamente en español.")
-        appendLine("Dominios autorizados, de mayor a menor prioridad:")
+        appendLine("Dominios configurados, de mayor a menor prioridad:")
         sources.forEach { source ->
-            appendLine("- ${source.domain} — ${source.label} — ${source.authority.name} — idioma fuente preferente: ${source.preferredLanguage}")
+            val access = if (source.searchable) "buscable" else "solo referencia"
+            val note = source.note?.let { " — $it" }.orEmpty()
+            appendLine("- ${source.domain} — ${source.label} — ${source.authority.name} — $access — idioma fuente preferente: ${source.preferredLanguage}$note")
         }
     }
 }
