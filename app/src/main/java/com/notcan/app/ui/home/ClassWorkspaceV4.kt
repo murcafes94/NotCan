@@ -108,7 +108,7 @@ internal fun NotCanClassWorkspaceV4(
         if (classSession == null && subject != null && !recordingActive) {
             IconButton(
                 onClick = { onStartRecording(NEW_CLASS_RECORDING_SENTINEL) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)
+                modifier = Modifier.align(Alignment.BottomStart).padding(18.dp)
             ) {
                 Icon(Icons.Default.Mic, contentDescription = "Crear clase y comenzar grabación", tint = NotCanRed)
             }
@@ -128,7 +128,7 @@ internal fun NotCanClassWorkspaceV4(
                         .putExtra(Intent.EXTRA_TEXT, text)
                     context.startActivity(Intent.createChooser(intent, "Compartir transcripción"))
                 },
-                modifier = Modifier.align(Alignment.BottomStart).padding(18.dp)
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 84.dp)
             ) {
                 Icon(Icons.Default.Share, contentDescription = "Compartir transcripción", tint = NotCanBlue)
             }
