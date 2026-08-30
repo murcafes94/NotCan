@@ -310,7 +310,14 @@ class MainActivity : ComponentActivity() {
 
     private fun requestNoteImport(classSessionId: String) {
         pendingNoteClassId = classSessionId
-        noteLauncher.launch(arrayOf("text/plain", "text/markdown", "text/*"))
+        noteLauncher.launch(
+            arrayOf(
+                "text/plain",
+                "text/markdown",
+                "text/*",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        )
     }
 
     private fun shareNote(note: NotePageEntity) {
