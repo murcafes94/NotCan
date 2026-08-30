@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Grade
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -41,8 +40,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.notcan.app.R
 import com.notcan.app.calendar.AcademicSchedule
 import com.notcan.app.calendar.PlannedClassOccurrence
 import com.notcan.app.data.local.StudyCycleEntity
@@ -52,9 +53,9 @@ import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanSurface
-import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 
 @Composable
 fun NotCanRootV5(
@@ -115,19 +116,38 @@ fun NotCanRootV5(
                     contentColor = NotCanBlue,
                     modifier = Modifier.weight(1f)
                 ) {
-                    listOf("Clase", "Calendario", "IA").forEachIndexed { index, label ->
+                    val tabs = listOf(
+                        Triple("Clase", R.drawable.ic_notcan_academic, 0),
+                        Triple("Calendario", R.drawable.ic_notcan_calendar, 1),
+                        Triple("IA", R.drawable.ic_notcan_ai, 2)
+                    )
+                    tabs.forEach { (label, iconRes, index) ->
                         Tab(
                             selected = page == index,
                             onClick = {
                                 if (page in 0..2) previousPage = page
                                 page = index
                             },
-                            text = { Text(label, fontWeight = if (page == index) FontWeight.SemiBold else FontWeight.Normal) }
+                            icon = {
+                                Icon(
+                                    painter = painterResource(iconRes),
+                                    contentDescription = label,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            text = {
+                                Text(
+                                    label,
+                                    fontWeight = if (page == index) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
                         )
                     }
                 }
                 Box {
-                    IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "Opciones", tint = NotCanOffWhite) }
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, "Opciones", tint = NotCanOffWhite)
+                    }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                         DropdownMenuItem(
                             text = { Text("Calificaciones") },
@@ -141,7 +161,11 @@ fun NotCanRootV5(
                         DropdownMenuItem(
                             text = { Text("Modo concentración") },
                             leadingIcon = { Icon(Icons.Default.CenterFocusStrong, null) },
-                            onClick = { page = 0; focusMode = true; menuExpanded = false }
+                            onClick = {
+                                page = 0
+                                focusMode = true
+                                menuExpanded = false
+                            }
                         )
                         DropdownMenuItem(
                             text = { Text("Configuración") },
@@ -156,7 +180,10 @@ fun NotCanRootV5(
                 }
             }
         } else {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
                 TextButton(onClick = { focusMode = false }) {
                     Icon(Icons.Default.CenterFocusStrong, null)
                     Spacer(Modifier.width(6.dp))
@@ -212,7 +239,11 @@ private fun PlannedClassBanner(
             }
             TextButton(onClick = onOpen) { Text("Abrir") }
             Button(onClick = onRecord) {
-                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_notcan_mic),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
                 Spacer(Modifier.width(6.dp))
                 Text("Grabar")
             }
