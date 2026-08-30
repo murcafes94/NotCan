@@ -1,5 +1,6 @@
 package com.notcan.app.ui.ai
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Send
@@ -35,6 +37,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -273,16 +276,20 @@ private fun AiChat(
     var question by remember(classTitle) { mutableStateOf("") }
     var sourceOnly by remember(classTitle) { mutableStateOf(true) }
     var socraticMode by remember(classTitle) { mutableStateOf(false) }
+    var toolsOpen by remember(classTitle) { mutableStateOf(false) }
     val messages = remember(classTitle) { mutableStateListOf<ChatMessage>() }
     val listState = rememberLazyListState()
 
     LaunchedEffect(result) {
-        if (result.isNotBlank() && messages.lastOrNull()?.content != result) {
-            messages.add(ChatMessage(ChatRole.ASSISTANT, result))
-        }
+        if (result.isNotBlank() && messages.lastOrNull()?.content != result) messages.add(ChatMessage(ChatRole.ASSISTANT, result))
     }
     LaunchedEffect(messages.size, busy) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+
+    fun clearConversation() {
+        messages.clear()
+        onClear()
     }
 
     fun submit() {
@@ -308,49 +315,52 @@ private fun AiChat(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 720.dp
-        if (wide) {
-            Row(Modifier.fillMaxSize().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                ContextPanel(
-                    subjectName = subjectName,
-                    classTitle = classTitle,
-                    configured = configured,
-                    sourceOnly = sourceOnly,
-                    socraticMode = socraticMode,
-                    onSourceOnlyChange = { sourceOnly = it },
-                    onSocraticChange = { socraticMode = it },
-                    onClear = {
-                        messages.clear()
-                        onClear()
-                    },
-                    modifier = Modifier.width(250.dp).fillMaxSize()
-                )
-                ConversationPanel(
-                    configured = configured,
-                    busy = busy,
-                    error = error,
-                    messages = messages,
-                    question = question,
-                    onQuestionChange = { question = it },
-                    onSubmit = ::submit,
-                    listState = listState,
-                    modifier = Modifier.weight(1f).fillMaxSize()
-                )
-            }
-        } else {
-            Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactChatHeader(
-                    subjectName = subjectName,
-                    classTitle = classTitle,
-                    configured = configured,
-                    hasMessages = messages.isNotEmpty(),
-                    onClear = {
-                        messages.clear()
-                        onClear()
+        Column(Modifier.fillMaxSize().padding(horizontal = if (wide) 18.dp else 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            CompactChatHeader(
+                subjectName = subjectName,
+                classTitle = classTitle,
+                configured = configured,
+                toolsOpen = toolsOpen,
+                onToggleTools = { toolsOpen = !toolsOpen }
+            )
+
+            if (wide) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AnimatedVisibility(visible = toolsOpen) {
+                        ContextPanel(
+                            subjectName = subjectName,
+                            classTitle = classTitle,
+                            configured = configured,
+                            sourceOnly = sourceOnly,
+                            socraticMode = socraticMode,
+                            onSourceOnlyChange = { sourceOnly = it },
+                            onSocraticChange = { socraticMode = it },
+                            onClear = ::clearConversation,
+                            modifier = Modifier.width(250.dp).fillMaxSize()
+                        )
                     }
-                )
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = sourceOnly, onClick = { sourceOnly = !sourceOnly }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
-                    FilterChip(selected = socraticMode, onClick = { socraticMode = !socraticMode }, label = { Text("Socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
+                    ConversationPanel(
+                        configured = configured,
+                        busy = busy,
+                        error = error,
+                        messages = messages,
+                        question = question,
+                        onQuestionChange = { question = it },
+                        onSubmit = ::submit,
+                        listState = listState,
+                        modifier = Modifier.weight(1f).fillMaxSize()
+                    )
+                }
+            } else {
+                AnimatedVisibility(visible = toolsOpen) {
+                    CompactAiTools(
+                        sourceOnly = sourceOnly,
+                        socraticMode = socraticMode,
+                        hasMessages = messages.isNotEmpty(),
+                        onSourceOnlyChange = { sourceOnly = it },
+                        onSocraticChange = { socraticMode = it },
+                        onClear = ::clearConversation
+                    )
                 }
                 ConversationPanel(
                     configured = configured,
@@ -364,6 +374,24 @@ private fun AiChat(
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CompactAiTools(
+    sourceOnly: Boolean,
+    socraticMode: Boolean,
+    hasMessages: Boolean,
+    onSourceOnlyChange: (Boolean) -> Unit,
+    onSocraticChange: (Boolean) -> Unit,
+    onClear: () -> Unit
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = sourceOnly, onClick = { onSourceOnlyChange(!sourceOnly) }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
+            FilterChip(selected = socraticMode, onClick = { onSocraticChange(!socraticMode) }, label = { Text("Socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
+            if (hasMessages) TextButton(onClick = onClear) { Text("Nueva conversación") }
         }
     }
 }
@@ -385,10 +413,7 @@ private fun ContextPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.AutoAwesome, null, tint = NotCanBlue)
                 Spacer(Modifier.width(9.dp))
-                Column {
-                    Text("TuNot", color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("Asistente de NotCan", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-                }
+                Text("Opciones de TuNot", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
             ConnectionBadge(configured)
             Divider(color = NotCanGray.copy(alpha = 0.25f))
@@ -405,18 +430,18 @@ private fun ContextPanel(
 }
 
 @Composable
-private fun CompactChatHeader(subjectName: String?, classTitle: String?, configured: Boolean, hasMessages: Boolean, onClear: () -> Unit) {
+private fun CompactChatHeader(subjectName: String?, classTitle: String?, configured: Boolean, toolsOpen: Boolean, onToggleTools: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(shape = RoundedCornerShape(13.dp), color = NotCanBlue.copy(alpha = 0.13f)) {
             Icon(Icons.Default.AutoAwesome, null, tint = NotCanBlue, modifier = Modifier.padding(9.dp))
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("TuNot", color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Asistente académico" }, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+            Text("TuNot", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Asistente académico" }, color = NotCanGray, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         ConnectionBadge(configured)
-        if (hasMessages) TextButton(onClick = onClear) { Text("Limpiar") }
+        IconButton(onClick = onToggleTools) { Icon(Icons.Default.Menu, if (toolsOpen) "Ocultar opciones" else "Opciones de TuNot", tint = NotCanBlue) }
     }
 }
 
