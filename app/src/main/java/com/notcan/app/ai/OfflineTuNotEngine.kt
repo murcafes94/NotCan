@@ -152,8 +152,8 @@ object OfflineTuNotEngine {
         val title = normalize(entry.title)
         val subtitle = normalize(entry.subtitle)
         val text = normalize(entry.text)
-        return tokens.sumOf { token ->
-            when {
+        return tokens.fold(0) { total, token ->
+            total + when {
                 title.contains(token) -> 8
                 subtitle.contains(token) -> 5
                 text.contains(token) -> 2
