@@ -32,6 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.notcan.app.ai.MistralCredentialsStore
+import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.StudyModelManager
@@ -57,6 +59,7 @@ import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanSurface
+import java.time.LocalDate
 import kotlinx.coroutines.delay
 
 @Composable
@@ -66,6 +69,10 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
     val legacyStudyManager = remember(context) { StudyModelManager(context.applicationContext) }
     val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
+    val cycleDao = remember(context) { NotCanDatabase.getInstance(context.applicationContext).dao() }
+    val cycles by cycleDao.observeCycles().collectAsState(initial = emptyList())
+    val activeCycle = cycles.firstOrNull { it.isActive } ?: cycles.firstOrNull()
+    val cycleEnded = activeCycle?.let { it.endEpochDay > 0L && LocalDate.now().toEpochDay() > it.endEpochDay } == true
 
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
@@ -103,6 +110,10 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 Text("Configuración", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text("Ajusta NotCan a tu forma de estudiar.", color = NotCanGray)
             }
+        }
+
+        if (cycleEnded) {
+            CycleClosureSection(activeCycle)
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
