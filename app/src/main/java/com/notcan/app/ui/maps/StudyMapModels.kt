@@ -3,7 +3,14 @@ package com.notcan.app.ui.maps
 import java.util.UUID
 
 enum class StudyMapType { MIND_MAP, CONCEPT_MAP }
-enum class StudyMapLayoutStyle { HORIZONTAL_BRANCHES, RADIAL, TREE, CONSTELLATION }
+enum class StudyMapLayoutStyle {
+    HORIZONTAL_BRANCHES,
+    RADIAL,
+    RADIAL_CARDS,
+    IDEA_BOARD,
+    TREE,
+    CONSTELLATION
+}
 
 data class StudyMap(
     val id: String,
