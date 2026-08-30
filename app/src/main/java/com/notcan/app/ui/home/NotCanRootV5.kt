@@ -15,16 +15,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Grade
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,8 +50,8 @@ import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.SubjectScheduleEntity
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
+import com.notcan.app.ui.theme.NotCanIcons
 import com.notcan.app.ui.theme.NotCanOffWhite
-import com.notcan.app.ui.theme.NotCanSurface
 import com.notcan.app.ui.theme.NotCanSurfaceHigh
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -73,9 +63,9 @@ private data class RootDestination(
 )
 
 private val primaryDestinations = listOf(
-    RootDestination("Materias", Icons.Default.School),
-    RootDestination("Calendario", Icons.Default.CalendarMonth),
-    RootDestination("TuNot", Icons.Default.AutoAwesome)
+    RootDestination("Materias", NotCanIcons.Subjects),
+    RootDestination("Calendario", NotCanIcons.Calendar),
+    RootDestination("TuNot", NotCanIcons.TuNot)
 )
 
 @Composable
@@ -138,7 +128,7 @@ fun NotCanRootV5(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = { focusMode = false }) {
-                        Icon(Icons.Default.CenterFocusStrong, null)
+                        Icon(NotCanIcons.Focus, null)
                         Spacer(Modifier.width(6.dp))
                         Text("Salir de concentración")
                     }
@@ -182,13 +172,13 @@ fun NotCanRootV5(
                     NavigationRailItem(
                         selected = page == 3,
                         onClick = { previousPage = page.coerceIn(0, 2); page = 3 },
-                        icon = { Icon(Icons.Default.Grade, "Calificaciones") },
+                        icon = { Icon(NotCanIcons.Grades, "Calificaciones") },
                         label = { Text("Notas") }
                     )
                     NavigationRailItem(
                         selected = page == 4,
                         onClick = { previousPage = page.coerceIn(0, 2); page = 4 },
-                        icon = { Icon(Icons.Default.Settings, "Configuración") },
+                        icon = { Icon(NotCanIcons.Settings, "Configuración") },
                         label = { Text("Ajustes") }
                     )
                 }
@@ -268,22 +258,22 @@ private fun NotCanTopBar(
             }
             Box {
                 IconButton(onClick = { onMenuExpanded(true) }) {
-                    Icon(Icons.Default.MoreVert, "Más opciones", tint = NotCanOffWhite)
+                    Icon(NotCanIcons.More, "Más opciones", tint = NotCanOffWhite)
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { onMenuExpanded(false) }) {
                     DropdownMenuItem(
                         text = { Text("Calificaciones") },
-                        leadingIcon = { Icon(Icons.Default.Grade, null) },
+                        leadingIcon = { Icon(NotCanIcons.Grades, null) },
                         onClick = { onGrades(); onMenuExpanded(false) }
                     )
                     DropdownMenuItem(
                         text = { Text("Modo concentración") },
-                        leadingIcon = { Icon(Icons.Default.CenterFocusStrong, null) },
+                        leadingIcon = { Icon(NotCanIcons.Focus, null) },
                         onClick = { onFocus(); onMenuExpanded(false) }
                     )
                     DropdownMenuItem(
                         text = { Text("Configuración") },
-                        leadingIcon = { Icon(Icons.Default.Settings, null) },
+                        leadingIcon = { Icon(NotCanIcons.Settings, null) },
                         onClick = { onSettings(); onMenuExpanded(false) }
                     )
                 }
@@ -330,7 +320,7 @@ private fun PlannedClassBanner(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Surface(color = NotCanBlue.copy(alpha = 0.15f), shape = RoundedCornerShape(12.dp)) {
-                Icon(Icons.Default.Schedule, contentDescription = null, tint = NotCanBlue, modifier = Modifier.padding(10.dp))
+                Icon(NotCanIcons.Schedule, contentDescription = null, tint = NotCanBlue, modifier = Modifier.padding(10.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text(occurrence.subject.name, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
@@ -342,7 +332,7 @@ private fun PlannedClassBanner(
             }
             TextButton(onClick = onOpen) { Text("Abrir") }
             Button(onClick = onRecord) {
-                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(NotCanIcons.Audio, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Grabar")
             }
