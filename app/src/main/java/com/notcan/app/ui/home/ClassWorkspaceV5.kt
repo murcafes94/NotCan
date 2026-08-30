@@ -110,6 +110,7 @@ internal fun NotCanClassWorkspaceV5(
     onShareNote: (NotePageEntity) -> Unit,
     onShareAudio: (AudioRecordingEntity) -> Unit,
     onDeleteAudio: (String) -> Unit,
+    onDeleteTranscript: (String) -> Unit,
     onTranscribeLocal: (String) -> Unit,
     onStartRecording: (String) -> Unit,
     onPauseRecording: () -> Unit,
@@ -166,6 +167,7 @@ internal fun NotCanClassWorkspaceV5(
                         onShareNote = onShareNote,
                         onShareAudio = onShareAudio,
                         onDeleteAudio = onDeleteAudio,
+                        onDeleteTranscript = onDeleteTranscript,
                         onTranscribeLocal = onTranscribeLocal,
                         modifier = Modifier.weight(1f)
                     )
@@ -316,6 +318,7 @@ private fun NormalClassTabs(
     onShareNote: (NotePageEntity) -> Unit,
     onShareAudio: (AudioRecordingEntity) -> Unit,
     onDeleteAudio: (String) -> Unit,
+    onDeleteTranscript: (String) -> Unit,
     onTranscribeLocal: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -330,7 +333,7 @@ private fun NormalClassTabs(
         Box(Modifier.fillMaxSize()) {
             when (selected) {
                 0 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
-                1 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal)
+                1 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal, onDeleteTranscript)
                 2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)
                 else -> StudyContentV5(transcripts, notePages, detectedCues)
             }
@@ -526,7 +529,8 @@ private fun TranscriptContentV5(
     modelState: WhisperModelState,
     busy: Boolean,
     error: String?,
-    onTranscribeLocal: (String) -> Unit
+    onTranscribeLocal: (String) -> Unit,
+    onDeleteTranscript: (String) -> Unit
 ) {
     val latestAudio = audioRecordings.firstOrNull()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -562,13 +566,32 @@ private fun TranscriptContentV5(
         }
         if (transcripts.isEmpty()) item { Text("Todavía no hay transcripción guardada.", color = NotCanGray) }
         else items(transcripts, key = { it.id }) { transcript ->
-            Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.height(5.dp)); Text(transcript.body, color = NotCanOffWhite)
-                }
-            }
+            TranscriptRowV5(transcript = transcript, onDelete = { onDeleteTranscript(transcript.id) })
         }
+    }
+}
+
+@Composable
+private fun TranscriptRowV5(transcript: TranscriptEntity, onDelete: () -> Unit) {
+    var confirmDelete by remember(transcript.id) { mutableStateOf(false) }
+    Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Eliminar transcripción", tint = NotCanRed) }
+            }
+            Spacer(Modifier.height(5.dp))
+            Text(transcript.body, color = NotCanOffWhite)
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Eliminar transcripción") },
+            text = { Text("Se eliminará solamente este texto y sus señales académicas asociadas. El audio original se conservará.") },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Eliminar", color = NotCanRed) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
+        )
     }
 }
 
