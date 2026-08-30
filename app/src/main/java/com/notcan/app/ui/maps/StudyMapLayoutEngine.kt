@@ -14,6 +14,8 @@ object StudyMapLayoutEngine {
     ): List<PositionedStudyMapNode> = when (style) {
         StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> horizontalBranches(map, canvasWidth, canvasHeight)
         StudyMapLayoutStyle.RADIAL -> radial(map, canvasWidth, canvasHeight)
+        StudyMapLayoutStyle.RADIAL_CARDS -> radialCards(map, canvasWidth, canvasHeight)
+        StudyMapLayoutStyle.IDEA_BOARD -> ideaBoard(map, canvasWidth, canvasHeight)
         StudyMapLayoutStyle.TREE -> tree(map, canvasWidth, canvasHeight)
         StudyMapLayoutStyle.CONSTELLATION -> constellation(map, canvasWidth, canvasHeight)
     }
@@ -118,6 +120,127 @@ object StudyMapLayoutEngine {
                         cardHeight
                     )
                 }
+            }
+        }
+        return result
+    }
+
+    private fun radialCards(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
+        val byId = map.nodes.associateBy { it.id }
+        val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
+        val result = mutableListOf<PositionedStudyMapNode>()
+        val root = byId[map.rootNodeId] ?: return emptyList()
+        val centerX = width / 2f
+        val centerY = height / 2f
+        val rootWidth = 210f
+        val rootHeight = 100f
+        result += PositionedStudyMapNode(root, centerX - rootWidth / 2f, centerY - rootHeight / 2f, rootWidth, rootHeight)
+
+        val firstLevel = children[map.rootNodeId].orEmpty()
+        val radiusX = (width * 0.34f).coerceIn(280f, 480f)
+        val radiusY = (height * 0.34f).coerceIn(210f, 340f)
+
+        firstLevel.forEachIndexed { index, id ->
+            val node = byId[id] ?: return@forEachIndexed
+            val angle = (2.0 * PI / max(firstLevel.size, 1)) * index - PI / 2.0
+            val centerNodeX = centerX + radiusX * cos(angle).toFloat()
+            val centerNodeY = centerY + radiusY * sin(angle).toFloat()
+            val cardWidth = 205f
+            val cardHeight = 116f
+            val x = centerNodeX - cardWidth / 2f
+            val y = centerNodeY - cardHeight / 2f
+            result += PositionedStudyMapNode(node, x, y, cardWidth, cardHeight)
+
+            val grandchildren = children[id].orEmpty()
+            if (grandchildren.isNotEmpty()) {
+                val outwardX = cos(angle).toFloat()
+                val outwardY = sin(angle).toFloat()
+                val tangentX = -outwardY
+                val tangentY = outwardX
+                val childBaseX = centerNodeX + outwardX * 185f
+                val childBaseY = centerNodeY + outwardY * 135f
+                val spacing = 86f
+                val offsetStart = -(grandchildren.size - 1) * spacing / 2f
+
+                grandchildren.take(5).forEachIndexed { childIndex, childId ->
+                    val child = byId[childId] ?: return@forEachIndexed
+                    val offset = offsetStart + childIndex * spacing
+                    val childCenterX = childBaseX + tangentX * offset
+                    val childCenterY = childBaseY + tangentY * offset
+                    val childWidth = 150f
+                    val childHeight = 68f
+                    result += PositionedStudyMapNode(
+                        child,
+                        childCenterX - childWidth / 2f,
+                        childCenterY - childHeight / 2f,
+                        childWidth,
+                        childHeight
+                    )
+                }
+            }
+        }
+        return result
+    }
+
+    private fun ideaBoard(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
+        val byId = map.nodes.associateBy { it.id }
+        val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
+        val result = mutableListOf<PositionedStudyMapNode>()
+        val root = byId[map.rootNodeId] ?: return emptyList()
+        val centerX = width / 2f
+        val centerY = height / 2f
+        val rootWidth = 230f
+        val rootHeight = 120f
+        result += PositionedStudyMapNode(root, centerX - rootWidth / 2f, centerY - rootHeight / 2f, rootWidth, rootHeight)
+
+        val firstLevel = children[map.rootNodeId].orEmpty().take(8)
+        val slots = listOf(
+            -PI / 2.0,
+            -PI / 6.0,
+            PI / 6.0,
+            PI / 2.0,
+            5.0 * PI / 6.0,
+            -5.0 * PI / 6.0,
+            0.0,
+            PI
+        )
+        val radiusX = (width * 0.34f).coerceIn(300f, 500f)
+        val radiusY = (height * 0.34f).coerceIn(230f, 360f)
+
+        firstLevel.forEachIndexed { index, id ->
+            val node = byId[id] ?: return@forEachIndexed
+            val angle = slots[index % slots.size]
+            val cx = centerX + radiusX * cos(angle).toFloat()
+            val cy = centerY + radiusY * sin(angle).toFloat()
+            val cardWidth = 220f
+            val cardHeight = 132f
+            result += PositionedStudyMapNode(
+                node,
+                cx - cardWidth / 2f,
+                cy - cardHeight / 2f,
+                cardWidth,
+                cardHeight
+            )
+
+            val details = children[id].orEmpty().take(3)
+            details.forEachIndexed { detailIndex, detailId ->
+                val detail = byId[detailId] ?: return@forEachIndexed
+                val outwardX = cos(angle).toFloat()
+                val outwardY = sin(angle).toFloat()
+                val tangentX = -outwardY
+                val tangentY = outwardX
+                val spread = (detailIndex - (details.size - 1) / 2f) * 72f
+                val detailCx = cx + outwardX * 165f + tangentX * spread
+                val detailCy = cy + outwardY * 125f + tangentY * spread
+                val detailWidth = 148f
+                val detailHeight = 64f
+                result += PositionedStudyMapNode(
+                    detail,
+                    detailCx - detailWidth / 2f,
+                    detailCy - detailHeight / 2f,
+                    detailWidth,
+                    detailHeight
+                )
             }
         }
         return result
