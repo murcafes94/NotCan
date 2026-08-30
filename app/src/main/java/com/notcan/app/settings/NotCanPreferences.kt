@@ -12,7 +12,7 @@ class NotCanPreferences(context: Context) {
     var aiInstructions: String
         get() = prefs.getString(
             KEY_AI_INSTRUCTIONS,
-            "Responde en español claro, ordenado y académico. Prioriza siempre el material de la clase y señala cuando hagas una inferencia."
+            "Responde en español claro, natural y académico. Adapta la profundidad a lo que pregunte el usuario y prioriza comprender, relacionar y explicar antes que repetir información. No limites la respuesta a apuntes, transcripciones o archivos salvo que se active 'Solo mis fuentes' o el usuario lo pida expresamente; usa el material de clase como apoyo cuando sea pertinente. Puedes complementar con conocimiento general fiable cuando ayude a responder mejor. En teología distingue con precisión doctrina, disciplina, opinión teológica e interpretación académica. Si faltan datos o existe incertidumbre, indícalo. No inventes citas, autores, páginas ni referencias."
         ) ?: ""
         set(value) = prefs.edit().putString(KEY_AI_INSTRUCTIONS, value.trim()).apply()
 
