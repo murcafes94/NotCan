@@ -1,5 +1,6 @@
 package com.notcan.app.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,9 +72,18 @@ fun NotCanRootV5(
     settingsContent: @Composable () -> Unit = {}
 ) {
     var page by remember { mutableIntStateOf(0) }
+    var previousPage by remember { mutableIntStateOf(0) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var menuExpanded by remember { mutableStateOf(false) }
     var focusMode by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = focusMode || page != 0) {
+        when {
+            focusMode -> focusMode = false
+            page == 3 || page == 4 -> page = previousPage.coerceIn(0, 2)
+            else -> page = 0
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -108,7 +118,10 @@ fun NotCanRootV5(
                     listOf("Clase", "Calendario", "IA").forEachIndexed { index, label ->
                         Tab(
                             selected = page == index,
-                            onClick = { page = index },
+                            onClick = {
+                                if (page in 0..2) previousPage = page
+                                page = index
+                            },
                             text = { Text(label, fontWeight = if (page == index) FontWeight.SemiBold else FontWeight.Normal) }
                         )
                     }
@@ -119,7 +132,11 @@ fun NotCanRootV5(
                         DropdownMenuItem(
                             text = { Text("Calificaciones") },
                             leadingIcon = { Icon(Icons.Default.Grade, null) },
-                            onClick = { page = 3; menuExpanded = false }
+                            onClick = {
+                                previousPage = page.coerceIn(0, 2)
+                                page = 3
+                                menuExpanded = false
+                            }
                         )
                         DropdownMenuItem(
                             text = { Text("Modo concentración") },
@@ -129,16 +146,17 @@ fun NotCanRootV5(
                         DropdownMenuItem(
                             text = { Text("Configuración") },
                             leadingIcon = { Icon(Icons.Default.Settings, null) },
-                            onClick = { page = 4; menuExpanded = false }
+                            onClick = {
+                                previousPage = page.coerceIn(0, 2)
+                                page = 4
+                                menuExpanded = false
+                            }
                         )
                     }
                 }
             }
         } else {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { focusMode = false }) {
                     Icon(Icons.Default.CenterFocusStrong, null)
                     Spacer(Modifier.width(6.dp))
