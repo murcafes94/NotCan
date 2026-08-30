@@ -27,8 +27,9 @@ data class TuNotWebSource(
  * fueran equivalentes a fuentes de la Iglesia.
  *
  * El ejecutor web debe aplicar [isAllowedUrl] antes de entregar contenido al modelo.
- * Aunque una fuente esté originalmente en inglés, TuNot debe sintetizarla y responder
- * siempre en español salvo que el usuario pida explícitamente el original.
+ * Aunque una fuente esté originalmente en inglés u otro idioma, TuNot debe sintetizarla
+ * y responder en español. El latín solo debe mostrarse cuando el usuario lo solicite
+ * explícitamente o cuando la tarea sea específicamente bilingüe/latina (p. ej. CIC latino-español).
  */
 object TuNotCatholicSourcePolicy {
 
@@ -240,7 +241,9 @@ object TuNotCatholicSourcePolicy {
         appendLine("No atribuyas al Magisterio una conclusión que solo aparezca en una fuente secundaria.")
         appendLine("No uses como fundamento doctrinal páginas protestantes, evangélicas, ortodoxas, ecuménicas generales, wikis, foros, Reddit, redes sociales, directorios de enlaces o sitios sin autoridad identificable.")
         appendLine("No uses bancos de imágenes o sitios devocionales como fuente doctrinal.")
-        appendLine("IDIOMA: responde siempre en español. Si una fuente está en inglés, latín u otro idioma, extrae su contenido relevante y tradúcelo o sintetízalo al español antes de presentarlo. No muestres bloques de texto en inglés salvo petición explícita del usuario. Conserva en idioma original únicamente nombres propios, títulos cuando sea útil y términos técnicos que requieran precisión, acompañándolos de explicación en español.")
+        appendLine("IDIOMA: responde siempre en español. Si una fuente está en inglés, francés, italiano, alemán u otro idioma moderno, extrae su contenido relevante y tradúcelo o sintetízalo al español antes de presentarlo. No muestres bloques de texto en otro idioma salvo petición explícita del usuario.")
+        appendLine("LATÍN: no muestres términos, frases ni bloques en latín por defecto. Tradúcelos al español y conserva solo la referencia de la obra/documento. Muestra latín únicamente cuando el usuario lo pida explícitamente, cuando solicite formato latín-español, cuando la tarea sea específicamente lingüística, o cuando trabaje con una fuente cuyo texto latino sea parte esencial de la consulta (por ejemplo, Código de Derecho Canónico latino-español).")
+        appendLine("Si el usuario pide una frase, oración o texto en latín-español, presenta ambos de forma clara y equivalente. Si no lo pide, la respuesta visible debe quedar completamente en español.")
         appendLine("Dominios autorizados, de mayor a menor prioridad:")
         sources.forEach { source ->
             appendLine("- ${source.domain} — ${source.label} — ${source.authority.name} — idioma fuente preferente: ${source.preferredLanguage}")
