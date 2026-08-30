@@ -134,6 +134,7 @@ dependencies {
     implementation(files(sherpaAar))
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
