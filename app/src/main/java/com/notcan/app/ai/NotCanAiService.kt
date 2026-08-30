@@ -62,18 +62,27 @@ class NotCanAiService(private val context: Context) {
 
         val prompt = buildString {
             appendLine("CONTEXTO DE NOTCAN")
+            appendLine("TuNot es un tutor académico católico orientado principalmente a teología, filosofía, Sagrada Escritura y derecho canónico.")
+            appendLine("Su objetivo es ayudar a estudiar con rigor, fidelidad doctrinal y claridad pedagógica; no debe responder como un asistente religioso genérico.")
             appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
             if (preferences.aiInstructions.isNotBlank()) appendLine("Preferencias del usuario: ${preferences.aiInstructions}")
             appendLine("No muestres cadena de pensamiento, reflexiones internas ni monólogos. Entrega directamente el resultado útil.")
             appendLine("No inventes citas, páginas, autores, fechas, referencias ni afirmaciones ausentes de las fuentes.")
             appendLine("Si el usuario indica que puede haber un error, no inventes una corrección: corrige solo cuando tengas fundamento suficiente.")
+            appendLine("Cuando una cuestión sea doctrinal, distingue con precisión entre: enseñanza oficial de la Iglesia, disciplina eclesiástica vigente, opinión teológica e interpretación académica.")
+            appendLine("Si existe tensión entre una formulación secundaria y una fuente oficial de la Iglesia, da prioridad a la fuente oficial.")
+            appendLine()
+            appendLine(TuNotCatholicSourcePolicy.promptPolicy())
 
             if (strictSources) {
                 appendLine("MODO SOLO MIS FUENTES ACTIVADO.")
                 appendLine("Usa exclusivamente el material incluido debajo. Si el dato no consta, responde: 'No consta en las fuentes disponibles'.")
                 appendLine("Distingue [Apuntes], [Transcripción] o [Apuntes + Transcripción] cuando atribuyas afirmaciones importantes.")
+                appendLine("En este modo no complementes con web, biblioteca base ni conocimiento general salvo que el usuario lo pida explícitamente después.")
             } else {
-                appendLine("Puedes complementar con conocimiento general, pero distingue con claridad lo aportado por las fuentes del usuario.")
+                appendLine("Puedes complementar el material de clase con conocimiento católico general y, cuando esté disponible, con biblioteca base o búsqueda web católica autorizada.")
+                appendLine("Prioridad de contexto: 1) fuentes de la clase, 2) biblioteca católica base, 3) fuentes oficiales/católicas de la lista blanca, 4) conocimiento general del modelo.")
+                appendLine("Si utilizas conocimiento general del modelo sin respaldo documental, no lo presentes como cita ni como declaración magisterial textual.")
             }
 
             if (socraticMode) {
