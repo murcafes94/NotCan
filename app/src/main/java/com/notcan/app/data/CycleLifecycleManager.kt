@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import com.notcan.app.data.local.NotCanDatabase
+import com.notcan.app.sources.ClassSourceStore
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,15 +18,20 @@ import kotlinx.coroutines.withContext
 class CycleLifecycleManager(context: Context) {
     private val app = context.applicationContext
     private val repository = StudyRepository(NotCanDatabase.getInstance(app).dao())
+    private val sourceStore = ClassSourceStore(app)
 
     data class CleanupResult(
         val filesFound: Int,
         val filesDeleted: Int,
+        val sourceScopesDeleted: Int,
         val calendarEventsFound: Int,
         val calendarEventsDeleted: Int
     )
 
     suspend fun deleteCycleCompletely(cycleId: String): CleanupResult = withContext(Dispatchers.IO) {
+        val subjects = repository.cycleSubjects(cycleId)
+        val classes = repository.cycleClasses(cycleId)
+        val subjectsById = subjects.associateBy { it.id }
         val paths = repository.cycleFilePaths(cycleId)
         val eventIds = repository.cycleCalendarEventIds(cycleId)
 
@@ -34,6 +40,14 @@ class CycleLifecycleManager(context: Context) {
             val file = File(path)
             if (!file.exists() || file.delete()) deletedFiles++
             pruneEmptyParents(file.parentFile)
+        }
+
+        // Las fuentes de TuNot usan un almacén independiente de Room, por eso se limpian aparte.
+        var deletedScopes = 0
+        classes.forEach { classSession ->
+            val subjectName = subjectsById[classSession.subjectId]?.name
+            val key = sourceStore.scopeKey(subjectName, classSession.title)
+            if (sourceStore.deleteScope(key)) deletedScopes++
         }
 
         var deletedEvents = 0
@@ -58,6 +72,7 @@ class CycleLifecycleManager(context: Context) {
         CleanupResult(
             filesFound = paths.size,
             filesDeleted = deletedFiles,
+            sourceScopesDeleted = deletedScopes,
             calendarEventsFound = eventIds.size,
             calendarEventsDeleted = deletedEvents
         )
