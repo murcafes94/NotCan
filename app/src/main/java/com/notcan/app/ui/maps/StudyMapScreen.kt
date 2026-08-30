@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -67,20 +68,26 @@ private val branchColors = listOf(
     Color(0xFF9A6BE8),
     Color(0xFF49C8E8),
     Color(0xFF4FC38A),
-    Color(0xFFE1B756)
+    Color(0xFFE1B756),
+    Color(0xFFE58B55),
+    Color(0xFFE36F9F)
 )
 
 @Composable
 fun StudyMapScreen(
     map: StudyMap,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialLayout: StudyMapLayoutStyle? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var layoutStyle by remember(map.id) {
+    var layoutStyle by remember(map.id, initialLayout) {
         mutableStateOf(
-            if (map.type == StudyMapType.MIND_MAP) StudyMapLayoutStyle.HORIZONTAL_BRANCHES
-            else StudyMapLayoutStyle.TREE
+            initialLayout ?: if (map.type == StudyMapType.MIND_MAP) {
+                StudyMapLayoutStyle.HORIZONTAL_BRANCHES
+            } else {
+                StudyMapLayoutStyle.TREE
+            }
         )
     }
     var zoom by remember(map.id) { mutableFloatStateOf(1f) }
@@ -152,9 +159,6 @@ fun StudyMapScreen(
                 StudyMapLayoutEngine.layout(visibleMap, layoutStyle, widthPx, heightPx)
             }
             val positionedById = remember(nodes) { nodes.associateBy { it.node.id } }
-            val directChildren = remember(visibleMap) {
-                visibleMap.edges.groupBy { it.from }.mapValues { (_, edges) -> edges.map { it.to } }
-            }
 
             Box(
                 Modifier
@@ -207,8 +211,17 @@ fun StudyMapScreen(
                             }
                             drawPath(
                                 path = path,
-                                color = branchColor.copy(alpha = 0.68f),
-                                style = Stroke(width = if (horizontal) 4.5f else 3.5f)
+                                color = branchColor.copy(alpha = if (layoutStyle == StudyMapLayoutStyle.IDEA_BOARD) 0.76f else 0.68f),
+                                style = Stroke(
+                                    width = when (layoutStyle) {
+                                        StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> 4.5f
+                                        StudyMapLayoutStyle.IDEA_BOARD -> 3.2f
+                                        else -> 3.5f
+                                    },
+                                    pathEffect = if (layoutStyle == StudyMapLayoutStyle.IDEA_BOARD) {
+                                        PathEffect.dashPathEffect(floatArrayOf(13f, 9f))
+                                    } else null
+                                )
                             )
                         }
                     }
@@ -222,6 +235,7 @@ fun StudyMapScreen(
                             branchColor = branchColorFor(positioned.node.id, visibleMap),
                             childCount = totalChildren,
                             collapsed = positioned.node.id in collapsedNodes,
+                            layoutStyle = layoutStyle,
                             onToggle = {
                                 if (totalChildren > 0) {
                                     collapsedNodes = if (positioned.node.id in collapsedNodes) {
@@ -303,6 +317,8 @@ private fun StudyMapToolbar(
             }
             MapStyleButton("Ramas", style == StudyMapLayoutStyle.HORIZONTAL_BRANCHES) { onLayoutChange(StudyMapLayoutStyle.HORIZONTAL_BRANCHES) }
             MapStyleButton("Radial", style == StudyMapLayoutStyle.RADIAL) { onLayoutChange(StudyMapLayoutStyle.RADIAL) }
+            MapStyleButton("Tarjetas", style == StudyMapLayoutStyle.RADIAL_CARDS) { onLayoutChange(StudyMapLayoutStyle.RADIAL_CARDS) }
+            MapStyleButton("Ideas", style == StudyMapLayoutStyle.IDEA_BOARD) { onLayoutChange(StudyMapLayoutStyle.IDEA_BOARD) }
             MapStyleButton("Árbol", style == StudyMapLayoutStyle.TREE) { onLayoutChange(StudyMapLayoutStyle.TREE) }
             MapStyleButton("Constelación", style == StudyMapLayoutStyle.CONSTELLATION) { onLayoutChange(StudyMapLayoutStyle.CONSTELLATION) }
         }
@@ -327,31 +343,53 @@ private fun StudyMapNodeCard(
     branchColor: Color,
     childCount: Int,
     collapsed: Boolean,
+    layoutStyle: StudyMapLayoutStyle,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val visualCard = layoutStyle == StudyMapLayoutStyle.RADIAL_CARDS || layoutStyle == StudyMapLayoutStyle.IDEA_BOARD
+    val container = when {
+        node.level == 0 -> branchColor.copy(alpha = if (visualCard) 0.30f else 0.22f)
+        visualCard -> branchColor.copy(alpha = 0.16f)
+        else -> NotCanSurface
+    }
+
     Card(
         modifier = modifier.clickable(enabled = childCount > 0, onClick = onToggle),
-        colors = CardDefaults.cardColors(
-            containerColor = if (node.level == 0) branchColor.copy(alpha = 0.22f) else NotCanSurface
-        ),
-        shape = MaterialTheme.shapes.large
+        colors = CardDefaults.cardColors(containerColor = container),
+        shape = if (visualCard) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large,
+        elevation = CardDefaults.cardElevation(defaultElevation = if (visualCard) 2.dp else 0.dp)
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            Modifier.padding(
+                horizontal = if (visualCard) 15.dp else 12.dp,
+                vertical = if (visualCard) 13.dp else 10.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (visualCard) 7.dp else 4.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = branchColor, shape = MaterialTheme.shapes.small, modifier = Modifier.size(width = 5.dp, height = 28.dp)) { }
-                Spacer(Modifier.width(8.dp))
+                Surface(
+                    color = branchColor,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.size(width = if (visualCard) 7.dp else 5.dp, height = if (visualCard) 34.dp else 28.dp)
+                ) { }
+                Spacer(Modifier.width(if (visualCard) 10.dp else 8.dp))
                 Text(
                     node.title,
                     color = NotCanOffWhite,
-                    style = if (node.level == 0) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+                    style = when {
+                        node.level == 0 && visualCard -> MaterialTheme.typography.titleMedium
+                        node.level == 0 -> MaterialTheme.typography.titleSmall
+                        visualCard && node.level == 1 -> MaterialTheme.typography.titleSmall
+                        else -> MaterialTheme.typography.bodyMedium
+                    },
                     fontWeight = if (node.level <= 1) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 3,
+                    maxLines = if (visualCard) 4 else 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 if (childCount > 0) {
-                    Surface(color = branchColor.copy(alpha = 0.14f), shape = MaterialTheme.shapes.small) {
+                    Surface(color = branchColor.copy(alpha = 0.16f), shape = MaterialTheme.shapes.small) {
                         Text(
                             text = if (collapsed) "+$childCount" else "−",
                             color = branchColor,
@@ -364,10 +402,18 @@ private fun StudyMapNodeCard(
             node.description?.let {
                 Text(
                     it,
-                    color = NotCanGray,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 2,
+                    color = if (visualCard) NotCanOffWhite.copy(alpha = 0.78f) else NotCanGray,
+                    style = if (visualCard) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
+                    maxLines = if (visualCard) 5 else 2,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (visualCard && node.sourceRefs.isNotEmpty()) {
+                Text(
+                    "${node.sourceRefs.size} fuente(s)",
+                    color = branchColor,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
