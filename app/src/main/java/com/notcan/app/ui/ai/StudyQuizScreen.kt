@@ -94,7 +94,7 @@ internal fun StudyQuizScreen(
 
     Dialog(
         onDismissRequest = onBack,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             if (finished) {
@@ -242,14 +242,21 @@ internal fun StudyQuizScreen(
                     }
 
                     if (answer != null) {
-                        Button(
-                            onClick = ::next,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
-                                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
+                        // Reserva el inset del sistema fuera del botón para que la navegación
+                        // del cuestionario quede siempre sobre Atrás / Inicio / Recientes.
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+                            color = MaterialTheme.colorScheme.background,
+                            tonalElevation = 4.dp
                         ) {
-                            Text(if (position == order.lastIndex) "Ver resultado" else "Siguiente")
+                            Button(
+                                onClick = ::next,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp)
+                            ) {
+                                Text(if (position == order.lastIndex) "Ver resultado" else "Siguiente")
+                            }
                         }
                     }
                 }

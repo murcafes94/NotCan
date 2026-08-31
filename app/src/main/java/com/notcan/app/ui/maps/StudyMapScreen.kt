@@ -174,18 +174,36 @@ fun StudyMapScreen(
                     total + 108f + (chars / 30f) * 14f
                 }
             }
-            val virtualWidthPx = maxOf(
-                widthPx,
+            // El motor de mapas usa unidades visuales equivalentes a dp. Antes los valores
+            // de ancho/alto se trataban como px físicos y en pantallas densas los nodos quedaban
+            // demasiado estrechos. Escalamos a px solo en la fase final de dibujo.
+            val densityScale = density.density.coerceAtLeast(1f)
+            val virtualWidthDpValue = maxOf(
+                maxWidth.value,
                 when (layoutStyle) {
-                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> 1750f
-                    else -> 1450f
+                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> 1380f
+                    else -> 1120f
                 }
             )
-            val virtualHeightPx = maxOf(heightPx, textDemand * 0.72f, visibleMap.nodes.size * 145f)
-            val virtualWidthDp = with(density) { virtualWidthPx.toDp() }
-            val virtualHeightDp = with(density) { virtualHeightPx.toDp() }
-            val nodes = remember(visibleMap, layoutStyle, virtualWidthPx, virtualHeightPx) {
-                StudyMapLayoutEngine.layout(visibleMap, layoutStyle, virtualWidthPx, virtualHeightPx)
+            val virtualHeightDpValue = maxOf(
+                maxHeight.value,
+                textDemand * 0.72f,
+                visibleMap.nodes.size * 132f
+            )
+            val virtualWidthDp = virtualWidthDpValue.dp
+            val virtualHeightDp = virtualHeightDpValue.dp
+            val virtualWidthPx = with(density) { virtualWidthDp.toPx() }
+            val virtualHeightPx = with(density) { virtualHeightDp.toPx() }
+            val nodes = remember(visibleMap, layoutStyle, virtualWidthDpValue, virtualHeightDpValue, densityScale) {
+                StudyMapLayoutEngine.layout(visibleMap, layoutStyle, virtualWidthDpValue, virtualHeightDpValue)
+                    .map { positioned ->
+                        positioned.copy(
+                            x = positioned.x * densityScale,
+                            y = positioned.y * densityScale,
+                            width = positioned.width * densityScale,
+                            height = positioned.height * densityScale
+                        )
+                    }
             }
             val positionedById = remember(nodes) { nodes.associateBy { it.node.id } }
 
@@ -201,10 +219,12 @@ fun StudyMapScreen(
                 val fitted = minOf(
                     ((widthPx - padding * 2f) / contentWidth),
                     ((heightPx - padding * 2f) / contentHeight)
-                ).coerceIn(0.72f, 1.45f)
-                zoom = fitted
-                panX = (widthPx - contentWidth * fitted) / 2f - minX * fitted
-                panY = (heightPx - contentHeight * fitted) / 2f - minY * fitted
+                ).coerceIn(0.62f, 1.35f)
+                // Al abrir priorizamos lectura a tamaño real. Ajustar puede reducir explícitamente.
+                val targetZoom = if (fitRequest == 0) 1f else fitted
+                zoom = targetZoom
+                panX = (widthPx - contentWidth * targetZoom) / 2f - minX * targetZoom
+                panY = (heightPx - contentHeight * targetZoom) / 2f - minY * targetZoom
             }
 
             LaunchedEffect(centerRequest) {
