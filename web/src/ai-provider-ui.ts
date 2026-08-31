@@ -7,14 +7,34 @@ import {
 } from './lib/ai'
 
 const providerLabels: Record<AiProvider, string> = {
-  auto: 'Automático',
+  tunot: 'TuNot (gratis)',
   local: 'Local (Ollama)',
-  deepseek: 'DeepSeek',
-  gemini: 'Gemini',
-  openai: 'OpenAI',
+}
+
+function replaceExactText(root: ParentNode, from: string, to: string) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  for (const node of nodes) {
+    if (node.nodeValue?.includes(from)) node.nodeValue = node.nodeValue.replaceAll(from, to)
+  }
+}
+
+function brandTuNot() {
+  replaceExactText(document.body, 'NotCan AI', 'TuNot')
+
+  document.querySelectorAll<HTMLElement>('.settings-list article').forEach((article) => {
+    if (article.querySelector('strong')?.textContent?.trim() !== 'TuNot') return
+    const description = article.querySelector('p')
+    const status = article.querySelector<HTMLElement>('.status-pill')
+    if (description) description.textContent = 'TuNot usa tus apuntes y el backend gratuito de Supabase. No requiere Gemini, OpenAI ni otra API de pago.'
+    if (status) status.textContent = 'Gratis'
+  })
 }
 
 function buildProviderPanel() {
+  brandTuNot()
+
   const host = document.querySelector<HTMLElement>('.ai-main-card')
   if (!host || host.querySelector('.ai-provider-panel')) return
 
@@ -23,11 +43,11 @@ function buildProviderPanel() {
 
   const heading = document.createElement('div')
   heading.className = 'ai-provider-heading'
-  heading.innerHTML = '<div><strong>Proveedor de IA</strong><small>Elige qué motor usa NotCan AI.</small></div>'
+  heading.innerHTML = '<div><strong>Motor de TuNot</strong><small>La opción principal no necesita APIs de pago.</small></div>'
 
   const select = document.createElement('select')
   select.className = 'ai-provider-select'
-  ;(['auto', 'local', 'deepseek', 'gemini', 'openai'] as AiProvider[]).forEach((provider) => {
+  ;(['tunot', 'local'] as AiProvider[]).forEach((provider) => {
     const option = document.createElement('option')
     option.value = provider
     option.textContent = providerLabels[provider]
@@ -48,18 +68,16 @@ function buildProviderPanel() {
     <label><span>URL de Ollama</span><input class="ai-local-url" value="${config.url}" placeholder="http://127.0.0.1:11434"></label>
     <label><span>Modelo local</span><input class="ai-local-model" value="${config.model}" placeholder="qwen3:1.7b"></label>
     <button type="button" class="secondary ai-local-save">Guardar conexión local</button>
-    <small>Para usar la IA local desde otra tablet, Ollama debe estar accesible en la misma red y permitir conexiones desde el navegador.</small>
+    <small>Ollama es opcional. TuNot funciona sin él usando tus fuentes y Supabase dentro del plan gratuito.</small>
   `
   panel.appendChild(localSettings)
 
   function refreshProviderUi() {
     const provider = select.value as AiProvider
-    localSettings.classList.toggle('visible', provider === 'local' || provider === 'auto')
-    help.textContent = provider === 'auto'
-      ? 'Automático intenta la IA local si configuraste una URL; si no está disponible, usa DeepSeek, Gemini u OpenAI según las claves configuradas.'
-      : provider === 'local'
-        ? 'Las consultas se procesan en tu propio equipo mediante Ollama. No necesitan una clave cloud.'
-        : `${providerLabels[provider]} queda fijado como proveedor para las próximas consultas.`
+    localSettings.classList.toggle('visible', provider === 'local')
+    help.textContent = provider === 'tunot'
+      ? 'TuNot prioriza tus apuntes y materiales. Si el servidor no está disponible, conserva una respuesta básica basada en las fuentes desde el navegador.'
+      : 'Las consultas se procesan en tu propio equipo mediante Ollama. No necesitan una clave cloud.'
   }
 
   select.addEventListener('change', () => {
