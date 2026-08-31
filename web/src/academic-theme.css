@@ -1,0 +1,4 @@
+:root {
+  --surface: var(--panel);
+  --surface-2: var(--panel-2);
+}
