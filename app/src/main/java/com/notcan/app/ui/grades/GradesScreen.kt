@@ -52,9 +52,11 @@ fun GradesScreen(
     var weight by remember(subjectName) { mutableStateOf("") }
     var error by remember(subjectName) { mutableStateOf<String?>(null) }
 
-    val totalWeight = items.sumOf { it.weightPercent }
+    val totalWeight = items.sumOf { it.weightPercent.coerceAtLeast(0.0) }
     val weightedEarned = items.sumOf { it.weightedContribution }
-    val completedAverage = if (totalWeight > 0.0) weightedEarned / totalWeight * 100.0 else 0.0
+    val hasWeights = totalWeight > 0.0
+    val simpleAverage = if (items.isNotEmpty()) items.map { it.normalized * 100.0 }.average() else 0.0
+    val completedAverage = if (hasWeights) weightedEarned / totalWeight * 100.0 else simpleAverage
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(18.dp),
@@ -76,9 +78,13 @@ fun GradesScreen(
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text("Resumen automático", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                     Text("Promedio sobre actividades registradas: ${fmt(completedAverage)}%", color = NotCanOffWhite)
-                    Text("Aporte acumulado al total de la materia: ${fmt(weightedEarned)} / 100", color = NotCanGray)
-                    Text("Porcentaje ya evaluado: ${fmt(totalWeight)}%", color = if (totalWeight > 100.0) MaterialTheme.colorScheme.error else NotCanGray)
-                    if (totalWeight < 100.0) Text("Falta por evaluar: ${fmt(100.0 - totalWeight)}%", color = NotCanGray)
+                    if (hasWeights) {
+                        Text("Aporte acumulado al total de la materia: ${fmt(weightedEarned)} / 100", color = NotCanGray)
+                        Text("Porcentaje ya evaluado: ${fmt(totalWeight)}%", color = if (totalWeight > 100.0) MaterialTheme.colorScheme.error else NotCanGray)
+                        if (totalWeight < 100.0) Text("Falta por evaluar: ${fmt(100.0 - totalWeight)}%", color = NotCanGray)
+                    } else {
+                        Text("Sin ponderación configurada · se usa promedio simple.", color = NotCanGray)
+                    }
                 }
             }
         }
@@ -90,18 +96,18 @@ fun GradesScreen(
                     OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Actividad · examen, ensayo, lectura…") }, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value = score, onValueChange = { score = it }, label = { Text("Obtenido") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(value = maxScore, onValueChange = { maxScore = it }, label = { Text("Máximo") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(value = weight, onValueChange = { weight = it }, label = { Text("Peso %") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(value = maxScore, onValueChange = { maxScore = it }, label = { Text("Máximo (opcional)") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(value = weight, onValueChange = { weight = it }, label = { Text("Peso % (opcional)") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(
                         enabled = subjectName != null,
                         onClick = {
                             val s = score.replace(',', '.').toDoubleOrNull()
-                            val m = maxScore.replace(',', '.').toDoubleOrNull()
-                            val w = weight.replace(',', '.').toDoubleOrNull()
-                            if (s == null || m == null || w == null || m <= 0.0 || w !in 0.0..100.0) {
-                                error = "Revisa nota, máximo y porcentaje."
+                            val m = maxScore.replace(',', '.').toDoubleOrNull() ?: 100.0
+                            val w = weight.replace(',', '.').toDoubleOrNull() ?: 0.0
+                            if (s == null || m <= 0.0 || w !in 0.0..100.0) {
+                                error = "Revisa la nota y, si los usas, el máximo o porcentaje."
                             } else {
                                 onAdd(title, s, m, w)
                                 title = ""; score = ""; weight = ""; error = null
@@ -124,9 +130,13 @@ fun GradesScreen(
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(item.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                            Text("${fmt(item.score)} / ${fmt(item.maxScore)} · ${fmt(item.normalized * 100.0)}% · peso ${fmt(item.weightPercent)}%", color = NotCanGray)
+                            Text(
+                                if (item.weightPercent > 0.0) "${fmt(item.score)} / ${fmt(item.maxScore)} · ${fmt(item.normalized * 100.0)}% · peso ${fmt(item.weightPercent)}%"
+                                else "${fmt(item.score)} / ${fmt(item.maxScore)} · ${fmt(item.normalized * 100.0)}%",
+                                color = NotCanGray
+                            )
                         }
-                        Text("+${fmt(item.weightedContribution)}", color = NotCanBlue, fontWeight = FontWeight.SemiBold)
+                        if (item.weightPercent > 0.0) Text("+${fmt(item.weightedContribution)}", color = NotCanBlue, fontWeight = FontWeight.SemiBold)
                         IconButton(onClick = { onDelete(item.id) }) { Icon(Icons.Default.Delete, "Eliminar calificación") }
                     }
                 }

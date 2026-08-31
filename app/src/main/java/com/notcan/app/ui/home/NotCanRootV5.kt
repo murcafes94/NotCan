@@ -1,6 +1,7 @@
 package com.notcan.app.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -96,6 +99,7 @@ fun NotCanRootV5(
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var menuExpanded by remember { mutableStateOf(false) }
     var focusMode by remember { mutableStateOf(false) }
+    var navExpanded by remember { mutableStateOf(false) }
 
     BackHandler(enabled = focusMode || page != 0) {
         when {
@@ -148,6 +152,8 @@ fun NotCanRootV5(
 
         if (wide) {
             Row(Modifier.fillMaxSize()) {
+                AnimatedVisibility(visible = page == 0 || navExpanded) {
+                    Row {
                 NavigationRail(
                     containerColor = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.fillMaxHeight()
@@ -171,6 +177,7 @@ fun NotCanRootV5(
                             onClick = {
                                 if (page in 0..2) previousPage = page
                                 page = index
+                                navExpanded = false
                             },
                             icon = { Icon(destination.icon, destination.label) },
                             label = { Text(destination.label) }
@@ -179,22 +186,26 @@ fun NotCanRootV5(
                     Spacer(Modifier.weight(1f))
                     NavigationRailItem(
                         selected = page == 3,
-                        onClick = { previousPage = page.coerceIn(0, 2); page = 3 },
+                        onClick = { previousPage = page.coerceIn(0, 2); page = 3; navExpanded = false },
                         icon = { Icon(NotCanIcons.Grades, "Calificaciones") },
                         label = { Text("Notas") }
                     )
                     NavigationRailItem(
                         selected = page == 4,
-                        onClick = { previousPage = page.coerceIn(0, 2); page = 4 },
+                        onClick = { previousPage = page.coerceIn(0, 2); page = 4; navExpanded = false },
                         icon = { Icon(NotCanIcons.Settings, "Configuración") },
                         label = { Text("Ajustes") }
                     )
                 }
                 HorizontalDivider(modifier = Modifier.width(1.dp).fillMaxHeight())
+                    }
+                }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
                     if (page != 0) {
                         NotCanTopBar(
                             page = page,
+                            showNavigation = true,
+                            onNavigation = { navExpanded = !navExpanded },
                             menuExpanded = menuExpanded,
                             onMenuExpanded = { menuExpanded = it },
                             onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
@@ -213,6 +224,8 @@ fun NotCanRootV5(
                 if (page != 0) {
                     NotCanTopBar(
                         page = page,
+                        showNavigation = false,
+                        onNavigation = {},
                         menuExpanded = menuExpanded,
                         onMenuExpanded = { menuExpanded = it },
                         onGrades = { previousPage = page.coerceIn(0, 2); page = 3 },
@@ -281,6 +294,8 @@ private fun assistantSuggestions(page: Int): List<String> = when (page) {
 @Composable
 private fun NotCanTopBar(
     page: Int,
+    showNavigation: Boolean,
+    onNavigation: () -> Unit,
     menuExpanded: Boolean,
     onMenuExpanded: (Boolean) -> Unit,
     onGrades: () -> Unit,
@@ -299,6 +314,11 @@ private fun NotCanTopBar(
             Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (showNavigation) {
+                IconButton(onClick = onNavigation) {
+                    Icon(Icons.Default.Menu, "Navegación", tint = NotCanOffWhite)
+                }
+            }
             Column(Modifier.weight(1f)) {
                 Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge)
                 if (page == 2) Text("Tutor académico católico", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
