@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -39,8 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -275,21 +276,36 @@ internal fun StudyQuizScreen(
                         }
                     }
 
-                    if (answer != null) {
-                        // Reserva el inset del sistema fuera del botón para que la navegación
-                        // del cuestionario quede siempre sobre Atrás / Inicio / Recientes.
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.background,
-                            tonalElevation = 4.dp
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.background,
+                        tonalElevation = 4.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 28.dp, end = 28.dp, top = 8.dp, bottom = 64.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Button(
-                                onClick = ::next,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 76.dp)
-                            ) {
-                                Text(if (position == order.lastIndex) "Ver resultado" else "Siguiente")
+                            IconButton(onClick = ::previous, enabled = position > 0) {
+                                Icon(
+                                    Icons.Default.ArrowBack,
+                                    contentDescription = "Pregunta anterior",
+                                    tint = if (position > 0) NotCanBlue else NotCanGray.copy(alpha = 0.35f)
+                                )
+                            }
+                            Text(
+                                "${position + 1} / ${order.size}",
+                                color = NotCanGray,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            IconButton(onClick = ::next, enabled = answer != null) {
+                                Icon(
+                                    Icons.Default.ArrowForward,
+                                    contentDescription = if (position == order.lastIndex) "Ver resultado" else "Pregunta siguiente",
+                                    tint = if (answer != null) NotCanBlue else NotCanGray.copy(alpha = 0.35f)
+                                )
                             }
                         }
                     }
