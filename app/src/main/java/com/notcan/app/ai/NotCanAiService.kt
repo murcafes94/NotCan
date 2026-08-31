@@ -35,9 +35,11 @@ class NotCanAiService(private val context: Context) {
 
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
         val socraticMode = question.contains(SOCRATIC_MARKER)
+        val flashcardRequest = question.contains(FLASHCARDS_MARKER)
         val cleanQuestion = question
             .replace(SOURCE_ONLY_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
+            .replace(FLASHCARDS_MARKER, "")
             .trim()
         val mapRequest = OfflineTuNotEngine.isMapRequest(cleanQuestion)
 
@@ -116,6 +118,22 @@ class NotCanAiService(private val context: Context) {
                 appendLine("Evita ramas redundantes, conceptos casi iguales y nodos que solo repitan el nombre de la fuente.")
                 appendLine("Cada nodo debe tener id único y todo edge debe referirse a ids existentes.")
                 appendLine("En source_refs usa nombres breves como 'Apuntes' o 'Transcripción' solo cuando el nodo tenga respaldo en esa fuente.")
+                appendLine("No incluyas texto antes ni después de los marcadores.")
+            }
+
+            if (flashcardRequest) {
+                appendLine("MODO ARTEFACTO TARJETAS ACTIVADO.")
+                appendLine("NotCan mostrará estas tarjetas en una pantalla de repaso, una por una, con pregunta al frente y respuesta al reverso.")
+                appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_FLASHCARDS>>> y <<<END_NOTCAN_FLASHCARDS>>>.")
+                appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown, sin comentarios y sin texto adicional.")
+                appendLine("Esquema obligatorio:")
+                appendLine("{\"title\":\"...\",\"cards\":[{\"question\":\"...\",\"answer\":\"...\",\"source_ref\":\"Apuntes\"}]}")
+                appendLine("Genera entre 12 y 20 tarjetas salvo que el material sea claramente insuficiente.")
+                appendLine("Cada tarjeta debe evaluar una sola idea. La pregunta debe ser clara, específica y útil para recuperación activa.")
+                appendLine("La respuesta debe ser breve pero suficiente: normalmente una frase o un párrafo corto, no un ensayo.")
+                appendLine("Combina definición, relación, causa, consecuencia, comparación y aplicación cuando el contenido lo permita; evita tarjetas repetitivas.")
+                appendLine("No uses preguntas ambiguas del tipo '¿Qué dice el texto?' ni respuestas que dependan de ver otra tarjeta.")
+                appendLine("source_ref es opcional y debe ser breve. Úsalo solo si puedes atribuir la tarjeta a una fuente disponible.")
                 appendLine("No incluyas texto antes ni después de los marcadores.")
             }
 
@@ -264,6 +282,7 @@ class NotCanAiService(private val context: Context) {
         const val TEXT_MODEL = "Mistral Agent"
         const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
         const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
+        const val FLASHCARDS_MARKER = "[GENERAR_TARJETAS_NOTCAN]"
         private const val BASE_URL = "https://api.mistral.ai"
         private const val MAX_SOURCE_CHARS = 28_000
         private const val CONNECT_TIMEOUT_MS = 20_000
