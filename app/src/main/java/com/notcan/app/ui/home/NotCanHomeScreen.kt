@@ -19,7 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +58,7 @@ import com.notcan.app.recording.RecordingState
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
+import com.notcan.app.ui.theme.NotCanRed
 import com.notcan.app.ui.theme.NotCanSurface
 
 @Composable
@@ -83,6 +88,7 @@ fun NotCanHomeScreen(
     onCreateCycle: (String) -> Unit,
     onCreateSubject: (String) -> Unit,
     onCreateClass: (String) -> Unit,
+    onDeleteClass: (String) -> Unit,
     onCreateNote: (String) -> Unit,
     onUpdateNote: (String, String, String) -> Unit,
     onDeleteNote: (String) -> Unit,
@@ -148,7 +154,9 @@ fun NotCanHomeScreen(
                             onSelectClass(id)
                             level = HomeLevel.WORKSPACE
                         },
-                        onAddClass = { createDialog = CreateDialog.Class }
+                        onAddClass = { createDialog = CreateDialog.Class },
+                        onRecordNewClass = { onStartRecording(NEW_CLASS_RECORDING_SENTINEL) },
+                        onDeleteClass = onDeleteClass
                     )
                 }
 
@@ -303,14 +311,20 @@ private fun SubjectClassesLanding(
     classes: List<ClassSessionEntity>,
     onBack: () -> Unit,
     onSelectClass: (String) -> Unit,
-    onAddClass: () -> Unit
+    onAddClass: () -> Unit,
+    onRecordNewClass: () -> Unit,
+    onDeleteClass: (String) -> Unit
 ) {
+    var pendingDelete by remember(subject.id) { mutableStateOf<ClassSessionEntity?>(null) }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver a materias", tint = NotCanOffWhite) }
             Column(Modifier.weight(1f)) {
                 Text(subject.name, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 cycleName?.let { Text(it, color = NotCanGray, style = MaterialTheme.typography.labelMedium) }
+            }
+            IconButton(onClick = onRecordNewClass) {
+                Icon(Icons.Default.RadioButtonChecked, "Grabar nueva clase", tint = NotCanRed)
             }
             Button(onClick = onAddClass) {
                 Icon(Icons.Default.Add, null)
@@ -324,7 +338,14 @@ private fun SubjectClassesLanding(
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Aún no hay clases", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                     Text("Cuando crees o grabes la primera clase aparecerá aquí directamente.", color = NotCanGray)
-                    Button(onClick = onAddClass) { Text("Crear primera clase") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onAddClass) { Text("Crear primera clase") }
+                        OutlinedButton(onClick = onRecordNewClass) {
+                            Icon(Icons.Default.RadioButtonChecked, null, tint = NotCanRed)
+                            Spacer(Modifier.padding(horizontal = 3.dp))
+                            Text("Grabar")
+                        }
+                    }
                 }
             }
         } else {
@@ -345,12 +366,30 @@ private fun SubjectClassesLanding(
                                 Text(classSession.title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Text("Abrir clase", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
                             }
+                            IconButton(onClick = { pendingDelete = classSession }) {
+                                Icon(Icons.Default.Delete, "Eliminar clase", tint = NotCanRed)
+                            }
                             Icon(Icons.Default.ChevronRight, null, tint = NotCanBlue)
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Eliminar clase") },
+            text = { Text("Se eliminará ${target.title} con sus audios, transcripciones, apuntes y archivos locales. Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    onDeleteClass(target.id)
+                }) { Text("Eliminar", color = NotCanRed) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancelar") } }
+        )
     }
 }
 

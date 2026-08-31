@@ -193,6 +193,17 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun deleteClass(classId: String) {
+        if (_selectedClassId.value == classId) {
+            _selectedClassId.value = null
+            _selectedNoteId.value = null
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.classFilePaths(classId).forEach { path -> runCatching { File(path).delete() } }
+            repository.deleteClassData(classId)
+        }
+    }
+
     fun addSchedule(subjectId: String, weekdayIso: Int, startMinuteOfDay: Int, endMinuteOfDay: Int, autoStopMode: String, autoStopGraceMinutes: Int) {
         val cycleId = _selectedCycleId.value ?: return
         viewModelScope.launch {

@@ -99,6 +99,13 @@ interface NotCanDao {
     @Query("SELECT COUNT(*) FROM class_sessions WHERE subjectId = :subjectId")
     suspend fun countClassesForSubject(subjectId: String): Int
 
+    @Query("SELECT localPath FROM audio_recordings WHERE classSessionId = :classId")
+    suspend fun getAudioPathsForClass(classId: String): List<String>
+    @Query("SELECT localPath FROM document_resources WHERE classSessionId = :classId")
+    suspend fun getDocumentPathsForClass(classId: String): List<String>
+    @Query("SELECT * FROM note_pages WHERE classSessionId = :classId")
+    suspend fun getNotesForClass(classId: String): List<NotePageEntity>
+
     @Query("SELECT a.localPath FROM audio_recordings a INNER JOIN class_sessions c ON a.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
     suspend fun getAudioPathsForCycle(cycleId: String): List<String>
 

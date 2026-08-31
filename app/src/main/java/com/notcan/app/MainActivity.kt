@@ -34,6 +34,7 @@ import com.notcan.app.ui.ai.NotCanAiScreen
 import com.notcan.app.ui.ai.TuNotOfflineEntry
 import com.notcan.app.ui.calendar.AcademicCalendarScreen
 import com.notcan.app.ui.grades.GradesScreen
+import com.notcan.app.ui.home.NEW_CLASS_RECORDING_SENTINEL
 import com.notcan.app.ui.home.NotCanHomeScreen
 import com.notcan.app.ui.home.NotCanRootV5
 import com.notcan.app.ui.settings.SettingsScreen
@@ -213,6 +214,7 @@ class MainActivity : ComponentActivity() {
                             onCreateCycle = studyViewModel::createCycle,
                             onCreateSubject = studyViewModel::createSubject,
                             onCreateClass = studyViewModel::createClass,
+                            onDeleteClass = studyViewModel::deleteClass,
                             onCreateNote = studyViewModel::createNotePage,
                             onUpdateNote = studyViewModel::updateNotePage,
                             onDeleteNote = studyViewModel::deleteNotePage,
@@ -229,13 +231,20 @@ class MainActivity : ComponentActivity() {
                             onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
                             onDeletePdfInkStroke = studyViewModel::deletePdfInkStroke,
                             onClearPdfInkPage = studyViewModel::clearPdfInkPage,
-                            onStartRecording = { _ ->
-                                val subjectId = selectedSubjectId
-                                if (subjectId != null && !recordingActive) {
-                                    lifecycleScope.launch {
-                                        val session = recordingRepository.createClassSession(subjectId, "")
-                                        studyViewModel.selectClass(session.id)
-                                        requestPermissionsAndStart(session.id)
+                            onStartRecording = { requestedClassId ->
+                                if (!recordingActive) {
+                                    if (requestedClassId == NEW_CLASS_RECORDING_SENTINEL) {
+                                        val subjectId = selectedSubjectId
+                                        if (subjectId != null) {
+                                            lifecycleScope.launch {
+                                                val session = recordingRepository.createClassSession(subjectId, "")
+                                                studyViewModel.selectClass(session.id)
+                                                requestPermissionsAndStart(session.id)
+                                            }
+                                        }
+                                    } else if (requestedClassId.isNotBlank()) {
+                                        studyViewModel.selectClass(requestedClassId)
+                                        requestPermissionsAndStart(requestedClassId)
                                     }
                                 }
                             },
