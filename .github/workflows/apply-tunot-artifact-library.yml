@@ -1,47 +1,10 @@
-name: Apply TuNot artifact library
+name: TuNot artifact patch archived
 
 on:
-  push:
-    paths:
-      - '.github/workflows/apply-tunot-artifact-library.yml'
-      - 'ci/apply_tunot_artifact_library.py'
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
-  patch-and-build:
+  archived:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Apply patch
-        run: python3 ci/apply_tunot_artifact_library.py
-
-      - name: Compile Android
-        run: gradle :app:compileDebugKotlin --stacktrace
-
-      - name: Commit validated changes
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java/com/notcan/app/ui/ai/NotCanAiScreen.kt app/src/main/java/com/notcan/app/ui/home/ClassWorkspaceV5.kt
-          if git diff --cached --quiet; then
-            echo 'No changes to commit.'
-            exit 0
-          fi
-          git commit -m 'feat(ai): save TuNot artifacts in study library'
-          git push
+      - run: echo 'Temporary TuNot patch workflow is archived.'
