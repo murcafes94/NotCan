@@ -141,23 +141,7 @@ fun StudyMapScreen(
     }
 
     Column(modifier.fillMaxSize()) {
-        StudyMapToolbar(
-            map = map,
-            style = layoutStyle,
-            zoom = zoom,
-            onLayoutChange = {
-                layoutStyle = it
-                collapsedNodes = emptySet()
-                fitRequest++
-            },
-            onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
-            onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
-            onFit = { fitRequest++ },
-            onCenter = { centerRequest++ },
-            onExport = ::exportAndShare
-        )
-
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val density = LocalDensity.current
             val widthPx = with(density) { maxWidth.toPx() }
             val heightPx = with(density) { maxHeight.toPx() }
@@ -332,6 +316,17 @@ fun StudyMapScreen(
                 }
             }
         }
+        StudyMapToolbar(
+            map = map,
+            style = layoutStyle,
+            zoom = zoom,
+            onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest++ },
+            onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
+            onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
+            onFit = { fitRequest++ },
+            onCenter = { centerRequest++ },
+            onExport = ::exportAndShare
+        )
     }
 }
 
@@ -473,8 +468,6 @@ private fun StudyMapNodeCard(
                         else -> MaterialTheme.typography.bodyMedium
                     },
                     fontWeight = if (node.level <= 1) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = if (visualCard) 4 else 3,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 if (childCount > 0) {
@@ -493,8 +486,7 @@ private fun StudyMapNodeCard(
                     it,
                     color = if (visualCard) NotCanOffWhite.copy(alpha = 0.78f) else NotCanGray,
                     style = if (visualCard) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
-                    maxLines = if (visualCard) 5 else 3,
-                    overflow = TextOverflow.Ellipsis
+                    softWrap = true
                 )
             }
             if (node.sourceRefs.isNotEmpty()) {
@@ -503,8 +495,7 @@ private fun StudyMapNodeCard(
                     color = branchColor,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    softWrap = true
                 )
             }
         }

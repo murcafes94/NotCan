@@ -14,6 +14,7 @@ import com.notcan.app.data.local.PdfInkStrokeEntity
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.SubjectScheduleEntity
+import com.notcan.app.data.local.TaskItemEntity
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.sync.SyncChangeStore
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,7 @@ class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
     fun observeTranscripts(classSessionId: String): Flow<List<TranscriptEntity>> = dao.observeTranscripts(classSessionId)
     fun observeGradeItems(subjectId: String): Flow<List<GradeItemEntity>> = dao.observeGradeItems(subjectId)
     fun observeDetectedCues(classSessionId: String): Flow<List<DetectedCueEntity>> = dao.observeDetectedCues(classSessionId)
+    fun observeTasks(cycleId: String): Flow<List<TaskItemEntity>> = dao.observeTasks(cycleId)
     fun observeVocabularyForCycle(cycleId: String): Flow<List<AcademicVocabularyTermEntity>> = dao.observeVocabularyForCycle(cycleId)
     fun observePermanentVocabulary(): Flow<List<AcademicVocabularyTermEntity>> = dao.observePermanentVocabulary()
 
@@ -179,6 +181,30 @@ class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
         markUpsert("grade_items", item.id)
         return item
     }
+
+
+    suspend fun addTask(
+        cycleId: String,
+        subjectId: String?,
+        title: String,
+        type: String,
+        dueAtEpochMs: Long?,
+        priority: String,
+        notes: String
+    ): TaskItemEntity {
+        val now = System.currentTimeMillis()
+        val item = TaskItemEntity(
+            id = UUID.randomUUID().toString(), cycleId = cycleId, subjectId = subjectId,
+            title = title.trim().ifBlank { "Pendiente" }, type = type.trim().ifBlank { "Tarea" },
+            dueAtEpochMs = dueAtEpochMs, priority = priority.trim().ifBlank { "Normal" },
+            notes = notes.trim(), createdAtEpochMs = now, updatedAtEpochMs = now
+        )
+        dao.insertTaskItem(item)
+        return item
+    }
+
+    suspend fun setTaskCompleted(taskId: String, completed: Boolean) = dao.setTaskCompleted(taskId, completed, System.currentTimeMillis())
+    suspend fun deleteTask(taskId: String) = dao.deleteTask(taskId)
 
     suspend fun addVocabularyTerm(term: AcademicVocabularyTermEntity) = dao.insertVocabularyTerm(term)
     suspend fun deleteVocabularyTerm(termId: String) = dao.deleteVocabularyTerm(termId)

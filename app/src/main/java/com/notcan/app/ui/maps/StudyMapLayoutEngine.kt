@@ -6,6 +6,12 @@ import kotlin.math.max
 import kotlin.math.sin
 
 object StudyMapLayoutEngine {
+    private fun estimatedNodeHeight(node: StudyMapNode, base: Float): Float {
+        val chars = node.title.length + (node.description?.length ?: 0)
+        val extra = (chars / 34).coerceAtMost(7) * 17f
+        val sourceExtra = if (node.sourceRefs.isNotEmpty()) 18f else 0f
+        return (base + extra + sourceExtra).coerceAtMost(220f)
+    }
     fun layout(
         map: StudyMap,
         style: StudyMapLayoutStyle,
@@ -27,7 +33,7 @@ object StudyMapLayoutEngine {
         val root = byId[map.rootNodeId] ?: return emptyList()
         val maxDepth = depthOf(map.rootNodeId, children).coerceAtLeast(1)
         val rootWidth = 240f
-        val rootHeight = 96f
+        val rootHeight = estimatedNodeHeight(root, 96f)
         val horizontalStep = ((width - rootWidth - 140f) / maxDepth).coerceIn(235f, 315f)
         val estimatedContentWidth = rootWidth + 52f + maxDepth * horizontalStep + 230f
         val rootX = ((width - estimatedContentWidth) / 2f).coerceAtLeast(40f)
@@ -63,11 +69,11 @@ object StudyMapLayoutEngine {
                     depth == 2 -> 210f
                     else -> 190f
                 }
-                val cardHeight = when {
+                val cardHeight = estimatedNodeHeight(node, when {
                     depth <= 1 -> 92f
                     depth == 2 -> 82f
                     else -> 74f
-                }
+                })
                 val x = rootX + rootWidth + 52f + (depth - 1) * horizontalStep
                 val y = (centerY - cardHeight / 2f).coerceAtLeast(18f)
 
@@ -98,7 +104,7 @@ object StudyMapLayoutEngine {
         levels.forEach { (depth, ids) ->
             if (depth == 0) {
                 val root = byId[ids.firstOrNull()] ?: return@forEach
-                result += PositionedStudyMapNode(root, centerX - 115f, centerY - 48f, 230f, 96f)
+                result += PositionedStudyMapNode(root, centerX - 115f, centerY - estimatedNodeHeight(root, 96f)/2f, 230f, estimatedNodeHeight(root, 96f))
             } else {
                 val radius = 220f + (depth - 1) * 225f
                 ids.forEachIndexed { index, id ->
@@ -107,7 +113,7 @@ object StudyMapLayoutEngine {
                     val x = centerX + radius * cos(angle).toFloat()
                     val y = centerY + radius * sin(angle).toFloat()
                     val cardWidth = if (depth == 1) 210f else 185f
-                    val cardHeight = if (depth == 1) 90f else 78f
+                    val cardHeight = estimatedNodeHeight(node, if (depth == 1) 90f else 78f)
                     result += PositionedStudyMapNode(node, x - cardWidth / 2f, y - cardHeight / 2f, cardWidth, cardHeight)
                 }
             }
@@ -123,7 +129,7 @@ object StudyMapLayoutEngine {
         val centerX = width / 2f
         val centerY = height / 2f
         val rootWidth = 240f
-        val rootHeight = 108f
+        val rootHeight = estimatedNodeHeight(root, 108f)
         result += PositionedStudyMapNode(root, centerX - rootWidth / 2f, centerY - rootHeight / 2f, rootWidth, rootHeight)
 
         val firstLevel = children[map.rootNodeId].orEmpty()
@@ -136,7 +142,7 @@ object StudyMapLayoutEngine {
             val centerNodeX = centerX + radiusX * cos(angle).toFloat()
             val centerNodeY = centerY + radiusY * sin(angle).toFloat()
             val cardWidth = 225f
-            val cardHeight = 124f
+            val cardHeight = estimatedNodeHeight(node, 124f)
             result += PositionedStudyMapNode(node, centerNodeX - cardWidth / 2f, centerNodeY - cardHeight / 2f, cardWidth, cardHeight)
 
             val grandchildren = children[id].orEmpty().take(5)
@@ -153,7 +159,7 @@ object StudyMapLayoutEngine {
                 val offset = offsetStart + childIndex * spacing
                 val childCenterX = childBaseX + tangentX * offset
                 val childCenterY = childBaseY + tangentY * offset
-                result += PositionedStudyMapNode(child, childCenterX - 90f, childCenterY - 40f, 180f, 80f)
+                result += PositionedStudyMapNode(child, childCenterX - 90f, childCenterY - estimatedNodeHeight(child, 80f)/2f, 180f, estimatedNodeHeight(child, 80f))
             }
         }
         return result
@@ -166,7 +172,7 @@ object StudyMapLayoutEngine {
         val root = byId[map.rootNodeId] ?: return emptyList()
         val centerX = width / 2f
         val centerY = height / 2f
-        result += PositionedStudyMapNode(root, centerX - 125f, centerY - 65f, 250f, 130f)
+        result += PositionedStudyMapNode(root, centerX - 125f, centerY - estimatedNodeHeight(root, 130f)/2f, 250f, estimatedNodeHeight(root, 130f))
 
         val firstLevel = children[map.rootNodeId].orEmpty().take(8)
         val slots = listOf(-PI / 2.0, -PI / 6.0, PI / 6.0, PI / 2.0, 5.0 * PI / 6.0, -5.0 * PI / 6.0, 0.0, PI)
@@ -178,7 +184,7 @@ object StudyMapLayoutEngine {
             val angle = slots[index % slots.size]
             val cx = centerX + radiusX * cos(angle).toFloat()
             val cy = centerY + radiusY * sin(angle).toFloat()
-            result += PositionedStudyMapNode(node, cx - 120f, cy - 72f, 240f, 144f)
+            result += PositionedStudyMapNode(node, cx - 120f, cy - estimatedNodeHeight(node, 144f)/2f, 240f, estimatedNodeHeight(node, 144f))
 
             val details = children[id].orEmpty().take(3)
             details.forEachIndexed { detailIndex, detailId ->
@@ -190,7 +196,7 @@ object StudyMapLayoutEngine {
                 val spread = (detailIndex - (details.size - 1) / 2f) * 82f
                 val detailCx = cx + outwardX * 185f + tangentX * spread
                 val detailCy = cy + outwardY * 145f + tangentY * spread
-                result += PositionedStudyMapNode(detail, detailCx - 90f, detailCy - 40f, 180f, 80f)
+                result += PositionedStudyMapNode(detail, detailCx - 90f, detailCy - estimatedNodeHeight(detail, 80f)/2f, 180f, estimatedNodeHeight(detail, 80f))
             }
         }
         return result
@@ -210,7 +216,7 @@ object StudyMapLayoutEngine {
             ids.forEachIndexed { index, id ->
                 val node = byId[id] ?: return@forEachIndexed
                 val cardWidth = if (depth == 0) 230f else 205f
-                val cardHeight = if (depth == 0) 96f else 84f
+                val cardHeight = estimatedNodeHeight(node, if (depth == 0) 96f else 84f)
                 result += PositionedStudyMapNode(
                     node = node,
                     x = 50f + depth * horizontalStep,

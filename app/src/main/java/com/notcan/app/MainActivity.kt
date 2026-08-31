@@ -37,6 +37,7 @@ import com.notcan.app.ui.grades.GradesScreen
 import com.notcan.app.ui.home.NotCanHomeScreen
 import com.notcan.app.ui.home.NotCanRootV5
 import com.notcan.app.ui.settings.SettingsScreen
+import com.notcan.app.ui.tasks.TasksScreen
 import com.notcan.app.ui.theme.NotCanTheme
 import java.io.File
 import kotlinx.coroutines.launch
@@ -116,9 +117,10 @@ class MainActivity : ComponentActivity() {
                 val localWhisperError = studyViewModel.localWhisperError.collectAsStateWithLifecycle().value
                 val gradeItems = extrasViewModel.gradeItems.collectAsStateWithLifecycle().value
                 val detectedCues = extrasViewModel.detectedCues.collectAsStateWithLifecycle().value
+                val taskItems = extrasViewModel.taskItems.collectAsStateWithLifecycle().value
 
-                LaunchedEffect(selectedSubjectId, selectedClassId) {
-                    extrasViewModel.setContext(selectedSubjectId, selectedClassId)
+                LaunchedEffect(selectedCycleId, selectedSubjectId, selectedClassId) {
+                    extrasViewModel.setContext(selectedCycleId, selectedSubjectId, selectedClassId)
                 }
 
                 val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
@@ -169,6 +171,7 @@ class MainActivity : ComponentActivity() {
                     cycle = selectedCycle,
                     subjects = subjects,
                     schedules = schedules,
+                    tasks = taskItems,
                     recordingActive = recordingActive,
                     autoFocusOnRecording = { preferences.autoFocusOnRecording },
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
@@ -183,7 +186,7 @@ class MainActivity : ComponentActivity() {
                     assistantBusy = aiBusy,
                     assistantResult = aiResult,
                     onAssistantAsk = studyViewModel::askAi,
-                    classContent = {
+                    subjectsContent = {
                         NotCanHomeScreen(
                             recordingState = recordingState,
                             cycles = cycles,
@@ -240,6 +243,15 @@ class MainActivity : ComponentActivity() {
                             onResumeRecording = { sendRecordingAction(RecordingService.ACTION_RESUME) },
                             onStopRecording = { sendRecordingAction(RecordingService.ACTION_STOP) },
                             onMarkMoment = { sendRecordingAction(RecordingService.ACTION_MARK) }
+                        )
+                    },
+                    tasksContent = {
+                        TasksScreen(
+                            subjects = subjects,
+                            items = taskItems,
+                            onAdd = { subjectId, title, type, dueAt, priority, notes -> extrasViewModel.addTask(subjectId, title, type, dueAt, priority, notes) },
+                            onCompleted = extrasViewModel::setTaskCompleted,
+                            onDelete = extrasViewModel::deleteTask
                         )
                     },
                     calendarContent = {

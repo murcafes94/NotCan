@@ -46,6 +46,9 @@ interface NotCanDao {
     @Query("SELECT * FROM detected_cues WHERE classSessionId = :classSessionId ORDER BY createdAtEpochMs ASC")
     fun observeDetectedCues(classSessionId: String): Flow<List<DetectedCueEntity>>
 
+    @Query("SELECT * FROM task_items WHERE cycleId = :cycleId ORDER BY isCompleted ASC, dueAtEpochMs IS NULL ASC, dueAtEpochMs ASC, createdAtEpochMs DESC")
+    fun observeTasks(cycleId: String): Flow<List<TaskItemEntity>>
+
     @Query("SELECT * FROM academic_vocabulary WHERE scope != 'CYCLE' OR cycleId = :cycleId ORDER BY weight DESC, term COLLATE NOCASE ASC")
     fun observeVocabularyForCycle(cycleId: String): Flow<List<AcademicVocabularyTermEntity>>
 
@@ -130,6 +133,8 @@ interface NotCanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDetectedCue(cue: DetectedCueEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTaskItem(item: TaskItemEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVocabularyTerm(term: AcademicVocabularyTermEntity)
 
     @Upsert
@@ -185,6 +190,10 @@ interface NotCanDao {
     suspend fun clearPdfInkPage(documentId: String, pageIndex: Int)
     @Query("DELETE FROM grade_items WHERE id = :itemId")
     suspend fun deleteGradeItem(itemId: String)
+    @Query("UPDATE task_items SET isCompleted = :completed, updatedAtEpochMs = :updatedAt WHERE id = :taskId")
+    suspend fun setTaskCompleted(taskId: String, completed: Boolean, updatedAt: Long)
+    @Query("DELETE FROM task_items WHERE id = :taskId")
+    suspend fun deleteTask(taskId: String)
     @Query("DELETE FROM detected_cues WHERE transcriptId = :transcriptId")
     suspend fun deleteDetectedCuesForTranscript(transcriptId: String)
     @Query("DELETE FROM transcripts WHERE id = :transcriptId")

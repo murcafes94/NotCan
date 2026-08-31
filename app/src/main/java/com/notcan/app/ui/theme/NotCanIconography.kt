@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.Grade
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MicNone
 import androidx.compose.material.icons.filled.MoreVert
@@ -31,6 +32,7 @@ import com.notcan.app.R
  * VectorDrawable propios para los iconos aprobados de la interfaz académica.
  */
 object NotCanIcons {
+    val Home: ImageVector = Icons.Default.Home
     val Subjects: ImageVector = Icons.Default.School
     val Calendar: ImageVector = Icons.Default.CalendarMonth
     val TuNot: ImageVector = Icons.Default.SmartToy

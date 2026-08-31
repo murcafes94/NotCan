@@ -21,9 +21,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TranscriptEntity::class,
         GradeItemEntity::class,
         DetectedCueEntity::class,
-        AcademicVocabularyTermEntity::class
+        AcademicVocabularyTermEntity::class,
+        TaskItemEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class NotCanDatabase : RoomDatabase() {
@@ -191,6 +192,33 @@ abstract class NotCanDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `task_items` (
+                        `id` TEXT NOT NULL,
+                        `cycleId` TEXT NOT NULL,
+                        `subjectId` TEXT,
+                        `title` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `dueAtEpochMs` INTEGER,
+                        `priority` TEXT NOT NULL,
+                        `notes` TEXT NOT NULL,
+                        `isCompleted` INTEGER NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        `updatedAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`cycleId`) REFERENCES `study_cycles`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`subjectId`) REFERENCES `subjects`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_items_cycleId` ON `task_items` (`cycleId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_items_subjectId` ON `task_items` (`subjectId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_items_dueAtEpochMs` ON `task_items` (`dueAtEpochMs`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_items_isCompleted` ON `task_items` (`isCompleted`)")
+            }
+        }
+
         fun getInstance(context: Context): NotCanDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -198,7 +226,7 @@ abstract class NotCanDatabase : RoomDatabase() {
                     NotCanDatabase::class.java,
                     "notcan.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { instance = it }
             }

@@ -52,3 +52,26 @@ data class DetectedCueEntity(
     val offsetMs: Long? = null,
     val createdAtEpochMs: Long
 )
+
+
+@Entity(
+    tableName = "task_items",
+    foreignKeys = [
+        ForeignKey(entity = StudyCycleEntity::class, parentColumns = ["id"], childColumns = ["cycleId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = SubjectEntity::class, parentColumns = ["id"], childColumns = ["subjectId"], onDelete = ForeignKey.SET_NULL)
+    ],
+    indices = [Index("cycleId"), Index("subjectId"), Index("dueAtEpochMs"), Index("isCompleted")]
+)
+data class TaskItemEntity(
+    @PrimaryKey val id: String,
+    val cycleId: String,
+    val subjectId: String? = null,
+    val title: String,
+    val type: String = "Tarea",
+    val dueAtEpochMs: Long? = null,
+    val priority: String = "Normal",
+    val notes: String = "",
+    val isCompleted: Boolean = false,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long
+)
