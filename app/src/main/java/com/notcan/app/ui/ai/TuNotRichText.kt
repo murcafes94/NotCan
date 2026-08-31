@@ -89,7 +89,7 @@ private fun tuNotMarkdown(value: String): AnnotatedString = buildAnnotatedString
         } else {
             val bullet = Regex("^[-*•]\\s+").find(trimmed)
             val numbered = Regex("^(\\d+)[.)]\\s+").find(trimmed)
-            val checkbox = Regex("^[-*]\\s+\\[([ xX])]\s+").find(trimmed)
+            val checkbox = Regex("^[-*]\\s+\\[([ xX])]\\s+").find(trimmed)
             when {
                 checkbox != null -> {
                     append(if (checkbox.groupValues[1].isBlank()) "☐ " else "☑ ")
