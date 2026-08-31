@@ -15,31 +15,39 @@ internal data class ParsedFlashcardArtifact(
     val cards: List<StudyFlashcard>
 )
 
+private data class StudyArtifactSlice(
+    val json: String,
+    val start: Int,
+    val endExclusive: Int
+)
+
 internal object StudyFlashcardArtifactParser {
     const val START_MARKER = "<<<NOTCAN_FLASHCARDS>>>"
     const val END_MARKER = "<<<END_NOTCAN_FLASHCARDS>>>"
+    private val START_MARKERS = listOf(START_MARKER, "<<NOTCAN_FLASHCARDS>>", "<NOTCAN_FLASHCARDS>")
+    private val END_MARKERS = listOf(END_MARKER, "<<END_NOTCAN_FLASHCARDS>>", "<END_NOTCAN_FLASHCARDS>")
     private const val MAX_CARDS = 24
 
     fun parse(value: String): ParsedFlashcardArtifact? {
-        val start = value.indexOf(START_MARKER)
-        val end = value.indexOf(END_MARKER)
-        if (start < 0 || end <= start) return null
-        val jsonText = value.substring(start + START_MARKER.length, end).trim()
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return null
         return runCatching {
-            val root = JSONObject(jsonText)
-            val title = compact(root.optString("title").ifBlank { "Tarjetas de estudio" }, 70)
-            val array = root.optJSONArray("cards") ?: return@runCatching null
+            val root = JSONObject(artifact.json)
+            val title = compact(root.flexString("title").ifBlank { "Tarjetas de estudio" }, 70)
+            val array = root.flexArray("cards", "flashcards", "tarjetas") ?: return@runCatching null
             val cards = buildList {
                 for (i in 0 until minOf(array.length(), MAX_CARDS)) {
                     val item = array.optJSONObject(i) ?: continue
-                    val question = compact(item.optString("question"), 220)
-                    val answer = compact(item.optString("answer"), 520)
+                    val question = compact(item.flexString("question", "pregunta"), 220)
+                    val answer = compact(item.flexString("answer", "respuesta"), 520)
                     if (question.isBlank() || answer.isBlank()) continue
                     add(
                         StudyFlashcard(
                             question = question,
                             answer = answer,
-                            sourceRef = compact(item.optString("source_ref"), 50).takeIf { it.isNotBlank() }
+                            sourceRef = compact(
+                                item.flexString("source_ref", "sourceRef", "sourceref", "source"),
+                                50
+                            ).takeIf { it.isNotBlank() }
                         )
                     )
                 }
@@ -49,11 +57,8 @@ internal object StudyFlashcardArtifactParser {
     }
 
     fun stripArtifact(value: String): String {
-        val start = value.indexOf(START_MARKER)
-        val end = value.indexOf(END_MARKER)
-        if (start < 0 || end <= start) return value
-        return (value.substring(0, start) + value.substring(end + END_MARKER.length))
-            .trim()
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return value
+        return stripStudyArtifact(value, artifact)
             .ifBlank { "Preparé las tarjetas. Puedes abrirlas y comenzar el repaso." }
     }
 
@@ -88,28 +93,27 @@ internal data class ParsedQuizArtifact(
 internal object StudyQuizArtifactParser {
     const val START_MARKER = "<<<NOTCAN_QUIZ>>>"
     const val END_MARKER = "<<<END_NOTCAN_QUIZ>>>"
+    private val START_MARKERS = listOf(START_MARKER, "<<NOTCAN_QUIZ>>", "<NOTCAN_QUIZ>")
+    private val END_MARKERS = listOf(END_MARKER, "<<END_NOTCAN_QUIZ>>", "<END_NOTCAN_QUIZ>")
     private const val MAX_QUESTIONS = 30
 
     fun parse(value: String): ParsedQuizArtifact? {
-        val start = value.indexOf(START_MARKER)
-        val end = value.indexOf(END_MARKER)
-        if (start < 0 || end <= start) return null
-        val jsonText = value.substring(start + START_MARKER.length, end).trim()
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return null
         return runCatching {
-            val root = JSONObject(jsonText)
-            val title = compactStudyText(root.optString("title").ifBlank { "Cuestionario" }, 80)
-            val array = root.optJSONArray("questions") ?: return@runCatching null
+            val root = JSONObject(artifact.json)
+            val title = compactStudyText(root.flexString("title").ifBlank { "Cuestionario" }, 80)
+            val array = root.flexArray("questions", "preguntas") ?: return@runCatching null
             val questions = buildList {
                 for (i in 0 until minOf(array.length(), MAX_QUESTIONS)) {
                     val item = array.optJSONObject(i) ?: continue
-                    val type = when (item.optString("type").lowercase()) {
-                        "true_false", "verdadero_falso", "boolean" -> StudyQuizQuestionType.TRUE_FALSE
-                        "short_answer", "open", "pregunta_abierta", "development" -> StudyQuizQuestionType.SHORT_ANSWER
+                    val type = when (item.flexString("type", "tipo").lowercase()) {
+                        "true_false", "verdadero_falso", "boolean", "truefalse" -> StudyQuizQuestionType.TRUE_FALSE
+                        "short_answer", "open", "pregunta_abierta", "development", "shortanswer" -> StudyQuizQuestionType.SHORT_ANSWER
                         else -> StudyQuizQuestionType.MULTIPLE_CHOICE
                     }
-                    val question = compactStudyText(item.optString("question"), 320)
+                    val question = compactStudyText(item.flexString("question", "pregunta"), 320)
                     val correct = compactStudyText(
-                        item.optString("correct_answer").ifBlank { item.optString("answer") },
+                        item.flexString("correct_answer", "correctAnswer", "correctanswer", "answer", "respuesta"),
                         520
                     )
                     if (question.isBlank() || correct.isBlank()) continue
@@ -117,7 +121,7 @@ internal object StudyQuizArtifactParser {
                         StudyQuizQuestionType.TRUE_FALSE -> listOf("Verdadero", "Falso")
                         StudyQuizQuestionType.SHORT_ANSWER -> emptyList()
                         StudyQuizQuestionType.MULTIPLE_CHOICE -> buildList {
-                            val raw = item.optJSONArray("options")
+                            val raw = item.flexArray("options", "opciones")
                             if (raw != null) {
                                 for (j in 0 until minOf(raw.length(), 6)) {
                                     compactStudyText(raw.optString(j), 180)
@@ -130,13 +134,19 @@ internal object StudyQuizArtifactParser {
                     if (type == StudyQuizQuestionType.MULTIPLE_CHOICE && (options.size < 2 || correct !in options)) continue
                     add(
                         StudyQuizQuestion(
-                            id = item.optString("id").ifBlank { "q${i + 1}" },
+                            id = item.flexString("id").ifBlank { "q${i + 1}" },
                             type = type,
                             question = question,
                             options = options,
                             correctAnswer = correct,
-                            explanation = compactStudyText(item.optString("explanation"), 620).takeIf { it.isNotBlank() },
-                            sourceRef = compactStudyText(item.optString("source_ref"), 60).takeIf { it.isNotBlank() }
+                            explanation = compactStudyText(
+                                item.flexString("explanation", "explicacion", "explicación"),
+                                620
+                            ).takeIf { it.isNotBlank() },
+                            sourceRef = compactStudyText(
+                                item.flexString("source_ref", "sourceRef", "sourceref", "source"),
+                                60
+                            ).takeIf { it.isNotBlank() }
                         )
                     )
                 }
@@ -146,11 +156,8 @@ internal object StudyQuizArtifactParser {
     }
 
     fun stripArtifact(value: String): String {
-        val start = value.indexOf(START_MARKER)
-        val end = value.indexOf(END_MARKER)
-        if (start < 0 || end <= start) return value
-        return (value.substring(0, start) + value.substring(end + END_MARKER.length))
-            .trim()
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return value
+        return stripStudyArtifact(value, artifact)
             .ifBlank { "Preparé el cuestionario. Puedes responderlo directamente en NotCan." }
     }
 }
@@ -200,6 +207,90 @@ internal class TuNotChatStore(context: Context) {
         private const val MAX_MESSAGES = 80
     }
 }
+
+private fun extractStudyArtifact(
+    value: String,
+    startMarkers: List<String>,
+    endMarkers: List<String>
+): StudyArtifactSlice? {
+    val markerMatch = startMarkers
+        .mapNotNull { marker -> value.indexOf(marker).takeIf { it >= 0 }?.let { Triple(it, marker.length, marker) } }
+        .minByOrNull { it.first }
+        ?: return null
+    val markerStart = markerMatch.first
+    val contentStart = markerStart + markerMatch.second
+    val explicitEnd = endMarkers
+        .mapNotNull { marker -> value.indexOf(marker, contentStart).takeIf { it >= 0 }?.let { it to marker.length } }
+        .minByOrNull { it.first }
+    val scanLimit = explicitEnd?.first ?: value.length
+    val jsonStart = value.indexOf('{', contentStart).takeIf { it >= contentStart && it < scanLimit } ?: return null
+    val jsonEnd = balancedJsonObjectEnd(value, jsonStart, scanLimit)
+        ?: explicitEnd?.first
+        ?: return null
+    val json = value.substring(jsonStart, jsonEnd).trim()
+    if (json.isBlank()) return null
+    val artifactEnd = explicitEnd
+        ?.takeIf { it.first >= jsonEnd }
+        ?.let { it.first + it.second }
+        ?: jsonEnd
+    return StudyArtifactSlice(json = json, start = markerStart, endExclusive = artifactEnd)
+}
+
+private fun balancedJsonObjectEnd(value: String, start: Int, limit: Int): Int? {
+    var depth = 0
+    var inString = false
+    var escaped = false
+    for (index in start until limit) {
+        val char = value[index]
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                char == '\\' -> escaped = true
+                char == '"' -> inString = false
+            }
+            continue
+        }
+        when (char) {
+            '"' -> inString = true
+            '{' -> depth += 1
+            '}' -> {
+                depth -= 1
+                if (depth == 0) return index + 1
+            }
+        }
+    }
+    return null
+}
+
+private fun stripStudyArtifact(value: String, artifact: StudyArtifactSlice): String =
+    (value.substring(0, artifact.start) + value.substring(artifact.endExclusive))
+        .replace("```json", "")
+        .replace("```", "")
+        .trim()
+
+private fun JSONObject.flexString(vararg aliases: String): String {
+    aliases.forEach { alias -> if (has(alias)) return optString(alias) }
+    val normalized = aliases.mapTo(hashSetOf()) { normalizeStudyKey(it) }
+    val iterator = keys()
+    while (iterator.hasNext()) {
+        val key = iterator.next()
+        if (normalizeStudyKey(key) in normalized) return optString(key)
+    }
+    return ""
+}
+
+private fun JSONObject.flexArray(vararg aliases: String): JSONArray? {
+    aliases.forEach { alias -> optJSONArray(alias)?.let { return it } }
+    val normalized = aliases.mapTo(hashSetOf()) { normalizeStudyKey(it) }
+    val iterator = keys()
+    while (iterator.hasNext()) {
+        val key = iterator.next()
+        if (normalizeStudyKey(key) in normalized) optJSONArray(key)?.let { return it }
+    }
+    return null
+}
+
+private fun normalizeStudyKey(value: String): String = value.lowercase().filter { it.isLetterOrDigit() }
 
 private fun compactStudyText(value: String, maxChars: Int): String {
     val clean = value
