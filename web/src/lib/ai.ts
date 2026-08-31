@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-export type AiProvider = 'auto' | 'local' | 'deepseek' | 'gemini' | 'openai'
+export type AiProvider = 'tunot' | 'local'
 
 export type AiContextItem = {
   title: string
@@ -27,10 +27,7 @@ const LOCAL_URL_KEY = 'notcan-ai-local-url'
 const LOCAL_MODEL_KEY = 'notcan-ai-local-model'
 
 export function getAiProvider(): AiProvider {
-  const value = localStorage.getItem(PROVIDER_KEY)
-  return ['auto', 'local', 'deepseek', 'gemini', 'openai'].includes(value || '')
-    ? value as AiProvider
-    : 'auto'
+  return localStorage.getItem(PROVIDER_KEY) === 'local' ? 'local' : 'tunot'
 }
 
 export function setAiProvider(provider: AiProvider) {
@@ -62,7 +59,7 @@ function buildLocalPrompt(request: AiRequest) {
     `[Fuente ${index + 1}] ${item.title}\n${item.subject ? `Materia: ${item.subject}\n` : ''}${item.classTitle ? `Clase: ${item.classTitle}\n` : ''}${item.body.slice(0, 7000)}`,
   ).join('\n\n')
 
-  return `Eres NotCan AI, asistente académico de una aplicación de estudio.\nReglas: responde en español claro; no inventes autores, citas, páginas ni referencias; si hay material de NotCan, priorízalo; distingue material proporcionado de conocimiento general; conserva literalmente los textos entre comillas cuando debas citarlos.\nTarea: ${modeInstruction}\n\nConsulta del estudiante:\n${request.prompt}${context ? `\n\nMaterial disponible en NotCan:\n${context}` : ''}`
+  return `Eres TuNot, el asistente académico de NotCan.\nReglas: responde en español claro; no inventes autores, citas, páginas ni referencias; si hay material de NotCan, priorízalo; distingue material proporcionado de conocimiento general; conserva literalmente los textos entre comillas cuando debas citarlos.\nTarea: ${modeInstruction}\n\nConsulta del estudiante:\n${request.prompt}${context ? `\n\nMaterial disponible en NotCan:\n${context}` : ''}`
 }
 
 async function askLocal(request: AiRequest): Promise<AiResponse> {
@@ -93,23 +90,78 @@ async function askLocal(request: AiRequest): Promise<AiResponse> {
   }
 }
 
-async function askCloud(request: AiRequest, provider: Exclude<AiProvider, 'local'>): Promise<AiResponse> {
-  if (!supabase) throw new Error('Supabase no está configurado.')
+function cleanText(value: string) {
+  return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function sourceSentences(request: AiRequest) {
+  return (request.context || []).flatMap((item) => cleanText(item.body)
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 35 && sentence.length <= 700)
+    .map((sentence) => ({ sentence, title: item.title, subject: item.subject })))
+}
+
+function fallbackTuNot(request: AiRequest): AiResponse {
+  const rows = sourceSentences(request)
+  if (!rows.length) {
+    return {
+      answer: 'TuNot está disponible sin APIs de pago, pero necesita apuntes o materiales de NotCan para responder en este modo gratuito. Activa “Usar mis apuntes como contexto” o añade material a la materia.',
+      model: 'TuNot gratuito · navegador',
+      provider: 'tunot',
+    }
+  }
+
+  if (request.mode === 'questions') {
+    const answer = rows.slice(0, 6).map((row, index) =>
+      `${index + 1}. Pregunta: ¿Qué explica el material sobre este punto?\n   Respuesta: ${row.sentence}`,
+    ).join('\n\n')
+    return { answer, model: 'TuNot gratuito · navegador', provider: 'tunot' }
+  }
+
+  if (request.mode === 'concept-map') {
+    const nodes = rows.slice(0, 7).map((row, index) =>
+      `${index === rows.length - 1 ? '└' : '├'}─ ${row.subject || row.title}: ${row.sentence}`,
+    ).join('\n')
+    return {
+      answer: `NOTCAN_MAP\nConcepto central: ${request.prompt.slice(0, 120)}\n${nodes}`,
+      model: 'TuNot gratuito · navegador',
+      provider: 'tunot',
+    }
+  }
+
+  const selected = rows.slice(0, request.mode === 'summary' ? 8 : 6)
+  const heading = request.mode === 'summary'
+    ? 'Resumen de TuNot basado en tus materiales:'
+    : 'Según tus materiales de NotCan:'
+  return {
+    answer: `${heading}\n\n${selected.map((row) => `• ${row.sentence}`).join('\n\n')}`,
+    model: 'TuNot gratuito · navegador',
+    provider: 'tunot',
+  }
+}
+
+async function askTuNot(request: AiRequest): Promise<AiResponse> {
+  if (!supabase) return fallbackTuNot(request)
 
   const { data: sessionData } = await supabase.auth.getSession()
-  if (!sessionData.session) throw new Error('Inicia sesión para usar proveedores de IA en la nube.')
+  if (!sessionData.session) return fallbackTuNot(request)
 
-  const { data, error } = await supabase.functions.invoke('notcan-ai', {
-    body: { ...request, provider },
-  })
+  try {
+    const { data, error } = await supabase.functions.invoke('notcan-ai', {
+      body: { ...request, provider: 'tunot' },
+    })
 
-  if (error) throw new Error(error.message || 'No se pudo conectar con NotCan AI.')
-  if (!data?.answer) throw new Error(data?.error || 'NotCan AI no devolvió una respuesta.')
+    if (error) throw error
+    if (!data?.answer) throw new Error(data?.error || 'TuNot no devolvió una respuesta.')
 
-  return {
-    answer: String(data.answer),
-    model: data.model ? String(data.model) : undefined,
-    provider: data.provider ? String(data.provider) : provider,
+    return {
+      answer: String(data.answer),
+      model: data.model ? String(data.model) : 'TuNot gratuito',
+      provider: 'tunot',
+    }
+  } catch {
+    return fallbackTuNot(request)
   }
 }
 
@@ -125,17 +177,5 @@ export async function askNotCanAi(request: AiRequest): Promise<AiResponse> {
     }
   }
 
-  if (selected === 'auto') {
-    const { url } = getLocalAiConfig()
-    if (localStorage.getItem(LOCAL_URL_KEY)) {
-      try {
-        return await askLocal(request)
-      } catch {
-        // Si el equipo local no está disponible, continuamos automáticamente con la nube.
-      }
-    }
-    return askCloud(request, 'auto')
-  }
-
-  return askCloud(request, selected)
+  return askTuNot(request)
 }
