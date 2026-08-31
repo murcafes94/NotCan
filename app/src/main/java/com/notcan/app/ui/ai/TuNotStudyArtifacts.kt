@@ -29,7 +29,9 @@ internal object StudyFlashcardArtifactParser {
     private const val MAX_CARDS = 24
 
     fun parse(value: String): ParsedFlashcardArtifact? {
-        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return null
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS)
+            ?: extractBareStudyArtifact(value) { root -> root.flexArray("cards", "flashcards", "tarjetas") != null }
+            ?: return null
         return runCatching {
             val root = JSONObject(artifact.json)
             val title = compact(root.flexString("title").ifBlank { "Tarjetas de estudio" }, 70)
@@ -57,7 +59,9 @@ internal object StudyFlashcardArtifactParser {
     }
 
     fun stripArtifact(value: String): String {
-        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return value
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS)
+            ?: extractBareStudyArtifact(value) { root -> root.flexArray("cards", "flashcards", "tarjetas") != null }
+            ?: return value
         return stripStudyArtifact(value, artifact)
             .ifBlank { "Preparé las tarjetas. Puedes abrirlas y comenzar el repaso." }
     }
@@ -98,7 +102,9 @@ internal object StudyQuizArtifactParser {
     private const val MAX_QUESTIONS = 30
 
     fun parse(value: String): ParsedQuizArtifact? {
-        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return null
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS)
+            ?: extractBareStudyArtifact(value) { root -> root.flexArray("questions", "preguntas") != null }
+            ?: return null
         return runCatching {
             val root = JSONObject(artifact.json)
             val title = compactStudyText(root.flexString("title").ifBlank { "Cuestionario" }, 80)
@@ -156,7 +162,9 @@ internal object StudyQuizArtifactParser {
     }
 
     fun stripArtifact(value: String): String {
-        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS) ?: return value
+        val artifact = extractStudyArtifact(value, START_MARKERS, END_MARKERS)
+            ?: extractBareStudyArtifact(value) { root -> root.flexArray("questions", "preguntas") != null }
+            ?: return value
         return stripStudyArtifact(value, artifact)
             .ifBlank { "Preparé el cuestionario. Puedes responderlo directamente en NotCan." }
     }
@@ -234,6 +242,18 @@ private fun extractStudyArtifact(
         ?.let { it.first + it.second }
         ?: jsonEnd
     return StudyArtifactSlice(json = json, start = markerStart, endExclusive = artifactEnd)
+}
+
+private fun extractBareStudyArtifact(
+    value: String,
+    signature: (JSONObject) -> Boolean
+): StudyArtifactSlice? {
+    val jsonStart = value.indexOf('{').takeIf { it >= 0 } ?: return null
+    val jsonEnd = balancedJsonObjectEnd(value, jsonStart, value.length) ?: return null
+    val json = value.substring(jsonStart, jsonEnd).trim()
+    val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    if (!signature(root)) return null
+    return StudyArtifactSlice(json = json, start = jsonStart, endExclusive = jsonEnd)
 }
 
 private fun balancedJsonObjectEnd(value: String, start: Int, limit: Int): Int? {

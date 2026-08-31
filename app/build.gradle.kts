@@ -59,8 +59,10 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.8.0"
+        versionCode = 18
+        versionName = "0.8.1"
+        buildConfigField("String", "SUPABASE_URL", "\"https://xpkxvhnttquvnbcfnbck.supabase.co\"")
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_wTChkG7BwOd00sz67lOWDQ_dZ8XdYpV\"")
     }
 
     signingConfigs {

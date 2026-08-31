@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
     private val extrasViewModel: AcademicExtrasViewModel by viewModels()
     private val preferences by lazy { NotCanPreferences(this) }
     private val mistralCredentials by lazy { MistralCredentialsStore(this) }
-    private val recordingRepository by lazy { StudyRepository(NotCanDatabase.getInstance(this).dao()) }
+    private val recordingRepository by lazy { StudyRepository(NotCanDatabase.getInstance(this).dao(), this) }
     private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
     private var pendingNoteClassId: String? = null

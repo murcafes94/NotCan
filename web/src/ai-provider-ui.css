@@ -88,3 +88,6 @@
     grid-template-columns: 1fr;
   }
 }
+
+.ai-provider-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ai-mistral-settings input[type='password'] { font-family: inherit; }

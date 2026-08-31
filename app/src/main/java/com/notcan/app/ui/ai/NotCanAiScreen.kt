@@ -314,9 +314,19 @@ private fun messageFromRaw(role: ChatRole, raw: String): ChatMessage {
         map != null -> StudyMapArtifactParser.stripArtifact(raw)
         deck != null -> StudyFlashcardArtifactParser.stripArtifact(raw)
         quiz != null -> StudyQuizArtifactParser.stripArtifact(raw)
-        else -> raw
+        else -> sanitizeUnparsedArtifact(raw)
     }
     return ChatMessage(role, visible, raw, map, deck, quiz)
+}
+
+private fun sanitizeUnparsedArtifact(raw: String): String {
+    val looksStructured = raw.contains("NOTCAN_", ignoreCase = true) ||
+        (raw.trimStart().startsWith("{") && (
+            raw.contains("\"nodes\"") || raw.contains("\"cards\"") || raw.contains("\"questions\"")
+        ))
+    return if (looksStructured) {
+        "TuNot generó un recurso de estudio, pero el formato llegó incompleto. Vuelve a generarlo para abrirlo de forma interactiva."
+    } else raw
 }
 
 @Composable

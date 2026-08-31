@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-export type AiProvider = 'auto' | 'local' | 'deepseek' | 'gemini' | 'openai'
+export type AiProvider = 'auto' | 'local' | 'mistral' | 'free'
 
 export type AiContextItem = {
   title: string
@@ -25,10 +25,12 @@ export type AiResponse = {
 const PROVIDER_KEY = 'notcan-ai-provider'
 const LOCAL_URL_KEY = 'notcan-ai-local-url'
 const LOCAL_MODEL_KEY = 'notcan-ai-local-model'
+const MISTRAL_AGENT_KEY = 'notcan-mistral-agent-id'
+const MISTRAL_API_SESSION_KEY = 'notcan-mistral-api-key-session'
 
 export function getAiProvider(): AiProvider {
   const value = localStorage.getItem(PROVIDER_KEY)
-  return ['auto', 'local', 'deepseek', 'gemini', 'openai'].includes(value || '')
+  return ['auto', 'local', 'mistral', 'free'].includes(value || '')
     ? value as AiProvider
     : 'auto'
 }
@@ -49,6 +51,26 @@ export function setLocalAiConfig(url: string, model: string) {
   localStorage.setItem(LOCAL_MODEL_KEY, model.trim() || 'qwen3:1.7b')
 }
 
+export function getMistralConfig() {
+  return {
+    agentId: localStorage.getItem(MISTRAL_AGENT_KEY) || '',
+    apiKey: sessionStorage.getItem(MISTRAL_API_SESSION_KEY) || '',
+  }
+}
+
+export function setMistralConfig(agentId: string, apiKey?: string) {
+  localStorage.setItem(MISTRAL_AGENT_KEY, agentId.trim())
+  if (apiKey !== undefined) {
+    const clean = apiKey.trim()
+    if (clean) sessionStorage.setItem(MISTRAL_API_SESSION_KEY, clean)
+    else sessionStorage.removeItem(MISTRAL_API_SESSION_KEY)
+  }
+}
+
+export function clearMistralSessionKey() {
+  sessionStorage.removeItem(MISTRAL_API_SESSION_KEY)
+}
+
 function buildLocalPrompt(request: AiRequest) {
   const modeInstruction = request.mode === 'summary'
     ? 'Resume el material de forma clara, fiel y útil para estudiar.'
@@ -62,7 +84,7 @@ function buildLocalPrompt(request: AiRequest) {
     `[Fuente ${index + 1}] ${item.title}\n${item.subject ? `Materia: ${item.subject}\n` : ''}${item.classTitle ? `Clase: ${item.classTitle}\n` : ''}${item.body.slice(0, 7000)}`,
   ).join('\n\n')
 
-  return `Eres NotCan AI, asistente académico de una aplicación de estudio.\nReglas: responde en español claro; no inventes autores, citas, páginas ni referencias; si hay material de NotCan, priorízalo; distingue material proporcionado de conocimiento general; conserva literalmente los textos entre comillas cuando debas citarlos.\nTarea: ${modeInstruction}\n\nConsulta del estudiante:\n${request.prompt}${context ? `\n\nMaterial disponible en NotCan:\n${context}` : ''}`
+  return `Eres TuNot, el asistente académico de NotCan. Responde en español claro; no inventes autores, citas, páginas ni referencias; si hay material de NotCan, úsalo como contexto y distingue lo que procede de las fuentes. Conserva literalmente los textos entre comillas cuando debas citarlos.\nTarea: ${modeInstruction}\n\nConsulta del estudiante:\n${request.prompt}${context ? `\n\nMaterial disponible en NotCan:\n${context}` : ''}`
 }
 
 async function askLocal(request: AiRequest): Promise<AiResponse> {
@@ -93,14 +115,24 @@ async function askLocal(request: AiRequest): Promise<AiResponse> {
   }
 }
 
-async function askCloud(request: AiRequest, provider: Exclude<AiProvider, 'local'>): Promise<AiResponse> {
+async function askCloud(request: AiRequest, provider: 'auto' | 'mistral' | 'free'): Promise<AiResponse> {
   if (!supabase) throw new Error('Supabase no está configurado.')
 
   const { data: sessionData } = await supabase.auth.getSession()
-  if (!sessionData.session) throw new Error('Inicia sesión para usar proveedores de IA en la nube.')
+  if (!sessionData.session) throw new Error('Inicia sesión para usar NotCan AI en la nube.')
+
+  const mistral = getMistralConfig()
+  if (provider === 'mistral' && (!mistral.agentId || !mistral.apiKey)) {
+    throw new Error('Configura el Agent ID y la API key de Mistral. La clave se conserva solo durante esta sesión del navegador.')
+  }
 
   const { data, error } = await supabase.functions.invoke('notcan-ai', {
-    body: { ...request, provider },
+    body: {
+      ...request,
+      provider,
+      mistralAgentId: mistral.agentId || undefined,
+      mistralApiKey: mistral.apiKey || undefined,
+    },
   })
 
   if (error) throw new Error(error.message || 'No se pudo conectar con NotCan AI.')
@@ -126,12 +158,12 @@ export async function askNotCanAi(request: AiRequest): Promise<AiResponse> {
   }
 
   if (selected === 'auto') {
-    const { url } = getLocalAiConfig()
     if (localStorage.getItem(LOCAL_URL_KEY)) {
       try {
         return await askLocal(request)
       } catch {
-        // Si el equipo local no está disponible, continuamos automáticamente con la nube.
+        // Si el equipo local no está disponible, continuamos con Mistral (si está configurado)
+        // o con el modo gratuito basado en las fuentes de NotCan.
       }
     }
     return askCloud(request, 'auto')

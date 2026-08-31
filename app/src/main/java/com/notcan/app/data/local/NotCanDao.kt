@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -63,11 +64,34 @@ interface NotCanDao {
     @Query("SELECT * FROM class_sessions WHERE id = :classId LIMIT 1")
     suspend fun getClassSession(classId: String): ClassSessionEntity?
 
+    @Query("SELECT * FROM note_pages WHERE id = :noteId LIMIT 1")
+    suspend fun getNotePage(noteId: String): NotePageEntity?
+
+    @Query("SELECT * FROM grade_items WHERE id = :itemId LIMIT 1")
+    suspend fun getGradeItem(itemId: String): GradeItemEntity?
+
+    @Query("SELECT * FROM study_cycles")
+    suspend fun getAllCycles(): List<StudyCycleEntity>
+    @Query("SELECT * FROM subjects")
+    suspend fun getAllSubjects(): List<SubjectEntity>
+    @Query("SELECT * FROM class_sessions")
+    suspend fun getAllClassSessions(): List<ClassSessionEntity>
+    @Query("SELECT * FROM note_pages")
+    suspend fun getAllNotePages(): List<NotePageEntity>
+    @Query("SELECT * FROM grade_items")
+    suspend fun getAllGradeItems(): List<GradeItemEntity>
+
     @Query("SELECT * FROM subjects WHERE cycleId = :cycleId")
     suspend fun getSubjectsForCycle(cycleId: String): List<SubjectEntity>
 
     @Query("SELECT c.* FROM class_sessions c INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
     suspend fun getClassesForCycle(cycleId: String): List<ClassSessionEntity>
+
+    @Query("SELECT n.* FROM note_pages n INNER JOIN class_sessions c ON n.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
+    suspend fun getNotesForCycle(cycleId: String): List<NotePageEntity>
+
+    @Query("SELECT g.* FROM grade_items g INNER JOIN subjects s ON g.subjectId = s.id WHERE s.cycleId = :cycleId")
+    suspend fun getGradesForCycle(cycleId: String): List<GradeItemEntity>
 
     @Query("SELECT COUNT(*) FROM class_sessions WHERE subjectId = :subjectId")
     suspend fun countClassesForSubject(subjectId: String): Int
@@ -108,6 +132,17 @@ interface NotCanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVocabularyTerm(term: AcademicVocabularyTermEntity)
 
+    @Upsert
+    suspend fun upsertCycle(cycle: StudyCycleEntity)
+    @Upsert
+    suspend fun upsertSubject(subject: SubjectEntity)
+    @Upsert
+    suspend fun upsertClassSession(classSession: ClassSessionEntity)
+    @Upsert
+    suspend fun upsertNotePage(notePage: NotePageEntity)
+    @Upsert
+    suspend fun upsertGradeItem(item: GradeItemEntity)
+
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
     @Query("UPDATE study_cycles SET isActive = 1 WHERE id = :cycleId")
@@ -138,6 +173,10 @@ interface NotCanDao {
 
     @Query("DELETE FROM note_pages WHERE id = :noteId")
     suspend fun deleteNotePage(noteId: String)
+    @Query("DELETE FROM class_sessions WHERE id = :classId")
+    suspend fun deleteClassSession(classId: String)
+    @Query("DELETE FROM subjects WHERE id = :subjectId")
+    suspend fun deleteSubject(subjectId: String)
     @Query("DELETE FROM document_resources WHERE id = :documentId")
     suspend fun deleteDocument(documentId: String)
     @Query("DELETE FROM pdf_ink_strokes WHERE id = :strokeId")

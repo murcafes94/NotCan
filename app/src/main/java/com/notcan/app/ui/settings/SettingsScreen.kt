@@ -140,6 +140,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             }
         }
 
+        SupabaseAccountSection()
+
         AcademicPeriodSettings(
             cycle = activeCycle,
             onSave = { start, end ->

@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/AuthGate.tsx","./src/ai-provider-ui.ts","./src/main.tsx","./src/password-recovery.ts","./src/vite-env.d.ts","./src/lib/ai.ts","./src/lib/db.ts","./src/lib/supabase.ts","./src/lib/sync.ts","./src/types/sync.ts"],"version":"5.9.3"}

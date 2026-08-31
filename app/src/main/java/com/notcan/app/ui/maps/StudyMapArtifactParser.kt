@@ -40,7 +40,7 @@ internal object StudyMapArtifactParser {
         val markerMatch = START_MARKERS
             .mapNotNull { marker -> value.indexOf(marker).takeIf { it >= 0 }?.let { Triple(it, marker.length, marker) } }
             .minByOrNull { it.first }
-            ?: return null
+            ?: return extractBareArtifact(value)
         val markerStart = markerMatch.first
         val contentStart = markerStart + markerMatch.second
 
@@ -60,6 +60,20 @@ internal object StudyMapArtifactParser {
             ?.let { it.first + it.second }
             ?: jsonEnd
         return MapArtifactSlice(json = json, start = markerStart, endExclusive = artifactEnd)
+    }
+
+    private fun extractBareArtifact(value: String): MapArtifactSlice? {
+        val jsonStart = value.indexOf('{').takeIf { it >= 0 } ?: return null
+        val jsonEnd = balancedObjectEnd(value, jsonStart, value.length) ?: return null
+        val json = value.substring(jsonStart, jsonEnd).trim()
+        val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
+        val nodes = root.flexArray("nodes") ?: return null
+        if (nodes.length() == 0) return null
+        val type = root.flexString("type").lowercase()
+        val edges = root.flexArray("edges")
+        val looksLikeMap = type in setOf("mind_map", "concept_map", "conceptual", "concept") || edges != null
+        if (!looksLikeMap) return null
+        return MapArtifactSlice(json = json, start = jsonStart, endExclusive = jsonEnd)
     }
 
     private fun balancedObjectEnd(value: String, start: Int, limit: Int): Int? {

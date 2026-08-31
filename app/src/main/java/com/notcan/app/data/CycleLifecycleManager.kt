@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
  */
 class CycleLifecycleManager(context: Context) {
     private val app = context.applicationContext
-    private val repository = StudyRepository(NotCanDatabase.getInstance(app).dao())
+    private val repository = StudyRepository(NotCanDatabase.getInstance(app).dao(), app)
     private val sourceStore = ClassSourceStore(app)
 
     data class CyclePreview(

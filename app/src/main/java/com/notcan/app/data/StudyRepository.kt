@@ -1,5 +1,6 @@
 package com.notcan.app.data
 
+import android.content.Context
 import com.notcan.app.data.local.AcademicVocabularyTermEntity
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
@@ -14,10 +15,15 @@ import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.SubjectScheduleEntity
 import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.sync.SyncChangeStore
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
-class StudyRepository(private val dao: NotCanDao) {
+class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
+    private val syncChanges = context?.applicationContext?.let { SyncChangeStore(it) }
+
+    private fun markUpsert(entity: String, id: String) { syncChanges?.markUpsert(entity, id) }
+    private fun markDelete(entity: String, id: String) { syncChanges?.markDelete(entity, id) }
     fun observeCycles(): Flow<List<StudyCycleEntity>> = dao.observeCycles()
     fun observeSubjects(cycleId: String): Flow<List<SubjectEntity>> = dao.observeSubjects(cycleId)
     fun observeSchedules(cycleId: String): Flow<List<SubjectScheduleEntity>> = dao.observeSchedules(cycleId)
@@ -38,12 +44,19 @@ class StudyRepository(private val dao: NotCanDao) {
         val cycle = StudyCycleEntity(UUID.randomUUID().toString(), name.trim(), makeActive, now)
         if (makeActive) dao.deactivateAllCycles()
         dao.insertCycle(cycle)
+        if (makeActive) dao.getAllCycles().forEach { markUpsert("study_cycles", it.id) }
+        else markUpsert("study_cycles", cycle.id)
         return cycle
     }
 
-    suspend fun setActiveCycle(cycleId: String) = dao.setActiveCycle(cycleId)
-    suspend fun updateCycleDates(cycleId: String, startEpochDay: Long, endEpochDay: Long) =
+    suspend fun setActiveCycle(cycleId: String) {
+        dao.setActiveCycle(cycleId)
+        dao.getAllCycles().forEach { markUpsert("study_cycles", it.id) }
+    }
+    suspend fun updateCycleDates(cycleId: String, startEpochDay: Long, endEpochDay: Long) {
         dao.updateCycleDates(cycleId, startEpochDay, endEpochDay)
+        markUpsert("study_cycles", cycleId)
+    }
 
     suspend fun createSubject(cycleId: String, name: String): SubjectEntity {
         val subject = SubjectEntity(
@@ -53,6 +66,7 @@ class StudyRepository(private val dao: NotCanDao) {
             createdAtEpochMs = System.currentTimeMillis()
         )
         dao.insertSubject(subject)
+        markUpsert("subjects", subject.id)
         return subject
     }
 
@@ -107,6 +121,7 @@ class StudyRepository(private val dao: NotCanDao) {
             createdAtEpochMs = now
         )
         dao.insertClassSession(classSession)
+        markUpsert("class_sessions", classSession.id)
         return classSession
     }
 
@@ -129,6 +144,7 @@ class StudyRepository(private val dao: NotCanDao) {
             plannedEndEpochMs = occurrenceEndEpochMs
         )
         dao.insertClassSession(session)
+        markUpsert("class_sessions", session.id)
         return session
     }
 
@@ -143,6 +159,7 @@ class StudyRepository(private val dao: NotCanDao) {
             updatedAtEpochMs = now
         )
         dao.insertNotePage(note)
+        markUpsert("note_pages", note.id)
         return note
     }
 
@@ -159,6 +176,7 @@ class StudyRepository(private val dao: NotCanDao) {
             createdAtEpochMs = System.currentTimeMillis()
         )
         dao.insertGradeItem(item)
+        markUpsert("grade_items", item.id)
         return item
     }
 
@@ -171,13 +189,29 @@ class StudyRepository(private val dao: NotCanDao) {
     suspend fun cycleFilePaths(cycleId: String): List<String> =
         (dao.getAudioPathsForCycle(cycleId) + dao.getDocumentPathsForCycle(cycleId)).distinct()
     suspend fun cycleCalendarEventIds(cycleId: String): List<Long> = dao.getCalendarEventIdsForCycle(cycleId)
-    suspend fun deleteCycleData(cycleId: String) = dao.deleteCycleData(cycleId)
+    suspend fun deleteCycleData(cycleId: String) {
+        dao.getNotesForCycle(cycleId).forEach { markDelete("note_pages", it.id) }
+        dao.getGradesForCycle(cycleId).forEach { markDelete("grade_items", it.id) }
+        dao.getClassesForCycle(cycleId).forEach { markDelete("class_sessions", it.id) }
+        dao.getSubjectsForCycle(cycleId).forEach { markDelete("subjects", it.id) }
+        markDelete("study_cycles", cycleId)
+        dao.deleteCycleData(cycleId)
+    }
 
-    suspend fun deleteGradeItem(itemId: String) = dao.deleteGradeItem(itemId)
+    suspend fun deleteGradeItem(itemId: String) {
+        markDelete("grade_items", itemId)
+        dao.deleteGradeItem(itemId)
+    }
     suspend fun saveDetectedCue(cue: DetectedCueEntity) = dao.insertDetectedCue(cue)
     suspend fun deleteDetectedCuesForTranscript(transcriptId: String) = dao.deleteDetectedCuesForTranscript(transcriptId)
-    suspend fun saveNotePage(notePage: NotePageEntity) = dao.insertNotePage(notePage)
-    suspend fun deleteNotePage(noteId: String) = dao.deleteNotePage(noteId)
+    suspend fun saveNotePage(notePage: NotePageEntity) {
+        dao.insertNotePage(notePage)
+        markUpsert("note_pages", notePage.id)
+    }
+    suspend fun deleteNotePage(noteId: String) {
+        markDelete("note_pages", noteId)
+        dao.deleteNotePage(noteId)
+    }
     suspend fun saveDocument(document: DocumentResourceEntity) = dao.insertDocument(document)
     suspend fun saveAudioRecording(audioRecording: AudioRecordingEntity) = dao.insertAudioRecording(audioRecording)
     suspend fun deleteAudio(audioId: String) = dao.deleteAudioAndMoments(audioId)

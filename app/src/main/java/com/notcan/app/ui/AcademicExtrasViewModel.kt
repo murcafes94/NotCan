@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class AcademicExtrasViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = StudyRepository(NotCanDatabase.getInstance(application).dao())
+    private val repository = StudyRepository(NotCanDatabase.getInstance(application).dao(), application)
     private val subjectId = MutableStateFlow<String?>(null)
     private val classId = MutableStateFlow<String?>(null)
 

@@ -22,6 +22,7 @@ import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.sources.ClassSourceStore
 import com.notcan.app.ui.home.NoteDocxImporter
+import com.notcan.app.sync.SupabaseSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,8 +39,9 @@ import java.io.File
 import java.util.UUID
 
 class NotCanViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = StudyRepository(NotCanDatabase.getInstance(application).dao())
+    private val repository = StudyRepository(NotCanDatabase.getInstance(application).dao(), application)
     private val aiService = NotCanAiService(application)
+    private val syncManager = SupabaseSyncManager(application)
     private val sourceStore = ClassSourceStore(application)
     private val studyModelManager = StudyModelManager(application)
     private val whisperModelManager = WhisperModelManager(application)
@@ -98,6 +100,9 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (syncManager.isSignedIn()) runCatching { syncManager.syncNow() }
+        }
         viewModelScope.launch {
             cycles.collect { list ->
                 if (_selectedCycleId.value == null || list.none { it.id == _selectedCycleId.value }) {
