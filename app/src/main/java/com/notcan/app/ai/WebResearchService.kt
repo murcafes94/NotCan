@@ -209,12 +209,21 @@ class WebResearchService(context: Context) {
         private const val MOBILE_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36 NotCan/0.8"
 
         fun shouldAutoSearch(question: String): Boolean {
-            val q = question.lowercase()
-            return listOf(
-                "busca", "buscar", "web", "internet", "en línea", "online", "fuente reciente",
-                "hoy", "actualmente", "actual", "reciente", "última", "último", "noticia", "vigente",
-                "quién es ahora", "qué pasó", "este año", "2026"
-            ).any { it in q }
+            val q = question.lowercase().trim()
+            if (q.length < 3) return false
+
+            // In Auto, the web is the default research layer. We only stay local when the wording
+            // clearly asks TuNot to work from material already stored in the current class.
+            val localOnlyHints = listOf(
+                "mis apuntes", "mis fuentes", "esta transcripción", "la transcripción",
+                "según mis apuntes", "según la transcripción", "según el profesor",
+                "material de esta clase", "material de clase", "este documento",
+                "este pdf", "este epub", "este archivo", "lo que grabé", "lo que anoté",
+                "resume mis", "resume esta clase", "resume el documento"
+            )
+            if (localOnlyHints.any { it in q }) return false
+
+            return true
         }
 
         private fun isHttpUrl(value: String): Boolean = value.startsWith("https://") || value.startsWith("http://")

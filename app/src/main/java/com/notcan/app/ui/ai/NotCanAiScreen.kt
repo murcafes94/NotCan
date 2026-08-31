@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Quiz
@@ -34,6 +35,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -447,23 +450,73 @@ private fun CompactAiTools(
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var sourceMenuExpanded by remember { mutableStateOf(false) }
+    val modeName = when (sourceMode) {
+        0 -> "Mis fuentes"
+        2 -> "Web"
+        else -> "Automático"
+    }
+    val modeDescription = when (sourceMode) {
+        0 -> "Solo apuntes, transcripciones, documentos y webs guardadas."
+        2 -> "Siempre investiga en la web antes de responder."
+        else -> "Investiga en la web automáticamente, salvo que pidas trabajar con tus fuentes."
+    }
+
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Fuentes de respuesta", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(selected = sourceMode == 0, onClick = { onSourceModeChange(0) }, label = { Text("Mis fuentes") })
-                FilterChip(selected = sourceMode == 1, onClick = { onSourceModeChange(1) }, label = { Text("Auto") })
-                FilterChip(selected = sourceMode == 2, onClick = { onSourceModeChange(2) }, label = { Text("Web") })
+            Text("Modo de búsqueda", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
+            Box(Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { sourceMenuExpanded = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(modeName, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Elegir modo")
+                }
+                DropdownMenu(
+                    expanded = sourceMenuExpanded,
+                    onDismissRequest = { sourceMenuExpanded = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Automático", fontWeight = FontWeight.SemiBold)
+                                Text("Web cuando haga falta", style = MaterialTheme.typography.bodySmall, color = NotCanGray)
+                            }
+                        },
+                        onClick = {
+                            onSourceModeChange(1)
+                            sourceMenuExpanded = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Mis fuentes", fontWeight = FontWeight.SemiBold)
+                                Text("Solo material guardado", style = MaterialTheme.typography.bodySmall, color = NotCanGray)
+                            }
+                        },
+                        onClick = {
+                            onSourceModeChange(0)
+                            sourceMenuExpanded = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Web", fontWeight = FontWeight.SemiBold)
+                                Text("Buscar siempre en Internet", style = MaterialTheme.typography.bodySmall, color = NotCanGray)
+                            }
+                        },
+                        onClick = {
+                            onSourceModeChange(2)
+                            sourceMenuExpanded = false
+                        }
+                    )
+                }
             }
-            Text(
-                when (sourceMode) {
-                    0 -> "Solo material guardado en NotCan"
-                    2 -> "Busca en DuckDuckGo antes de responder"
-                    else -> "Busca solo cuando la pregunta necesita información externa o actual"
-                },
-                color = NotCanGray,
-                style = MaterialTheme.typography.bodySmall
-            )
+            Text(modeDescription, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             FilterChip(selected = socraticMode, onClick = { onSocraticChange(!socraticMode) }, label = { Text("Socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
             if (hasMessages) TextButton(onClick = onClear) { Text("Nueva conversación") }
         }
