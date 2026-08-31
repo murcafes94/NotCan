@@ -5,22 +5,44 @@
 NotCan Web no replica una base SQLite de Android. Cada cliente mantiene su propia base local y sincroniza registros mediante UUID estables.
 
 ```text
-Android (Room)  <->  Backend NotCan  <->  Web/PWA (IndexedDB)
+Android (Room)  <->  Supabase  <->  Web/PWA (IndexedDB)
+                       |
+                       +-- Auth
+                       +-- PostgreSQL + RLS
+                       +-- Realtime / Edge Functions
+                       |
+                       +-- metadatos de archivos
+                               |
+                               +--> Cloudflare R2 (respaldo remoto opcional)
 ```
 
-La aplicación debe seguir siendo utilizable sin Internet en ambos extremos.
+La aplicación debe seguir siendo utilizable sin Internet en ambos extremos y su funcionamiento esencial no puede depender de una API de pago.
+
+## Backend principal: Supabase
+
+Supabase es el servidor principal de NotCan para:
+
+- autenticación;
+- datos académicos estructurados;
+- sincronización Android/Web;
+- RLS por `user_id`;
+- Realtime cuando aporte valor;
+- funciones auxiliares como TuNot.
+
+La web y Android comparten los mismos identificadores y el mismo modelo de propiedad por usuario.
 
 ## Primera superficie sincronizable
 
-La primera fase comparte:
+La base compartida incluye:
 
-- `study_cycles`
-- `subjects`
-- `class_sessions`
-- `note_pages`
-- `grade_items`
+- `study_cycles`;
+- `subjects`;
+- `class_sessions`;
+- `note_pages`;
+- `grade_items`;
+- `file_assets` para metadatos de documentos y respaldos.
 
-Se añadirán después horarios, transcripciones, documentos, anotaciones PDF, marcadores, mapas y demás recursos.
+Se añadirán después horarios, transcripciones completas, anotaciones PDF, marcadores, mapas, tarjetas y otros recursos.
 
 ## Metadatos de sincronización
 
@@ -46,11 +68,33 @@ Cuando hay conexión:
 
 Esto evita que un fallo de red haga perder un apunte.
 
-## Archivos grandes
+## Archivos grandes: local primero, R2 después
 
-La sincronización de datos no debe subir automáticamente los audios. PDF, EPUB, DOCX y audio usarán Storage y una política de subida distinta.
+PDF, DOCX, EPUB, TXT, imágenes, backups y audio no se mezclan con la sincronización ordinaria de filas.
 
-Para grabaciones se mantendrá una opción explícita de respaldo/sincronización, porque una sola clase puede producir cientos de MB.
+La política es:
+
+1. al importar desde la web, el archivo real se guarda primero en IndexedDB;
+2. `file_assets` conserva metadatos como nombre, tamaño, MIME, materia/clase y proveedor de almacenamiento;
+3. `storage_provider = local` indica que solo existe en el dispositivo;
+4. `storage_provider = r2` indica un respaldo remoto en Cloudflare R2 y exige `object_key`;
+5. los audios nunca se suben automáticamente: el usuario decide cuándo respaldarlos.
+
+Así Supabase no se usa como depósito principal de archivos pesados y el funcionamiento local no depende de R2.
+
+## TuNot
+
+TuNot es el asistente académico propio de NotCan. La ruta gratuita es la predeterminada.
+
+En la web:
+
+- prioriza apuntes y materiales del usuario;
+- puede resumir, generar preguntas y producir mapas conceptuales textuales;
+- se ejecuta mediante una Edge Function de Supabase sin requerir claves de Gemini, OpenAI, DeepSeek ni otros proveedores de pago;
+- si el backend no está disponible, existe una respuesta básica en el navegador basada en las fuentes locales;
+- Ollama queda como motor local opcional para quien quiera un modelo generativo en su propio equipo.
+
+La aplicación no debe enviar secretos privados al navegador ni incluir claves de proveedores externos en el repositorio.
 
 ## Conflictos
 
@@ -64,6 +108,10 @@ Para apuntes de texto se propone:
 
 ## Seguridad
 
-El esquema Supabase usa `user_id` y Row Level Security. Un usuario autenticado solo puede leer y modificar sus propios registros.
+Todas las tablas expuestas que contienen datos del usuario usan Row Level Security. `file_assets` limita SELECT/INSERT/UPDATE/DELETE al propietario autenticado mediante `auth.uid() = user_id`.
 
-Las claves privadas de servicios externos nunca deben quedar en la PWA. Solo se utilizan claves públicas/anon admitidas por el proveedor; secretos de IA y operaciones privilegiadas deben ejecutarse en backend/Edge Functions.
+Los archivos remotos deberán servirse mediante una capa autenticada que valide al usuario antes de emitir una operación o URL temporal de R2. Las credenciales de R2 nunca deben estar en la PWA ni en el APK.
+
+## Regla de costos
+
+La arquitectura base se diseña para funcionar dentro de planes gratuitos. Una integración que pueda generar cobros no puede convertirse en requisito silencioso del funcionamiento de NotCan. Si en el futuro se añade un proveedor de pago, deberá ser explícitamente opcional.
