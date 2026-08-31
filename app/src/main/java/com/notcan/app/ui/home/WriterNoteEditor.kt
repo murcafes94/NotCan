@@ -1,12 +1,11 @@
 package com.notcan.app.ui.home
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.view.ActionMode
-import android.view.Menu
-import android.view.MenuItem
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -170,7 +169,7 @@ internal fun WriterNoteEditor(
             AndroidView(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 factory = {
-                    WebView(context).apply {
+                    NotCanWriterWebView(context).apply {
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = false
@@ -179,20 +178,6 @@ internal fun WriterNoteEditor(
                         settings.setSupportZoom(false)
                         isVerticalScrollBarEnabled = true
                         webViewClient = WebViewClient()
-                        setCustomSelectionActionModeCallback(object : ActionMode.Callback {
-                            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                                menu.clear()
-                                return true
-                            }
-
-                            override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
-                                menu.clear()
-                                return true
-                            }
-
-                            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
-                            override fun onDestroyActionMode(mode: ActionMode) = Unit
-                        })
                         addJavascriptInterface(NoteBridge { newHtml -> html = newHtml }, "NotCanBridge")
                         loadDataWithBaseURL(null, writerDocument(html), "text/html", "UTF-8", null)
                         webView = this
@@ -211,6 +196,11 @@ internal fun WriterNoteEditor(
         confirmButton = { TextButton(onClick = { confirmDelete = false; onDeleteNote() }) { Text("Eliminar", color = NotCanRed) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
     )
+}
+
+private class NotCanWriterWebView(context: Context) : WebView(context) {
+    override fun startActionMode(callback: ActionMode.Callback?): ActionMode? = null
+    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? = null
 }
 
 @Composable
