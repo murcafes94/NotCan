@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -94,9 +95,12 @@ internal fun StudyQuizScreen(
 
     Dialog(
         onDismissRequest = onBack,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Surface(
+            modifier = Modifier.fillMaxSize().systemBarsPadding(),
+            color = MaterialTheme.colorScheme.background
+        ) {
             if (finished) {
                 QuizResults(
                     quiz = quiz,
@@ -245,7 +249,7 @@ internal fun StudyQuizScreen(
                         // Reserva el inset del sistema fuera del botón para que la navegación
                         // del cuestionario quede siempre sobre Atrás / Inicio / Recientes.
                         Surface(
-                            modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+                            modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.background,
                             tonalElevation = 4.dp
                         ) {

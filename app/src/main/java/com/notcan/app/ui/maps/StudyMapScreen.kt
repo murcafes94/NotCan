@@ -68,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 private val branchColors = listOf(
     Color(0xFF3478F6),
@@ -324,8 +325,42 @@ fun StudyMapScreen(
                         val startY = from.y + from.height / 2f
                         val endX = if (horizontal) to.x else to.x + to.width / 2f
                         val endY = to.y + to.height / 2f
-                        val labelX = (startX + endX) / 2f - 45f
-                        val labelY = (startY + endY) / 2f - 14f
+                        val dx = endX - startX
+                        val dy = endY - startY
+                        val length = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                        val perpendicularX = -dy / length
+                        val perpendicularY = dx / length
+                        val labelWidthPx = ((label.length * 7.6f + 30f).coerceIn(92f, 220f)) * densityScale
+                        val labelHeightPx = (if (label.length > 18) 48f else 36f) * densityScale
+                        val marginPx = 18f * densityScale
+
+                        fun collidesWithNode(x: Float, y: Float): Boolean = nodes.any { node ->
+                            val separated = x + labelWidthPx + marginPx < node.x ||
+                                x - marginPx > node.x + node.width ||
+                                y + labelHeightPx + marginPx < node.y ||
+                                y - marginPx > node.y + node.height
+                            !separated
+                        }
+
+                        var labelX = startX + dx * 0.5f - labelWidthPx / 2f
+                        var labelY = startY + dy * 0.5f - labelHeightPx / 2f
+                        val fractions = floatArrayOf(0.50f, 0.38f, 0.62f, 0.27f, 0.73f)
+                        val perpendicularOffsetsDp = floatArrayOf(0f, 34f, -34f, 62f, -62f, 92f, -92f)
+                        var foundFreeSpot = false
+                        for (fraction in fractions) {
+                            if (foundFreeSpot) break
+                            for (offsetDp in perpendicularOffsetsDp) {
+                                val offsetPx = offsetDp * densityScale
+                                val candidateX = startX + dx * fraction + perpendicularX * offsetPx - labelWidthPx / 2f
+                                val candidateY = startY + dy * fraction + perpendicularY * offsetPx - labelHeightPx / 2f
+                                if (!collidesWithNode(candidateX, candidateY)) {
+                                    labelX = candidateX
+                                    labelY = candidateY
+                                    foundFreeSpot = true
+                                    break
+                                }
+                            }
+                        }
                         Surface(
                             modifier = Modifier
                                 .offset { IntOffset(labelX.roundToInt(), labelY.roundToInt()) }

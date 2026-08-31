@@ -254,15 +254,68 @@ object StudyMapLayoutEngine {
     }
 
     private fun constellation(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
-        val base = radial(map, width, height)
-        val jittered = base.mapIndexed { index, positioned ->
-            if (positioned.node.id == map.rootNodeId) positioned
-            else positioned.copy(
-                x = positioned.x + ((((index * 37) % 17) - 8) * 5f),
-                y = positioned.y + ((((index * 53) % 15) - 7) * 5f)
-            )
+        val byId = map.nodes.associateBy { it.id }
+        val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
+        val root = byId[map.rootNodeId] ?: return emptyList()
+        val centerX = width / 2f
+        val centerY = height / 2f
+        val result = mutableListOf<PositionedStudyMapNode>()
+        val placed = mutableSetOf<String>()
+
+        val rootWidth = 270f
+        val rootHeight = estimatedNodeHeight(root, 132f, rootWidth)
+        result += PositionedStudyMapNode(root, centerX - rootWidth / 2f, centerY - rootHeight / 2f, rootWidth, rootHeight)
+        placed += root.id
+
+        // A constellation is made of irregular branch clusters, not concentric rings. Each main
+        // branch gets its own sector and descendants fan out around that sector.
+        val firstLevel = children[map.rootNodeId].orEmpty()
+        firstLevel.forEachIndexed { branchIndex, branchId ->
+            val branch = byId[branchId] ?: return@forEachIndexed
+            if (!placed.add(branchId)) return@forEachIndexed
+            val baseAngle = (2.0 * PI / max(firstLevel.size, 1)) * branchIndex - PI / 2.0
+            val skew = if (branchIndex % 2 == 0) 0.18 else -0.14
+            val angle = baseAngle + skew
+            val branchRadius = 500f + (branchIndex % 3) * 115f
+            val bx = centerX + branchRadius * cos(angle).toFloat()
+            val by = centerY + branchRadius * sin(angle).toFloat()
+            val branchWidth = 235f
+            val branchHeight = estimatedNodeHeight(branch, 112f, branchWidth)
+            result += PositionedStudyMapNode(branch, bx - branchWidth / 2f, by - branchHeight / 2f, branchWidth, branchHeight)
+
+            val queue = ArrayDeque<Pair<String, Int>>()
+            children[branchId].orEmpty().forEach { queue.addLast(it to 1) }
+            var localIndex = 0
+            while (queue.isNotEmpty()) {
+                val (childId, localDepth) = queue.removeFirst()
+                if (!placed.add(childId)) continue
+                val child = byId[childId] ?: continue
+                val fanSlot = (localIndex % 5) - 2
+                val fanAngle = angle + fanSlot * 0.24 + (localDepth - 1) * 0.055
+                val ring = localIndex / 5
+                val childRadius = branchRadius + 330f + localDepth * 125f + ring * 190f
+                val cx = centerX + childRadius * cos(fanAngle).toFloat()
+                val cy = centerY + childRadius * sin(fanAngle).toFloat()
+                val childWidth = if (localDepth == 1) 215f else 195f
+                val childHeight = estimatedNodeHeight(child, if (localDepth == 1) 96f else 84f, childWidth)
+                result += PositionedStudyMapNode(child, cx - childWidth / 2f, cy - childHeight / 2f, childWidth, childHeight)
+                localIndex++
+                children[childId].orEmpty().forEach { queue.addLast(it to (localDepth + 1)) }
+            }
         }
-        return resolveOverlaps(jittered, map.rootNodeId, width, height, minGap = 66f, iterations = 90)
+
+        // Keep disconnected/orphan nodes visible on an outer irregular ring.
+        map.nodes.filterNot { it.id in placed }.forEachIndexed { index, node ->
+            val angle = index * 2.399963229728653 + 0.35
+            val radius = 820f + (index % 4) * 125f
+            val cx = centerX + radius * cos(angle).toFloat()
+            val cy = centerY + radius * sin(angle).toFloat()
+            val cardWidth = 195f
+            val cardHeight = estimatedNodeHeight(node, 84f, cardWidth)
+            result += PositionedStudyMapNode(node, cx - cardWidth / 2f, cy - cardHeight / 2f, cardWidth, cardHeight)
+        }
+
+        return resolveOverlaps(result, map.rootNodeId, width, height, minGap = 86f, iterations = 130)
     }
 
     private fun resolveOverlaps(

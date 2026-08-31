@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -178,6 +181,20 @@ internal fun WriterNoteEditor(
                         settings.setSupportZoom(false)
                         isVerticalScrollBarEnabled = true
                         webViewClient = WebViewClient()
+                        customSelectionActionModeCallback = object : ActionMode.Callback {
+                            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                                menu.clear()
+                                return true
+                            }
+
+                            override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+                                menu.clear()
+                                return true
+                            }
+
+                            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
+                            override fun onDestroyActionMode(mode: ActionMode) = Unit
+                        }
                         addJavascriptInterface(NoteBridge { newHtml -> html = newHtml }, "NotCanBridge")
                         loadDataWithBaseURL(null, writerDocument(html), "text/html", "UTF-8", null)
                         webView = this
