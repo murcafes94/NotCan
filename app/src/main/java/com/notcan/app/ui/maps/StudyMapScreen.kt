@@ -141,6 +141,18 @@ fun StudyMapScreen(
     }
 
     Column(modifier.fillMaxSize()) {
+        // La barra vive fuera del lienzo transformable: mover/zoom nunca puede taparla.
+        StudyMapToolbar(
+            map = map,
+            style = layoutStyle,
+            zoom = zoom,
+            onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest++ },
+            onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
+            onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
+            onFit = { fitRequest++ },
+            onCenter = { centerRequest++ },
+            onExport = ::exportAndShare
+        )
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val density = LocalDensity.current
             val widthPx = with(density) { maxWidth.toPx() }
@@ -270,7 +282,7 @@ fun StudyMapScreen(
                         Surface(
                             modifier = Modifier
                                 .offset { IntOffset(labelX.roundToInt(), labelY.roundToInt()) }
-                                .widthIn(min = 54.dp, max = 118.dp),
+                                .widthIn(min = 54.dp, max = 220.dp),
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
                             shape = MaterialTheme.shapes.small,
                             tonalElevation = 2.dp
@@ -281,8 +293,7 @@ fun StudyMapScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
+                                softWrap = true,
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                             )
                         }
@@ -316,17 +327,6 @@ fun StudyMapScreen(
                 }
             }
         }
-        StudyMapToolbar(
-            map = map,
-            style = layoutStyle,
-            zoom = zoom,
-            onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest++ },
-            onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
-            onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
-            onFit = { fitRequest++ },
-            onCenter = { centerRequest++ },
-            onExport = ::exportAndShare
-        )
     }
 }
 
@@ -468,6 +468,7 @@ private fun StudyMapNodeCard(
                         else -> MaterialTheme.typography.bodyMedium
                     },
                     fontWeight = if (node.level <= 1) FontWeight.SemiBold else FontWeight.Medium,
+                    softWrap = true,
                     modifier = Modifier.weight(1f)
                 )
                 if (childCount > 0) {

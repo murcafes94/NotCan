@@ -2,6 +2,7 @@ package com.notcan.app.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -224,6 +226,9 @@ fun NotCanRootV5(
                         tasks,
                         cycle,
                         subjects,
+                        schedules,
+                        recordingActive,
+                        now,
                         { page = it },
                         Modifier.weight(1f)
                     )
@@ -254,10 +259,13 @@ fun NotCanRootV5(
                     aiContent,
                     gradesContent,
                     settingsContent,
-                    tasks,
-                    cycle,
-                    subjects,
-                    { page = it },
+                        tasks,
+                        cycle,
+                        subjects,
+                        schedules,
+                        recordingActive,
+                        now,
+                        { page = it },
                     Modifier.weight(1f)
                 )
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -303,12 +311,15 @@ private fun RootPage(
     tasks: List<TaskItemEntity>,
     cycle: StudyCycleEntity?,
     subjects: List<SubjectEntity>,
+    schedules: List<SubjectScheduleEntity>,
+    recordingActive: Boolean,
+    now: Long,
     onNavigate: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(modifier) {
         when (page) {
-            0 -> HomeDashboard(cycle, subjects, tasks, onNavigate)
+            0 -> HomeDashboard(cycle, subjects, schedules, tasks, recordingActive, now, onNavigate)
             1 -> subjectsContent()
             2 -> tasksContent()
             3 -> calendarContent()
@@ -323,45 +334,149 @@ private fun RootPage(
 private fun HomeDashboard(
     cycle: StudyCycleEntity?,
     subjects: List<SubjectEntity>,
+    schedules: List<SubjectScheduleEntity>,
     tasks: List<TaskItemEntity>,
+    recordingActive: Boolean,
+    now: Long,
     onNavigate: (Int) -> Unit
 ) {
-    val pending = tasks.filterNot { it.isCompleted }
+    val zone = ZoneId.systemDefault()
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val todayClasses = AcademicSchedule.occurrencesForDate(today, cycle, subjects, schedules, zone)
+    val nextClass = AcademicSchedule.nextOccurrence(now, cycle, subjects, schedules, zone, horizonDays = 8)
+    val pending = tasks.filterNot { it.isCompleted }.sortedWith(
+        compareBy<TaskItemEntity> {
+            when (it.priority.lowercase()) {
+                "alta" -> 0
+                "normal" -> 1
+                else -> 2
+            }
+        }.thenBy { it.dueAtEpochMs ?: Long.MAX_VALUE }
+    )
+    val completed = tasks.count { it.isCompleted }
+
     LazyColumn(
-        Modifier.fillMaxSize().padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Column {
-                Text("Inicio", color = NotCanOffWhite, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text(cycle?.name ?: "Organiza tu estudio en NotCan", color = NotCanGray)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Inicio",
+                        color = NotCanOffWhite,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(cycle?.name ?: "Tu espacio académico en NotCan", color = NotCanGray)
+                }
+                Surface(
+                    color = if (recordingActive) NotCanBlue.copy(alpha = 0.18f) else NotCanSurface,
+                    shape = RoundedCornerShape(999.dp)
+                ) {
+                    Text(
+                        if (recordingActive) "Clase en curso" else "Todo listo",
+                        color = if (recordingActive) NotCanBlue else NotCanGray,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
+                    )
+                }
             }
         }
+
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DashboardCard("Materias", subjects.size.toString(), NotCanIcons.Subjects, Modifier.weight(1f)) { onNavigate(1) }
                 DashboardCard("Pendientes", pending.size.toString(), NotCanIcons.Tasks, Modifier.weight(1f)) { onNavigate(2) }
-                DashboardCard("Calendario", "Ver", NotCanIcons.Calendar, Modifier.weight(1f)) { onNavigate(3) }
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onNavigate(1) }) { Text("Materias") }
-                Button(onClick = { onNavigate(2) }) { Text("Tareas") }
-                TextButton(onClick = { onNavigate(4) }) { Text("Calificaciones") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardCard("Clases hoy", todayClasses.size.toString(), NotCanIcons.Calendar, Modifier.weight(1f)) { onNavigate(3) }
+                DashboardCard("Horarios", schedules.size.toString(), NotCanIcons.Schedule, Modifier.weight(1f)) { onNavigate(3) }
             }
         }
-        item { Text("Próximos pendientes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold) }
+
+        item {
+            Card(
+                onClick = { onNavigate(3) },
+                colors = CardDefaults.cardColors(containerColor = NotCanSurfaceHigh),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(NotCanIcons.Calendar, null, tint = NotCanBlue)
+                        Spacer(Modifier.width(9.dp))
+                        Text("Próxima clase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                    }
+                    if (nextClass == null) {
+                        Text("No hay otra clase programada en los próximos días.", color = NotCanGray)
+                    } else {
+                        Text(nextClass.subject.name, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium)
+                        val dateLabel = if (nextClass.date == today) "Hoy" else nextClass.date.format(DateTimeFormatter.ofPattern("EEE dd/MM"))
+                        Text(
+                            "$dateLabel · ${AcademicSchedule.formatMinutes(nextClass.schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(nextClass.schedule.endMinuteOfDay)}",
+                            color = NotCanGray
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("Resumen académico", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardCard("Calificaciones", "Revisar", NotCanIcons.Grades, Modifier.weight(1f)) { onNavigate(4) }
+                DashboardCard("TuNot", "Abrir", NotCanIcons.TuNot, Modifier.weight(1f)) { onNavigate(5) }
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NotCanSurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Tareas", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text("${pending.size} pendientes · $completed completadas", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { onNavigate(2) }) { Text("Ver todas") }
+                }
+            }
+        }
+
+        item { Text("Pendientes prioritarios", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold) }
         if (pending.isEmpty()) {
-            item { Text("No tienes tareas pendientes registradas.", color = NotCanGray) }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
+                    Text("No tienes tareas pendientes registradas.", color = NotCanGray, modifier = Modifier.padding(15.dp))
+                }
+            }
         } else {
             items(pending.take(5), key = { it.id }) { task ->
-                Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(13.dp)) {
-                        Text(task.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                Card(
+                    onClick = { onNavigate(2) },
+                    colors = CardDefaults.cardColors(containerColor = NotCanSurface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(task.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                            if (task.priority.equals("Alta", ignoreCase = true)) {
+                                Text("Alta", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                         val due = task.dueAtEpochMs?.let {
-                            Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
-                                .format(DateTimeFormatter.ofPattern("dd/MM"))
+                            Instant.ofEpochMilli(it).atZone(zone).toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM"))
                         }
                         Text(
                             listOfNotNull(
@@ -374,6 +489,22 @@ private fun HomeDashboard(
                         )
                     }
                 }
+            }
+        }
+
+        item {
+            Text("Accesos rápidos", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = { onNavigate(1) }) { Text("Materias") }
+                Button(onClick = { onNavigate(2) }) { Text("Tareas") }
+                TextButton(onClick = { onNavigate(3) }) { Text("Calendario") }
+                TextButton(onClick = { onNavigate(4) }) { Text("Calificaciones") }
+                TextButton(onClick = { onNavigate(5) }) { Text("TuNot") }
             }
         }
     }

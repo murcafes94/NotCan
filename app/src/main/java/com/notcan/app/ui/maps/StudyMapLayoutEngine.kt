@@ -8,9 +8,11 @@ import kotlin.math.sin
 object StudyMapLayoutEngine {
     private fun estimatedNodeHeight(node: StudyMapNode, base: Float): Float {
         val chars = node.title.length + (node.description?.length ?: 0)
-        val extra = (chars / 34).coerceAtMost(7) * 17f
-        val sourceExtra = if (node.sourceRefs.isNotEmpty()) 18f else 0f
-        return (base + extra + sourceExtra).coerceAtMost(220f)
+        // El mapa admite pan/zoom, así que el nodo crece todo lo necesario en vez de truncar.
+        val estimatedLines = (chars / 30).coerceAtLeast(0)
+        val extra = estimatedLines * 17f
+        val sourceExtra = if (node.sourceRefs.isNotEmpty()) 22f else 0f
+        return (base + extra + sourceExtra).coerceAtLeast(base)
     }
     fun layout(
         map: StudyMap,
