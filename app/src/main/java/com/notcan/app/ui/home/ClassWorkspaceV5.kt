@@ -1,5 +1,7 @@
 package com.notcan.app.ui.home
 
+import android.content.res.Configuration
+
 import android.content.Intent
 import android.media.MediaPlayer
 import androidx.activity.compose.BackHandler
@@ -16,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -58,12 +62,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -347,14 +353,20 @@ private fun NormalClassTabs(
     onTranscribeLocal: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selected by remember(classSessionId) { mutableIntStateOf(0) }
+    var selected by rememberSaveable(classSessionId) { mutableIntStateOf(0) }
     val tabs = listOf("Audio", "Transcripción", "Apuntes", "Estudio")
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        WindowInsets.ime.getBottom(density) > 0 && selected == 2
 
     Column(modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selected, containerColor = Color.Transparent, contentColor = NotCanBlue, divider = { }) {
-            tabs.forEachIndexed { index, title -> Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) }) }
+        if (!landscapeIme) {
+            TabRow(selectedTabIndex = selected, containerColor = Color.Transparent, contentColor = NotCanBlue, divider = { }) {
+                tabs.forEachIndexed { index, title -> Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) }) }
+            }
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxSize()) {
             when (selected) {
                 0 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
@@ -379,7 +391,11 @@ private fun NotesContentV5(
     onShareNote: (NotePageEntity) -> Unit
 ) {
     val selectedNote = notePages.firstOrNull { it.id == selectedNoteId } ?: notePages.firstOrNull()
-    val wide = LocalConfiguration.current.screenWidthDp >= 650
+    val configuration = LocalConfiguration.current
+    val wide = configuration.screenWidthDp >= 650
+    val density = LocalDensity.current
+    val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        WindowInsets.ime.getBottom(density) > 0
     var showPages by remember(classSessionId) { mutableStateOf(false) }
 
     if (selectedNote == null) {
@@ -397,21 +413,23 @@ private fun NotesContentV5(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { showPages = !showPages }) {
-                Icon(Icons.Default.Menu, if (showPages) "Ocultar páginas" else "Páginas e importar", tint = NotCanBlue)
+        if (!landscapeIme) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { showPages = !showPages }) {
+                    Icon(Icons.Default.Menu, if (showPages) "Ocultar páginas" else "Páginas e importar", tint = NotCanBlue)
+                }
             }
         }
         if (wide) {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AnimatedVisibility(visible = showPages) {
+                AnimatedVisibility(visible = showPages && !landscapeIme) {
                     NotePagesRail(notePages, selectedNote.id, onSelectNote, onCreateNote, onImportNote, classSessionId, Modifier.width(176.dp))
                 }
                 WriterNoteEditor(selectedNote, onUpdateNote, { onShareNote(selectedNote) }, { onDeleteNote(selectedNote.id) }, Modifier.weight(1f))
             }
         } else {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                AnimatedVisibility(visible = showPages) {
+                AnimatedVisibility(visible = showPages && !landscapeIme) {
                     Column(Modifier.fillMaxWidth()) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
                             items(notePages, key = { it.id }) { note ->

@@ -1,5 +1,7 @@
 package com.notcan.app.ui.home
 
+import android.content.res.Configuration
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -38,8 +42,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -110,9 +117,19 @@ fun NotCanHomeScreen(
     onMarkMoment: () -> Unit
 ) {
     var createDialog by remember { mutableStateOf<CreateDialog?>(null) }
-    var level by remember(selectedSubjectId) {
-        mutableStateOf(if (selectedSubjectId == null) HomeLevel.SUBJECTS else HomeLevel.CLASSES)
+    var level by rememberSaveable(selectedSubjectId, selectedClassId) {
+        mutableStateOf(
+            when {
+                selectedSubjectId == null -> HomeLevel.SUBJECTS
+                selectedClassId == null -> HomeLevel.CLASSES
+                else -> HomeLevel.WORKSPACE
+            }
+        )
     }
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        WindowInsets.ime.getBottom(density) > 0
 
     val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
     val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
@@ -161,11 +178,13 @@ fun NotCanHomeScreen(
                 }
 
                 else -> {
-                    CompactWorkspaceHeader(
-                        classTitle = selectedClass.title,
-                        onBackToClasses = { level = HomeLevel.CLASSES },
-                        onAddClass = { createDialog = CreateDialog.Class }
-                    )
+                    if (!landscapeIme) {
+                        CompactWorkspaceHeader(
+                            classTitle = selectedClass.title,
+                            onBackToClasses = { level = HomeLevel.CLASSES },
+                            onAddClass = { createDialog = CreateDialog.Class }
+                        )
+                    }
 
                     NotCanClassWorkspaceV4(
                         modifier = Modifier.weight(1f),

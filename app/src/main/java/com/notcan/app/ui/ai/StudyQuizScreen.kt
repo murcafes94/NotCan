@@ -287,7 +287,7 @@ internal fun StudyQuizScreen(
                                 onClick = ::next,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp)
+                                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 76.dp)
                             ) {
                                 Text(if (position == order.lastIndex) "Ver resultado" else "Siguiente")
                             }

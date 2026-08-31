@@ -1,5 +1,7 @@
 package com.notcan.app.ui.home
 
+import android.content.res.Configuration
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
@@ -21,6 +23,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,7 +59,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -77,6 +83,10 @@ internal fun WriterNoteEditor(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        WindowInsets.ime.getBottom(density) > 0
     val title = note.title.ifBlank { "Apuntes" }
     var html by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
     var lastSavedHtml by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
@@ -118,12 +128,13 @@ internal fun WriterNoteEditor(
     }
 
     Card(modifier = modifier.fillMaxSize(), colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-                Box {
-                    IconButton(onClick = { shareMenu = true }) { Icon(Icons.Default.Share, "Compartir apunte", tint = NotCanBlue) }
-                    DropdownMenu(expanded = shareMenu, onDismissRequest = { shareMenu = false }) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = if (landscapeIme) 2.dp else 8.dp)) {
+            if (!landscapeIme) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                    Box {
+                        IconButton(onClick = { shareMenu = true }) { Icon(Icons.Default.Share, "Compartir apunte", tint = NotCanBlue) }
+                        DropdownMenu(expanded = shareMenu, onDismissRequest = { shareMenu = false }) {
                         DropdownMenuItem(text = { Text("Compartir como DOCX") }, onClick = {
                             shareMenu = false
                             runCatching { NoteFileExport.share(context, title, html, NoteFileExport.Format.DOCX) }.onFailure { onShareFallback() }
@@ -136,12 +147,12 @@ internal fun WriterNoteEditor(
                             shareMenu = false
                             runCatching { NoteFileExport.share(context, title, html, NoteFileExport.Format.TEXT) }.onFailure { onShareFallback() }
                         })
+                        }
                     }
+                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Eliminar apunte", tint = NotCanRed) }
                 }
-                IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Eliminar apunte", tint = NotCanRed) }
+                Divider(color = NotCanGray.copy(alpha = 0.20f))
             }
-
-            Divider(color = NotCanGray.copy(alpha = 0.20f))
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
@@ -185,7 +196,7 @@ internal fun WriterNoteEditor(
                 },
                 update = { view -> if (webView !== view) webView = view }
             )
-            Text("Guardado automático", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
+            if (!landscapeIme) Text("Guardado automático", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
         }
     }
 

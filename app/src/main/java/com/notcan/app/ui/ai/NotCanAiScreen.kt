@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -117,7 +118,7 @@ fun NotCanAiScreen(
     val artifactScope = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle.orEmpty()}" }
     var artifactRevision by remember(artifactScope) { mutableIntStateOf(0) }
     var autoSaveNextArtifact by remember(artifactScope) { mutableStateOf(false) }
-    var section by remember { mutableIntStateOf(1) }
+    var section by rememberSaveable { mutableIntStateOf(1) }
     var openedMap by remember { mutableStateOf<ParsedStudyMapArtifact?>(null) }
     var openedDeck by remember { mutableStateOf<ParsedFlashcardArtifact?>(null) }
     var openedQuiz by remember { mutableStateOf<ParsedQuizArtifact?>(null) }
@@ -351,8 +352,8 @@ private fun AiChat(
     val store = remember(context) { TuNotChatStore(context.applicationContext) }
     val scopeKey = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle.orEmpty()}" }
     var question by remember(scopeKey) { mutableStateOf("") }
-    var sourceMode by remember(scopeKey) { mutableIntStateOf(1) } // 0 Mis fuentes · 1 Auto · 2 Web
-    var socraticMode by remember(scopeKey) { mutableStateOf(false) }
+    var sourceMode by rememberSaveable(scopeKey) { mutableIntStateOf(1) } // 0 Mis fuentes · 1 Auto · 2 Web
+    var socraticMode by rememberSaveable(scopeKey) { mutableStateOf(false) }
     var toolsOpen by remember(scopeKey) { mutableStateOf(false) }
     val messages = remember(scopeKey) {
         mutableStateListOf<ChatMessage>().apply {
@@ -476,7 +477,7 @@ private fun CompactAiTools(
                 DropdownMenu(
                     expanded = sourceMenuExpanded,
                     onDismissRequest = { sourceMenuExpanded = false },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.width(232.dp)
                 ) {
                     DropdownMenuItem(
                         text = {
