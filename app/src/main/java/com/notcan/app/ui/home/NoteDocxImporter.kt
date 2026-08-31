@@ -147,7 +147,19 @@ internal object NoteDocxImporter {
             .find(properties)?.groupValues?.get(1)
 
         val styles = buildList {
-            color?.let { add("color:#${it.uppercase()}") }
+            color?.let { hex ->
+                val rgb = hex.toIntOrNull(16)
+                if (rgb != null) {
+                    val r = (rgb shr 16) and 0xFF
+                    val g = (rgb shr 8) and 0xFF
+                    val b = rgb and 0xFF
+                    val luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+                    // Word usually stores ordinary body text as #000000. Keeping it would make the
+                    // imported note look empty on NotCan's dark editor, so dark/default colours inherit
+                    // the editor foreground. Bright intentional colours are preserved.
+                    if (luminance >= 105.0) add("color:#${hex.uppercase()}")
+                }
+            }
             highlightValue?.let { value ->
                 val css = when (value.lowercase()) {
                     "yellow" -> "#FFE066"

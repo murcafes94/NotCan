@@ -77,10 +77,23 @@ internal fun WriterNoteEditor(
     val context = LocalContext.current
     val title = note.title.ifBlank { "Apuntes" }
     var html by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
-    var lastSavedHtml by remember(note.id) { mutableStateOf(note.body) }
+    var lastSavedHtml by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
     var webView by remember(note.id) { mutableStateOf<WebView?>(null) }
     var confirmDelete by remember(note.id) { mutableStateOf(false) }
     var shareMenu by remember(note.id) { mutableStateOf(false) }
+
+    LaunchedEffect(note.id, note.body) {
+        val externalHtml = normalizeStoredBody(note.body)
+        if (externalHtml != html && externalHtml != lastSavedHtml) {
+            // Imports are created and then populated asynchronously. If the editor was already
+            // composed with an empty page, reload the newly arrived body instead of keeping blank HTML.
+            html = externalHtml
+            lastSavedHtml = externalHtml
+            webView?.loadDataWithBaseURL(null, writerDocument(externalHtml), "text/html", "UTF-8", null)
+        } else if (externalHtml == html) {
+            lastSavedHtml = externalHtml
+        }
+    }
 
     LaunchedEffect(note.id, html) {
         delay(500)

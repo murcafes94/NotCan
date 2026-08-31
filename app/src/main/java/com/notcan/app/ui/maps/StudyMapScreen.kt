@@ -149,7 +149,7 @@ fun StudyMapScreen(
                 map = map,
                 style = layoutStyle,
                 zoom = zoom,
-                onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest++ },
+                onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest = 0; zoom = 1f; centerRequest++ },
                 onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
                 onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
                 onFit = { fitRequest++ },
@@ -178,17 +178,22 @@ fun StudyMapScreen(
             // de ancho/alto se trataban como px físicos y en pantallas densas los nodos quedaban
             // demasiado estrechos. Escalamos a px solo en la fase final de dibujo.
             val densityScale = density.density.coerceAtLeast(1f)
+            val nodeCount = visibleMap.nodes.size.coerceAtLeast(1)
             val virtualWidthDpValue = maxOf(
                 maxWidth.value,
                 when (layoutStyle) {
-                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> 1380f
-                    else -> 1120f
+                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> 1700f
+                    StudyMapLayoutStyle.RADIAL, StudyMapLayoutStyle.RADIAL_CARDS,
+                    StudyMapLayoutStyle.IDEA_BOARD, StudyMapLayoutStyle.CONSTELLATION -> maxOf(1800f, nodeCount * 96f)
                 }
             )
             val virtualHeightDpValue = maxOf(
                 maxHeight.value,
-                textDemand * 0.72f,
-                visibleMap.nodes.size * 132f
+                textDemand * 0.86f,
+                when (layoutStyle) {
+                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> nodeCount * 158f
+                    else -> maxOf(1800f, nodeCount * 112f)
+                }
             )
             val virtualWidthDp = virtualWidthDpValue.dp
             val virtualHeightDp = virtualHeightDpValue.dp
