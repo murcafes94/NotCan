@@ -1,0 +1,64 @@
+name: Apply map and DOCX fixes 0.8.10
+
+on:
+  push:
+    paths:
+      - 'ci/notcan-0810-trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Apply 0.8.10 fixes
+        run: python3 ci/apply_map_docx_0810.py
+      - name: Commit functional changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          git commit -m 'fix(android): improve map spacing and DOCX note import'
+          git push
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-0.8.10-map-docx
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
+      - name: Remove temporary patch files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --rebase origin main || true
+          git rm -f ci/apply_map_docx_0810.py ci/notcan-0810-trigger.txt .github/workflows/apply-map-docx-0810.yml || true
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: remove Android 0.8.10 patch files'
+            git push
+          fi
