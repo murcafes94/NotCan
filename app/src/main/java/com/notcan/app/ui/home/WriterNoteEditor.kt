@@ -88,8 +88,6 @@ internal fun WriterNoteEditor(
     LaunchedEffect(note.id, note.body) {
         val externalHtml = normalizeStoredBody(note.body)
         if (externalHtml != html && externalHtml != lastSavedHtml) {
-            // Imports are created and then populated asynchronously. If the editor was already
-            // composed with an empty page, reload the newly arrived body instead of keeping blank HTML.
             html = externalHtml
             lastSavedHtml = externalHtml
             webView?.loadDataWithBaseURL(null, writerDocument(externalHtml), "text/html", "UTF-8", null)
@@ -181,7 +179,7 @@ internal fun WriterNoteEditor(
                         settings.setSupportZoom(false)
                         isVerticalScrollBarEnabled = true
                         webViewClient = WebViewClient()
-                        customSelectionActionModeCallback = object : ActionMode.Callback {
+                        setCustomSelectionActionModeCallback(object : ActionMode.Callback {
                             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                                 menu.clear()
                                 return true
@@ -194,7 +192,7 @@ internal fun WriterNoteEditor(
 
                             override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
                             override fun onDestroyActionMode(mode: ActionMode) = Unit
-                        }
+                        })
                         addJavascriptInterface(NoteBridge { newHtml -> html = newHtml }, "NotCanBridge")
                         loadDataWithBaseURL(null, writerDocument(html), "text/html", "UTF-8", null)
                         webView = this
