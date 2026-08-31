@@ -60,6 +60,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.notcan.app.ai.MistralCredentialsStore
 import com.notcan.app.ai.NotCanAiService
 import com.notcan.app.data.local.AudioRecordingEntity
@@ -111,6 +113,7 @@ fun NotCanAiScreen(
     var section by remember { mutableIntStateOf(1) }
     var openedMap by remember { mutableStateOf<ParsedStudyMapArtifact?>(null) }
     var openedDeck by remember { mutableStateOf<ParsedFlashcardArtifact?>(null) }
+    var openedQuiz by remember { mutableStateOf<ParsedQuizArtifact?>(null) }
 
     openedMap?.let { artifact ->
         FullScreenStudyMap(artifact = artifact, onBack = { openedMap = null })
@@ -118,6 +121,10 @@ fun NotCanAiScreen(
     }
     openedDeck?.let { deck ->
         StudyFlashcardsScreen(deck = deck, onBack = { openedDeck = null })
+        return
+    }
+    openedQuiz?.let { quiz ->
+        StudyQuizScreen(quiz = quiz, onBack = { openedQuiz = null })
         return
     }
 
@@ -139,7 +146,8 @@ fun NotCanAiScreen(
                     onAsk = onAsk,
                     onClear = onClear,
                     onOpenMap = { openedMap = it },
-                    onOpenDeck = { openedDeck = it }
+                    onOpenDeck = { openedDeck = it },
+                    onOpenQuiz = { openedQuiz = it }
                 )
                 else -> AiStudio(onlineConfigured, busy) { prompt ->
                     onAsk(prompt)
@@ -158,20 +166,25 @@ fun NotCanAiScreen(
 @Composable
 private fun FullScreenStudyMap(artifact: ParsedStudyMapArtifact, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver al chat", tint = NotCanOffWhite) }
-                Text("Mapa de estudio", color = NotCanGray, style = MaterialTheme.typography.labelLarge)
+    Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver al chat", tint = NotCanOffWhite) }
+                    Text("Mapa de estudio", color = NotCanGray, style = MaterialTheme.typography.labelLarge)
+                }
+                StudyMapScreen(
+                    map = artifact.map,
+                    initialLayout = artifact.preferredLayout,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
             }
-            StudyMapScreen(
-                map = artifact.map,
-                initialLayout = artifact.preferredLayout,
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            )
         }
     }
 }
@@ -257,19 +270,22 @@ private data class ChatMessage(
     val content: String,
     val rawContent: String = content,
     val mapArtifact: ParsedStudyMapArtifact? = null,
-    val flashcards: ParsedFlashcardArtifact? = null
+    val flashcards: ParsedFlashcardArtifact? = null,
+    val quizArtifact: ParsedQuizArtifact? = null
 )
 
 private fun messageFromRaw(role: ChatRole, raw: String): ChatMessage {
     if (role == ChatRole.USER) return ChatMessage(role, raw, raw)
     val map = StudyMapArtifactParser.parse(raw)
     val deck = StudyFlashcardArtifactParser.parse(raw)
+    val quiz = StudyQuizArtifactParser.parse(raw)
     val visible = when {
         map != null -> StudyMapArtifactParser.stripArtifact(raw)
         deck != null -> StudyFlashcardArtifactParser.stripArtifact(raw)
+        quiz != null -> StudyQuizArtifactParser.stripArtifact(raw)
         else -> raw
     }
-    return ChatMessage(role, visible, raw, map, deck)
+    return ChatMessage(role, visible, raw, map, deck, quiz)
 }
 
 @Composable
@@ -283,7 +299,8 @@ private fun AiChat(
     onAsk: (String) -> Unit,
     onClear: () -> Unit,
     onOpenMap: (ParsedStudyMapArtifact) -> Unit,
-    onOpenDeck: (ParsedFlashcardArtifact) -> Unit
+    onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
+    onOpenQuiz: (ParsedQuizArtifact) -> Unit
 ) {
     val context = LocalContext.current
     val store = remember(context) { TuNotChatStore(context.applicationContext) }
@@ -318,6 +335,7 @@ private fun AiChat(
         persist()
         message.mapArtifact?.let(onOpenMap)
         message.flashcards?.let(onOpenDeck)
+        message.quizArtifact?.let(onOpenQuiz)
     }
 
     LaunchedEffect(messages.size, busy) {
@@ -361,13 +379,13 @@ private fun AiChat(
                     AnimatedVisibility(visible = toolsOpen) {
                         CompactAiTools(sourceOnly, socraticMode, messages.isNotEmpty(), { sourceOnly = it }, { socraticMode = it }, ::clearConversation, Modifier.width(250.dp))
                     }
-                    ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, Modifier.weight(1f).fillMaxSize())
+                    ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 AnimatedVisibility(visible = toolsOpen) {
                     CompactAiTools(sourceOnly, socraticMode, messages.isNotEmpty(), { sourceOnly = it }, { socraticMode = it }, ::clearConversation, Modifier.fillMaxWidth())
                 }
-                ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, Modifier.weight(1f).fillMaxWidth())
+                ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, Modifier.weight(1f).fillMaxWidth())
             }
         }
     }
@@ -433,6 +451,7 @@ private fun ConversationPanel(
     listState: androidx.compose.foundation.lazy.LazyListState,
     onOpenMap: (ParsedStudyMapArtifact) -> Unit,
     onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
+    onOpenQuiz: (ParsedQuizArtifact) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(20.dp)) {
@@ -444,7 +463,7 @@ private fun ConversationPanel(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (messages.isEmpty()) item { EmptyConversation(configured) }
-                items(messages) { message -> ChatBubble(message, onOpenMap, onOpenDeck) }
+                items(messages) { message -> ChatBubble(message, onOpenMap, onOpenDeck, onOpenQuiz) }
                 if (busy) item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
                         CircularProgressIndicator(modifier = Modifier.width(17.dp), strokeWidth = 2.dp)
@@ -490,7 +509,7 @@ private fun EmptyConversation(configured: Boolean) {
             Icon(Icons.Default.MenuBook, null, tint = NotCanBlue, modifier = Modifier.padding(14.dp))
         }
         Text("¿Qué estudiamos hoy?", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(if (configured) "Pregunta, resume o pídele a TuNot un mapa o tarjetas de estudio." else "Configura tu API key y Agent ID de Mistral desde Configuración.", color = NotCanGray)
+        Text(if (configured) "Pregunta, resume o pídele a TuNot un mapa, tarjetas o cuestionario." else "Configura tu API key y Agent ID de Mistral desde Configuración.", color = NotCanGray)
     }
 }
 
@@ -498,7 +517,8 @@ private fun EmptyConversation(configured: Boolean) {
 private fun ChatBubble(
     message: ChatMessage,
     onOpenMap: (ParsedStudyMapArtifact) -> Unit,
-    onOpenDeck: (ParsedFlashcardArtifact) -> Unit
+    onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
+    onOpenQuiz: (ParsedQuizArtifact) -> Unit
 ) {
     val user = message.role == ChatRole.USER
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
@@ -526,6 +546,15 @@ private fun ChatBubble(
                         subtitle = "${deck.cards.size} tarjetas · repaso activo",
                         action = "Abrir tarjetas",
                         onClick = { onOpenDeck(deck) }
+                    )
+                }
+                message.quizArtifact?.let { quiz ->
+                    ArtifactCard(
+                        icon = Icons.Default.Quiz,
+                        title = quiz.title,
+                        subtitle = "${quiz.questions.size} preguntas · corrección y repaso de errores",
+                        action = "Responder",
+                        onClick = { onOpenQuiz(quiz) }
                     )
                 }
             }
@@ -562,7 +591,7 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
     val options = listOf(
         StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones."),
         StudyTool("Tarjetas didácticas", "Repaso activo, una pregunta por tarjeta", Icons.Default.Style, "Crea entre 12 y 20 tarjetas didácticas de esta clase.", NotCanAiService.FLASHCARDS_MARKER),
-        StudyTool("Cuestionario", "Opción múltiple y desarrollo", Icons.Default.Quiz, "Crea un cuestionario basado exclusivamente en esta clase. Incluye opción múltiple y desarrollo, con respuestas separadas al final."),
+        StudyTool("Cuestionario", "Respóndelo aquí y repite los errores", Icons.Default.Quiz, "Crea un cuestionario mixto basado exclusivamente en esta clase. Combina opción múltiple, verdadero/falso y algunas preguntas breves de desarrollo.", NotCanAiService.QUIZ_MARKER),
         StudyTool("Mapa mental", "Ramas y subramas interactivas", Icons.Default.AutoAwesome, "Hazme un mapa mental de esta clase. Organiza el tema central, ramas principales y subramas. Usa solamente las fuentes disponibles."),
         StudyTool("Mapa conceptual", "Conceptos y relaciones etiquetadas", Icons.Default.Source, "Hazme un mapa conceptual de esta clase con conceptos, jerarquías y frases de enlace. Usa solamente las fuentes disponibles."),
         StudyTool("Mapa de ideas", "Presentación visual en tarjetas", Icons.Default.Description, "Hazme un mapa de ideas de esta clase, más visual y sencillo, usando tarjetas radiales. Usa solamente las fuentes disponibles.")
