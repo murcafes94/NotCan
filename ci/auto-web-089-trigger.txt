@@ -1,1 +1,0 @@
-apply NotCan 0.8.9 automatic web research and compact selector
