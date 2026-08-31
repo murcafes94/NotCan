@@ -156,6 +156,10 @@ export default function App() {
   const [aiUseNotes, setAiUseNotes] = useState(true)
   const [aiModel, setAiModel] = useState('')
 
+  const [gradeDraft, setGradeDraft] = useState({ title: '', score: '', maxScore: '100', weightPercent: '' })
+  const [gradeTarget, setGradeTarget] = useState(80)
+  const [gradeMessage, setGradeMessage] = useState('')
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function refresh() {
@@ -218,6 +222,29 @@ export default function App() {
 
   const selectedSubject = subjects.find((s) => s.id === selectedSubjectId) ?? subjects[0] ?? null
   const selectedSubjectClasses = classes.filter((c) => c.subjectId === selectedSubject?.id)
+  const selectedGrades = grades.filter((grade) => grade.subjectId === selectedSubject?.id)
+  const activeCycle = cycles.find((cycle) => cycle.isActive) ?? cycles[0] ?? null
+  const todayKey = new Date().toDateString()
+  const todayClasses = classes.filter((classSession) => new Date(classSession.startedAtEpochMs).toDateString() === todayKey)
+  const upcomingClasses = classes
+    .filter((classSession) => classSession.startedAtEpochMs >= Date.now())
+    .sort((a, b) => a.startedAtEpochMs - b.startedAtEpochMs)
+
+  const gradeStats = useMemo(() => {
+    const evaluatedWeight = selectedGrades.reduce((sum, grade) => sum + Math.max(0, grade.weightPercent), 0)
+    const contribution = selectedGrades.reduce((sum, grade) => {
+      const ratio = grade.maxScore > 0 ? grade.score / grade.maxScore : 0
+      return sum + ratio * Math.max(0, grade.weightPercent)
+    }, 0)
+    const average = evaluatedWeight > 0 ? (contribution / evaluatedWeight) * 100 : 0
+    const remainingWeight = Math.max(0, 100 - evaluatedWeight)
+    const required = remainingWeight > 0 ? ((gradeTarget - contribution) / remainingWeight) * 100 : null
+    const projected70 = Math.min(100, contribution + remainingWeight * 0.70)
+    const projected85 = Math.min(100, contribution + remainingWeight * 0.85)
+    const projected100 = Math.min(100, contribution + remainingWeight)
+    const risk = selectedGrades.length === 0 ? 'Sin datos' : average >= 80 ? 'Estable' : average >= 70 ? 'Atención' : 'Riesgo'
+    return { evaluatedWeight, contribution, average, remainingWeight, required, projected70, projected85, projected100, risk }
+  }, [selectedGrades, gradeTarget])
 
   const searchResults = search.trim() ? [
     ...subjects
@@ -445,16 +472,40 @@ export default function App() {
     event.target.value = ''
   }
 
-  async function addGrade() {
+  async function addGrade(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
     if (!selectedSubject) return
+
+    const score = Number(gradeDraft.score)
+    const maxScore = Number(gradeDraft.maxScore)
+    const weightPercent = Number(gradeDraft.weightPercent)
+    const title = gradeDraft.title.trim()
+
+    if (!title || !Number.isFinite(score) || !Number.isFinite(maxScore) || !Number.isFinite(weightPercent)) {
+      setGradeMessage('Completa el nombre, la nota obtenida, la nota máxima y el peso.')
+      return
+    }
+    if (maxScore <= 0 || weightPercent <= 0 || weightPercent > 100 || score < 0) {
+      setGradeMessage('Revisa los valores: máximo y peso deben ser mayores que 0.')
+      return
+    }
+    if (score > maxScore) {
+      setGradeMessage('La nota obtenida no puede superar la nota máxima.')
+      return
+    }
+    if (gradeStats.evaluatedWeight + weightPercent > 100.0001) {
+      setGradeMessage(`El peso total superaría 100%. Te quedan ${gradeStats.remainingWeight.toFixed(1)}% por asignar.`)
+      return
+    }
+
     const now = Date.now()
     const item: GradeItemRecord = {
       id: crypto.randomUUID(),
       subjectId: selectedSubject.id,
-      title: `Evaluación ${grades.length + 1}`,
-      score: 0,
-      maxScore: 10,
-      weightPercent: 10,
+      title,
+      score,
+      maxScore,
+      weightPercent,
       createdAtEpochMs: now,
       updatedAtEpochMs: now,
       revision: 1,
@@ -462,6 +513,16 @@ export default function App() {
     }
     await db.gradeItems.add(item)
     await queueUpsert('grade_items', item.id, item)
+    setGradeDraft({ title: '', score: '', maxScore: '100', weightPercent: '' })
+    setGradeMessage('Calificación guardada localmente. Se sincronizará con tu cuenta.')
+    await refresh()
+  }
+
+  async function deleteGrade(grade: GradeItemRecord) {
+    if (!window.confirm(`¿Eliminar “${grade.title}”?`)) return
+    await db.gradeItems.delete(grade.id)
+    await queueDelete('grade_items', grade.id)
+    setGradeMessage('Calificación eliminada.')
     await refresh()
   }
 
@@ -705,9 +766,9 @@ export default function App() {
       subjects: ['Materias', 'Organiza tus clases, apuntes y recursos por materia.'],
       notes: ['Apuntes', 'Todo lo que has escrito, ordenado por fecha.'],
       library: ['Biblioteca', 'Tus documentos académicos en un mismo lugar.'],
-      calendar: ['Calendario', 'Clases y actividades organizadas por fecha.'],
+      calendar: ['Calendario académico', 'Ciclo, clases de hoy y próximas actividades.'],
       tasks: ['Tareas', 'Pendientes de estudio y próximas entregas.'],
-      grades: ['Calificaciones', 'Registra tus notas y sigue tu progreso.'],
+      grades: ['Calificaciones', 'Analiza tu rendimiento y calcula qué necesitas para alcanzar tu meta.'],
       maps: ['Mapas', 'Construye mapas mentales y conceptuales.'],
       ai: ['', ''],
       sync: ['Sincronización', 'Estado de tus cambios entre dispositivos.'],
@@ -719,10 +780,9 @@ export default function App() {
     return <main className="main-area feature-page">
       <div className="feature-header">
         <div><p className="eyebrow">NOTCAN</p><h1>{title}</h1><p>{subtitle}</p></div>
-        {['notes', 'library', 'grades'].includes(page) && <button className="new-button" onClick={() => {
+        {['notes', 'library'].includes(page) && <button className="new-button" onClick={() => {
           if (page === 'notes') openNewNote()
           else if (page === 'library') fileInputRef.current?.click()
-          else void addGrade()
         }}>＋ Nuevo</button>}
       </div>
 
@@ -765,7 +825,27 @@ export default function App() {
         <section className="file-grid">{localFiles.map((file) => <article className="section-card file-tile" key={file.id}><div className="file-icon rose">DOC</div><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(2)} MB · {shortDate(file.addedAt)}</small><button onClick={() => setLocalFiles((prev) => prev.filter((item) => item.id !== file.id))}>Eliminar</button></article>)}</section>
       </>}
 
-      {page === 'calendar' && <section className="calendar-view">{classes.map((classSession) => <article className="section-card calendar-event" key={classSession.id}><time><strong>{new Date(classSession.startedAtEpochMs).getDate()}</strong><span>{shortDate(classSession.startedAtEpochMs).split(' ')[1]}</span></time><div><strong>{classSession.title}</strong><small>{subjects.find((s) => s.id === classSession.subjectId)?.name ?? 'Materia'} · {shortTime(classSession.startedAtEpochMs)}</small></div></article>)}</section>}
+      {page === 'calendar' && <div className="academic-calendar">
+        <section className="calendar-summary-grid">
+          <article className="section-card semester-card">
+            <span className="calendar-summary-icon">▣</span>
+            <div><small>CICLO ACTIVO</small><strong>{activeCycle?.name ?? 'Sin ciclo configurado'}</strong><p>{activeCycle && activeCycle.startEpochDay > 0 && activeCycle.endEpochDay > 0 ? `${shortDate(activeCycle.startEpochDay * 86400000)} – ${shortDate(activeCycle.endEpochDay * 86400000)}` : 'Puedes definir las fechas del ciclo desde la app.'}</p></div>
+          </article>
+          <article className="section-card calendar-stat"><small>HOY</small><strong>{todayClasses.length}</strong><span>{todayClasses.length === 1 ? 'clase registrada' : 'clases registradas'}</span></article>
+          <article className="section-card calendar-stat"><small>PRÓXIMAS</small><strong>{upcomingClasses.length}</strong><span>clases por venir</span></article>
+        </section>
+
+        <section className="section-card today-panel">
+          <div className="section-heading-row"><div><p className="eyebrow">HOY</p><h2>{fullDate(Date.now())}</h2></div><span className="status-pill">{todayClasses.length ? 'Con actividad' : 'Sin clases'}</span></div>
+          {todayClasses.length ? <div className="calendar-compact-list">{[...todayClasses].sort((a, b) => a.startedAtEpochMs - b.startedAtEpochMs).map((classSession) => <article key={classSession.id}><time>{shortTime(classSession.startedAtEpochMs)}</time><div><strong>{classSession.title}</strong><small>{subjects.find((s) => s.id === classSession.subjectId)?.name ?? 'Materia'}</small></div></article>)}</div> : <p className="empty-state">No hay materias programadas para hoy.</p>}
+        </section>
+
+        <section className="section-card upcoming-panel">
+          <div className="section-heading-row"><div><p className="eyebrow">AGENDA</p><h2>Próximas clases</h2></div><span>{upcomingClasses.length} pendientes</span></div>
+          {upcomingClasses.slice(0, 8).map((classSession) => <article className="calendar-event modern" key={classSession.id}><time><strong>{new Date(classSession.startedAtEpochMs).getDate()}</strong><span>{shortDate(classSession.startedAtEpochMs).split(' ')[1]}</span></time><div><strong>{classSession.title}</strong><small>{subjects.find((s) => s.id === classSession.subjectId)?.name ?? 'Materia'} · {shortTime(classSession.startedAtEpochMs)}</small></div></article>)}
+          {upcomingClasses.length === 0 && <p className="empty-state">No hay clases futuras registradas todavía.</p>}
+        </section>
+      </div>}
 
       {page === 'tasks' && <section className="section-card tasks-view">
         <form onSubmit={(event) => {
@@ -780,9 +860,49 @@ export default function App() {
         {localTasks.map((task) => <label className={`task-check ${task.done ? 'done' : ''}`} key={task.id}><input type="checkbox" checked={task.done} onChange={() => setLocalTasks((prev) => prev.map((item) => item.id === task.id ? { ...item, done: !item.done } : item))} /><span><strong>{task.title}</strong><small>{task.detail}</small></span><button onClick={(event) => { event.preventDefault(); setLocalTasks((prev) => prev.filter((item) => item.id !== task.id)) }}>×</button></label>)}
       </section>}
 
-      {page === 'grades' && <div className="feature-grid">
-        <aside className="section-card list-panel">{subjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => setSelectedSubjectId(subject.id)}><span className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>☆</span><span><strong>{subject.name}</strong><small>{grades.filter((grade) => grade.subjectId === subject.id).length} notas</small></span></button>)}</aside>
-        <section className="section-card grade-list">{grades.filter((grade) => grade.subjectId === selectedSubject?.id).map((grade) => <article key={grade.id}><div><strong>{grade.title}</strong><small>Peso {grade.weightPercent}%</small></div><strong>{grade.score}/{grade.maxScore}</strong></article>)}<button className="primary" onClick={addGrade}>＋ Añadir calificación</button></section>
+      {page === 'grades' && <div className="feature-grid grades-workspace">
+        <aside className="section-card list-panel grade-subjects">{subjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => { setSelectedSubjectId(subject.id); setGradeMessage('') }}><span className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>☆</span><span><strong>{subject.name}</strong><small>{grades.filter((grade) => grade.subjectId === subject.id).length} notas</small></span></button>)}</aside>
+
+        <div className="grades-dashboard">
+          <section className="section-card grade-summary-card">
+            <div className="grade-summary-heading"><div><p className="eyebrow">RESUMEN AUTOMÁTICO</p><h2>{selectedSubject?.name ?? 'Selecciona una materia'}</h2></div><span className={`risk-pill ${gradeStats.risk.toLowerCase().replace('ó', 'o').replace(' ', '-')}`}>{gradeStats.risk}</span></div>
+            <div className="grade-summary-body">
+              <div className="grade-ring"><strong>{gradeStats.average.toFixed(1)}%</strong><small>promedio</small></div>
+              <div className="grade-metrics">
+                <div><span>Aporte acumulado</span><strong>{gradeStats.contribution.toFixed(1)} / 100</strong></div>
+                <div><span>Porcentaje ya evaluado</span><strong>{gradeStats.evaluatedWeight.toFixed(1)}%</strong></div>
+                <div><span>Falta por evaluar</span><strong>{gradeStats.remainingWeight.toFixed(1)}%</strong></div>
+              </div>
+            </div>
+            <div className="weight-progress"><i style={{ width: `${Math.min(100, gradeStats.evaluatedWeight)}%` }} /></div>
+          </section>
+
+          <section className="section-card target-card">
+            <div className="section-heading-row"><div><p className="eyebrow">QUÉ NECESITO SACAR</p><h2>Meta final</h2></div><div className="target-buttons">{[70, 80, 90].map((target) => <button key={target} className={gradeTarget === target ? 'selected' : ''} onClick={() => setGradeTarget(target)}>{target}</button>)}</div></div>
+            <div className="needed-result">
+              {selectedGrades.length === 0 ? <><strong>Registra tu primera nota</strong><span>Después NotCan calculará automáticamente lo necesario.</span></> : gradeStats.remainingWeight <= 0 ? <><strong>{gradeStats.contribution >= gradeTarget ? 'Meta alcanzada' : 'Período evaluado al 100%'}</strong><span>Tu aporte final actual es {gradeStats.contribution.toFixed(1)} / 100.</span></> : (gradeStats.required ?? 0) <= 0 ? <><strong>Meta ya asegurada</strong><span>Incluso con el porcentaje pendiente, ya alcanzaste {gradeTarget}.</span></> : (gradeStats.required ?? 0) > 100 ? <><strong>La meta {gradeTarget} ya no es alcanzable</strong><span>Necesitarías {(gradeStats.required ?? 0).toFixed(1)}% en el {gradeStats.remainingWeight.toFixed(1)}% restante.</span></> : <><strong>{(gradeStats.required ?? 0).toFixed(1)}%</strong><span>promedio necesario en el {gradeStats.remainingWeight.toFixed(1)}% restante para terminar con {gradeTarget}.</span></>}
+            </div>
+            <div className="projection-grid"><div><small>Si promedias 70</small><strong>{gradeStats.projected70.toFixed(1)}</strong></div><div><small>Si promedias 85</small><strong>{gradeStats.projected85.toFixed(1)}</strong></div><div><small>Si sacas 100</small><strong>{gradeStats.projected100.toFixed(1)}</strong></div></div>
+          </section>
+
+          <section className="section-card grade-entry-card">
+            <div><p className="eyebrow">NUEVA ACTIVIDAD</p><h2>Añadir calificación</h2></div>
+            <form className="grade-form" onSubmit={addGrade}>
+              <label className="grade-title-field"><span>Actividad</span><input value={gradeDraft.title} onChange={(event) => setGradeDraft((prev) => ({ ...prev, title: event.target.value }))} placeholder="Examen, ensayo, prueba de lectura…" /></label>
+              <label><span>Obtenido</span><input inputMode="decimal" type="number" min="0" step="0.01" value={gradeDraft.score} onChange={(event) => setGradeDraft((prev) => ({ ...prev, score: event.target.value }))} placeholder="0" /></label>
+              <label><span>Máximo</span><input inputMode="decimal" type="number" min="0.01" step="0.01" value={gradeDraft.maxScore} onChange={(event) => setGradeDraft((prev) => ({ ...prev, maxScore: event.target.value }))} /></label>
+              <label><span>Peso %</span><input inputMode="decimal" type="number" min="0.01" max="100" step="0.01" value={gradeDraft.weightPercent} onChange={(event) => setGradeDraft((prev) => ({ ...prev, weightPercent: event.target.value }))} placeholder={gradeStats.remainingWeight.toFixed(1)} /></label>
+              <button className="primary">＋ Guardar calificación</button>
+            </form>
+            {gradeMessage && <p className="grade-message">{gradeMessage}</p>}
+          </section>
+
+          <section className="section-card grade-list enhanced">
+            <div className="section-heading-row"><div><p className="eyebrow">ACTIVIDADES</p><h2>Calificaciones registradas</h2></div><span>{selectedGrades.length}</span></div>
+            {selectedGrades.map((grade) => <article key={grade.id}><div><strong>{grade.title}</strong><small>Peso {grade.weightPercent}% · aporte {grade.maxScore > 0 ? ((grade.score / grade.maxScore) * grade.weightPercent).toFixed(1) : '0.0'} pts</small></div><div className="grade-row-score"><strong>{grade.score}/{grade.maxScore}</strong><span>{grade.maxScore > 0 ? ((grade.score / grade.maxScore) * 100).toFixed(1) : '0.0'}%</span></div><button className="danger-text" onClick={() => void deleteGrade(grade)}>Eliminar</button></article>)}
+            {selectedGrades.length === 0 && <p className="empty-state">Todavía no has registrado calificaciones para esta materia.</p>}
+          </section>
+        </div>
       </div>}
 
       {page === 'maps' && <section className="section-card map-workspace">
