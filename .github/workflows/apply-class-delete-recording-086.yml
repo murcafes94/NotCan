@@ -1,0 +1,143 @@
+name: Apply class deletion and recording context 0.8.6
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - '.github/workflows/apply-class-delete-recording-086.yml'
+
+permissions:
+  contents: write
+
+env:
+  EXPECTED_SHA256: ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply NotCan 0.8.6 corrections
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Pattern not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # DAO: class-specific file/note lookup for safe deletion.
+          replace_once(
+              'app/src/main/java/com/notcan/app/data/local/NotCanDao.kt',
+              '''    @Query("SELECT a.localPath FROM audio_recordings a INNER JOIN class_sessions c ON a.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")\n    suspend fun getAudioPathsForCycle(cycleId: String): List<String>\n''',
+              '''    @Query("SELECT localPath FROM audio_recordings WHERE classSessionId = :classId")\n    suspend fun getAudioPathsForClass(classId: String): List<String>\n    @Query("SELECT localPath FROM document_resources WHERE classSessionId = :classId")\n    suspend fun getDocumentPathsForClass(classId: String): List<String>\n    @Query("SELECT * FROM note_pages WHERE classSessionId = :classId")\n    suspend fun getNotesForClass(classId: String): List<NotePageEntity>\n\n    @Query("SELECT a.localPath FROM audio_recordings a INNER JOIN class_sessions c ON a.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")\n    suspend fun getAudioPathsForCycle(cycleId: String): List<String>\n'''
+          )
+
+          # Repository: physical files + sync-safe class deletion.
+          replace_once(
+              'app/src/main/java/com/notcan/app/data/StudyRepository.kt',
+              '''    suspend fun cycleSubjects(cycleId: String): List<SubjectEntity> = dao.getSubjectsForCycle(cycleId)\n''',
+              '''    suspend fun classFilePaths(classId: String): List<String> =\n        (dao.getAudioPathsForClass(classId) + dao.getDocumentPathsForClass(classId)).distinct()\n\n    suspend fun deleteClassData(classId: String) {\n        dao.getNotesForClass(classId).forEach { markDelete("note_pages", it.id) }\n        markDelete("class_sessions", classId)\n        dao.deleteClassSession(classId)\n    }\n\n    suspend fun cycleSubjects(cycleId: String): List<SubjectEntity> = dao.getSubjectsForCycle(cycleId)\n'''
+          )
+
+          # ViewModel: expose class deletion and remove local files.
+          replace_once(
+              'app/src/main/java/com/notcan/app/ui/NotCanViewModel.kt',
+              '''    fun addSchedule(subjectId: String, weekdayIso: Int, startMinuteOfDay: Int, endMinuteOfDay: Int, autoStopMode: String, autoStopGraceMinutes: Int) {\n''',
+              '''    fun deleteClass(classId: String) {\n        if (_selectedClassId.value == classId) {\n            _selectedClassId.value = null\n            _selectedNoteId.value = null\n        }\n        viewModelScope.launch(Dispatchers.IO) {\n            repository.classFilePaths(classId).forEach { path -> runCatching { File(path).delete() } }\n            repository.deleteClassData(classId)\n        }\n    }\n\n    fun addSchedule(subjectId: String, weekdayIso: Int, startMinuteOfDay: Int, endMinuteOfDay: Int, autoStopMode: String, autoStopGraceMinutes: Int) {\n'''
+          )
+
+          home = Path('app/src/main/java/com/notcan/app/ui/home/NotCanHomeScreen.kt')
+          text = home.read_text()
+          text = text.replace('import androidx.compose.material.icons.filled.ChevronRight\n', 'import androidx.compose.material.icons.filled.ChevronRight\nimport androidx.compose.material.icons.filled.Delete\nimport androidx.compose.material.icons.filled.RadioButtonChecked\n')
+          text = text.replace('import androidx.compose.material3.Button\n', 'import androidx.compose.material3.AlertDialog\nimport androidx.compose.material3.Button\n')
+          text = text.replace('import androidx.compose.material3.Text\n', 'import androidx.compose.material3.Text\nimport androidx.compose.material3.TextButton\n')
+          text = text.replace('import com.notcan.app.ui.theme.NotCanOffWhite\n', 'import com.notcan.app.ui.theme.NotCanOffWhite\nimport com.notcan.app.ui.theme.NotCanRed\n')
+          text = text.replace('''    onCreateClass: (String) -> Unit,\n    onCreateNote: (String) -> Unit,\n''', '''    onCreateClass: (String) -> Unit,\n    onDeleteClass: (String) -> Unit,\n    onCreateNote: (String) -> Unit,\n''')
+          text = text.replace('''                        onSelectClass = { id ->\n                            onSelectClass(id)\n                            level = HomeLevel.WORKSPACE\n                        },\n                        onAddClass = { createDialog = CreateDialog.Class }\n''', '''                        onSelectClass = { id ->\n                            onSelectClass(id)\n                            level = HomeLevel.WORKSPACE\n                        },\n                        onAddClass = { createDialog = CreateDialog.Class },\n                        onRecordNewClass = { onStartRecording(NEW_CLASS_RECORDING_SENTINEL) },\n                        onDeleteClass = onDeleteClass\n''')
+          old_function = '''private fun SubjectClassesLanding(\n    cycleName: String?,\n    subject: SubjectEntity,\n    classes: List<ClassSessionEntity>,\n    onBack: () -> Unit,\n    onSelectClass: (String) -> Unit,\n    onAddClass: () -> Unit\n) {\n    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {\n'''
+          new_function = '''private fun SubjectClassesLanding(\n    cycleName: String?,\n    subject: SubjectEntity,\n    classes: List<ClassSessionEntity>,\n    onBack: () -> Unit,\n    onSelectClass: (String) -> Unit,\n    onAddClass: () -> Unit,\n    onRecordNewClass: () -> Unit,\n    onDeleteClass: (String) -> Unit\n) {\n    var pendingDelete by remember(subject.id) { mutableStateOf<ClassSessionEntity?>(null) }\n    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {\n'''
+          if old_function not in text:
+              raise SystemExit('SubjectClassesLanding signature pattern not found')
+          text = text.replace(old_function, new_function, 1)
+          text = text.replace('''            Button(onClick = onAddClass) {\n                Icon(Icons.Default.Add, null)\n''', '''            IconButton(onClick = onRecordNewClass) {\n                Icon(Icons.Default.RadioButtonChecked, "Grabar nueva clase", tint = NotCanRed)\n            }\n            Button(onClick = onAddClass) {\n                Icon(Icons.Default.Add, null)\n''', 1)
+          text = text.replace('''                    Button(onClick = onAddClass) { Text("Crear primera clase") }\n''', '''                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {\n                        Button(onClick = onAddClass) { Text("Crear primera clase") }\n                        OutlinedButton(onClick = onRecordNewClass) {\n                            Icon(Icons.Default.RadioButtonChecked, null, tint = NotCanRed)\n                            Spacer(Modifier.padding(horizontal = 3.dp))\n                            Text("Grabar")\n                        }\n                    }\n''', 1)
+          text = text.replace('''                            Icon(Icons.Default.ChevronRight, null, tint = NotCanBlue)\n''', '''                            IconButton(onClick = { pendingDelete = classSession }) {\n                                Icon(Icons.Default.Delete, "Eliminar clase", tint = NotCanRed)\n                            }\n                            Icon(Icons.Default.ChevronRight, null, tint = NotCanBlue)\n''', 1)
+          marker = '''        }\n    }\n}\n\n@Composable\nprivate fun CompactWorkspaceHeader'''
+          replacement = '''        }\n    }\n\n    pendingDelete?.let { target ->\n        AlertDialog(\n            onDismissRequest = { pendingDelete = null },\n            title = { Text("Eliminar clase") },\n            text = { Text("Se eliminará ${target.title} con sus audios, transcripciones, apuntes y archivos locales. Esta acción no se puede deshacer.") },\n            confirmButton = {\n                TextButton(onClick = {\n                    pendingDelete = null\n                    onDeleteClass(target.id)\n                }) { Text("Eliminar", color = NotCanRed) }\n            },\n            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancelar") } }\n        )\n    }\n}\n\n@Composable\nprivate fun CompactWorkspaceHeader'''
+          if marker not in text:
+              raise SystemExit('SubjectClassesLanding end marker not found')
+          text = text.replace(marker, replacement, 1)
+          home.write_text(text)
+
+          # MainActivity: existing class -> same class; subject class panel -> create new class.
+          main = Path('app/src/main/java/com/notcan/app/MainActivity.kt')
+          text = main.read_text()
+          text = text.replace('import com.notcan.app.ui.home.NotCanHomeScreen\n', 'import com.notcan.app.ui.home.NEW_CLASS_RECORDING_SENTINEL\nimport com.notcan.app.ui.home.NotCanHomeScreen\n')
+          text = text.replace('''                            onCreateClass = studyViewModel::createClass,\n                            onCreateNote = studyViewModel::createNotePage,\n''', '''                            onCreateClass = studyViewModel::createClass,\n                            onDeleteClass = studyViewModel::deleteClass,\n                            onCreateNote = studyViewModel::createNotePage,\n''')
+          old = '''                            onStartRecording = { _ ->\n                                val subjectId = selectedSubjectId\n                                if (subjectId != null && !recordingActive) {\n                                    lifecycleScope.launch {\n                                        val session = recordingRepository.createClassSession(subjectId, "")\n                                        studyViewModel.selectClass(session.id)\n                                        requestPermissionsAndStart(session.id)\n                                    }\n                                }\n                            },\n'''
+          new = '''                            onStartRecording = { requestedClassId ->\n                                if (!recordingActive) {\n                                    if (requestedClassId == NEW_CLASS_RECORDING_SENTINEL) {\n                                        val subjectId = selectedSubjectId\n                                        if (subjectId != null) {\n                                            lifecycleScope.launch {\n                                                val session = recordingRepository.createClassSession(subjectId, "")\n                                                studyViewModel.selectClass(session.id)\n                                                requestPermissionsAndStart(session.id)\n                                            }\n                                        }\n                                    } else if (requestedClassId.isNotBlank()) {\n                                        studyViewModel.selectClass(requestedClassId)\n                                        requestPermissionsAndStart(requestedClassId)\n                                    }\n                                }\n                            },\n'''
+          if old not in text:
+              raise SystemExit('MainActivity recording lambda not found')
+          main.write_text(text.replace(old, new, 1))
+
+          # Version.
+          gradle = Path('app/build.gradle.kts')
+          text = gradle.read_text().replace('versionCode = 22', 'versionCode = 23').replace('versionName = "0.8.5"', 'versionName = "0.8.6"')
+          gradle.write_text(text)
+          PY
+
+      - name: Commit functional changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/notcan/app/data/local/NotCanDao.kt \
+                  app/src/main/java/com/notcan/app/data/StudyRepository.kt \
+                  app/src/main/java/com/notcan/app/ui/NotCanViewModel.kt \
+                  app/src/main/java/com/notcan/app/ui/home/NotCanHomeScreen.kt \
+                  app/src/main/java/com/notcan/app/MainActivity.kt \
+                  app/build.gradle.kts
+          git commit -m 'feat(android): delete classes and record in current class'
+          git push
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED_SHA256"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
+
+      - name: Remove temporary workflow
+        if: always()
+        run: |
+          git pull --rebase
+          rm -f .github/workflows/apply-class-delete-recording-086.yml
+          git add -A
+          git commit -m 'chore: remove Android 0.8.6 patch workflow' || true
+          git push
