@@ -11,12 +11,14 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
 
 /**
  * Renderizador Markdown ligero para respuestas de TuNot.
- * Soporta títulos, listas, negrita y código inline sin mostrar los marcadores crudos.
+ * Está orientado a apuntes: títulos, listas, citas, énfasis, enlaces y código inline,
+ * evitando mostrar marcadores Markdown crudos en la conversación.
  */
 @Composable
 internal fun TuNotRichText(
@@ -31,11 +33,27 @@ internal fun TuNotRichText(
 
 private fun tuNotMarkdown(value: String): AnnotatedString = buildAnnotatedString {
     val lines = value.replace("\r\n", "\n").split('\n')
+    var insideCodeFence = false
+
     lines.forEachIndexed { index, sourceLine ->
         val line = sourceLine.trimEnd()
         val trimmed = line.trimStart()
 
         if (trimmed.startsWith("```")) {
+            insideCodeFence = !insideCodeFence
+            if (index != lines.lastIndex && !insideCodeFence) append('\n')
+            return@forEachIndexed
+        }
+
+        if (trimmed.matches(Regex("^[-*_]{3,}$"))) {
+            if (index != lines.lastIndex) append('\n')
+            return@forEachIndexed
+        }
+
+        if (insideCodeFence) {
+            val start = length
+            append(line)
+            addStyle(SpanStyle(fontFamily = FontFamily.Monospace), start, length)
             if (index != lines.lastIndex) append('\n')
             return@forEachIndexed
         }
@@ -71,7 +89,12 @@ private fun tuNotMarkdown(value: String): AnnotatedString = buildAnnotatedString
         } else {
             val bullet = Regex("^[-*•]\\s+").find(trimmed)
             val numbered = Regex("^(\\d+)[.)]\\s+").find(trimmed)
+            val checkbox = Regex("^[-*]\\s+\\[([ xX])]\s+").find(trimmed)
             when {
+                checkbox != null -> {
+                    append(if (checkbox.groupValues[1].isBlank()) "☐ " else "☑ ")
+                    appendInlineMarkdown(trimmed.substring(checkbox.range.last + 1))
+                }
                 bullet != null -> {
                     append("• ")
                     appendInlineMarkdown(trimmed.substring(bullet.range.last + 1))
@@ -80,6 +103,21 @@ private fun tuNotMarkdown(value: String): AnnotatedString = buildAnnotatedString
                     append(numbered.groupValues[1])
                     append(". ")
                     appendInlineMarkdown(trimmed.substring(numbered.range.last + 1))
+                }
+                trimmed.startsWith("> ") -> {
+                    val start = length
+                    append("› ")
+                    appendInlineMarkdown(trimmed.removePrefix("> "))
+                    addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, length)
+                }
+                trimmed.startsWith("|") && trimmed.endsWith("|") -> {
+                    appendInlineMarkdown(
+                        trimmed.trim('|')
+                            .split('|')
+                            .map { it.trim() }
+                            .filterNot { it.matches(Regex(":?-{2,}:?")) }
+                            .joinToString(" · ")
+                    )
                 }
                 else -> appendInlineMarkdown(trimmed)
             }
@@ -96,7 +134,19 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(value: String) {
                 val end = value.indexOf("**", cursor + 2)
                 if (end > cursor + 2) {
                     val start = length
-                    append(value.substring(cursor + 2, end))
+                    append(cleanInlineLinks(value.substring(cursor + 2, end)))
+                    addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, length)
+                    cursor = end + 2
+                } else {
+                    append(value[cursor])
+                    cursor++
+                }
+            }
+            value.startsWith("__", cursor) -> {
+                val end = value.indexOf("__", cursor + 2)
+                if (end > cursor + 2) {
+                    val start = length
+                    append(cleanInlineLinks(value.substring(cursor + 2, end)))
                     addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, length)
                     cursor = end + 2
                 } else {
@@ -112,6 +162,7 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(value: String) {
                     addStyle(SpanStyle(fontFamily = FontFamily.Monospace), start, length)
                     cursor = end + 1
                 } else {
+                    append('`')
                     cursor++
                 }
             }
@@ -120,11 +171,28 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(value: String) {
                 val end = value.indexOf(marker, cursor + 1)
                 if (end > cursor + 1) {
                     val start = length
-                    append(value.substring(cursor + 1, end))
-                    addStyle(SpanStyle(fontWeight = FontWeight.Medium), start, length)
+                    append(cleanInlineLinks(value.substring(cursor + 1, end)))
+                    addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, length)
                     cursor = end + 1
                 } else {
                     append(marker)
+                    cursor++
+                }
+            }
+            value[cursor] == '[' -> {
+                val closeLabel = value.indexOf(']', cursor + 1)
+                val openUrl = closeLabel + 1
+                if (closeLabel > cursor && openUrl < value.length && value[openUrl] == '(') {
+                    val closeUrl = value.indexOf(')', openUrl + 1)
+                    if (closeUrl > openUrl) {
+                        append(value.substring(cursor + 1, closeLabel))
+                        cursor = closeUrl + 1
+                    } else {
+                        append(value[cursor])
+                        cursor++
+                    }
+                } else {
+                    append(value[cursor])
                     cursor++
                 }
             }
@@ -135,3 +203,5 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(value: String) {
         }
     }
 }
+
+private fun cleanInlineLinks(value: String): String = value.replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
