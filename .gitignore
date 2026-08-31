@@ -10,3 +10,8 @@ build/
 captures/
 *.jks
 *.keystore
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.tsbuildinfo
