@@ -1,0 +1,38 @@
+name: Apply Android home map 0.8.4
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-android-home-map-084.yml'
+permissions:
+  contents: write
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Android 0.8.4 patch
+        run: python3 ci/apply_android_home_map_084.py
+      - name: Commit Android corrections
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          git commit -m 'feat(android): expand home dashboard and isolate map toolbar'
+          git push
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Verify persistent test signature
+        run: |
+          apksigner verify --verbose app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NotCan-v0.8.4-test
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
