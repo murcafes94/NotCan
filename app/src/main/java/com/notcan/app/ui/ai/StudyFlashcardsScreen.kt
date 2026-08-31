@@ -36,8 +36,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -107,7 +107,7 @@ internal fun StudyFlashcardsScreen(
                     Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .pointerInput(position, order) {
+                        .pointerInput(position, order, showAnswer) {
                             detectHorizontalDragGestures(
                                 onDragStart = { swipeDistance = 0f },
                                 onHorizontalDrag = { change, dragAmount ->
@@ -115,9 +115,17 @@ internal fun StudyFlashcardsScreen(
                                     change.consume()
                                 },
                                 onDragEnd = {
-                                    when {
-                                        swipeDistance <= -72f -> next()
-                                        swipeDistance >= 72f -> previous()
+                                    if (showAnswer) {
+                                        when {
+                                            swipeDistance <= -72f -> {
+                                                hardCount++
+                                                next()
+                                            }
+                                            swipeDistance >= 72f -> {
+                                                goodCount++
+                                                next()
+                                            }
+                                        }
                                     }
                                     swipeDistance = 0f
                                 },
@@ -160,7 +168,7 @@ internal fun StudyFlashcardsScreen(
                                     Text(it, color = NotCanGray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 18.dp))
                                 }
                                 Text(
-                                    if (showAnswer) "Toca para volver a la pregunta" else "Toca para ver la respuesta",
+                                    if (showAnswer) "← Repasar · Entendido →" else "Toca para ver la respuesta",
                                     color = NotCanGray,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 24.dp)
