@@ -55,7 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** External PDF/DOCX/EPUB library for TuNot. Files are indexed but never opened as a reader here. */
+/** External PDF/DOCX/EPUB/WEB library for TuNot. All saved sources are indexed per class. */
 @Composable
 internal fun AiExternalSourcesPanel(
     subjectName: String?,
@@ -98,7 +98,7 @@ internal fun AiExternalSourcesPanel(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Fuentes externas", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("PDF, DOCX y EPUB · se indexan para buscar y para TuNot", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                Text("PDF, DOCX, EPUB y web · se indexan para buscar y para TuNot", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
             Button(
                 onClick = { launcher.launch(ClassSourceStore.SUPPORTED_MIME_TYPES) },
@@ -113,11 +113,18 @@ internal fun AiExternalSourcesPanel(
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
+        TuNotWebSourcesPanel(
+            store = store,
+            scopeKey = scopeKey,
+            onSourcesChanged = ::refresh,
+            modifier = Modifier.fillMaxWidth()
+        )
+
         if (sources.isEmpty()) {
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Todavía no hay archivos externos", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                    Text("Añade bibliografía o material de clase. NotCan extraerá el texto localmente, pero no lo mostrará como lector ni lo convertirá en apunte.", color = NotCanGray)
+                    Text("Todavía no hay fuentes guardadas", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                    Text("Añade bibliografía o guarda una página web. NotCan indexará el contenido para que TuNot pueda usarlo en esta clase.", color = NotCanGray)
                 }
             }
         } else {

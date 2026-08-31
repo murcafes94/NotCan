@@ -28,7 +28,8 @@ class ClassSourceStore(private val context: Context) {
         val createdAtEpochMs: Long,
         val indexed: Boolean,
         val enabled: Boolean = true,
-        val indexChars: Int = 0
+        val indexChars: Int = 0,
+        val sourceUrl: String? = null
     )
 
     data class SearchHit(
@@ -85,9 +86,51 @@ class ClassSourceStore(private val context: Context) {
         return item
     }
 
+    fun importWeb(scopeKey: String, title: String, url: String, content: String): SourceItem {
+        require(url.startsWith("https://") || url.startsWith("http://")) { "URL web no válida" }
+        val cleanTitle = title.trim().ifBlank { url }.take(180)
+        val cleanText = content
+            .replace("\u0000", "")
+            .replace(Regex("[\t ]+"), " ")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+            .take(180_000)
+        require(cleanText.isNotBlank()) { "La página no contiene texto legible" }
+
+        val id = UUID.randomUUID().toString()
+        val dir = scopeDir(scopeKey).apply { mkdirs() }
+        val file = File(dir, "${id.take(8)}_${sanitize(cleanTitle)}.web.txt")
+        val indexedText = buildString {
+            appendLine("TÍTULO: $cleanTitle")
+            appendLine("URL: $url")
+            appendLine("FECHA DE CONSULTA: ${java.time.Instant.now()}")
+            appendLine()
+            append(cleanText)
+        }
+        file.writeText(indexedText, Charsets.UTF_8)
+        SourceTextIndexer.indexFileFor(file).writeText(indexedText, Charsets.UTF_8)
+        val item = SourceItem(
+            id = id,
+            scopeKey = scopeKey,
+            displayName = cleanTitle,
+            type = "WEB",
+            mimeType = "text/plain",
+            localPath = file.absolutePath,
+            createdAtEpochMs = System.currentTimeMillis(),
+            indexed = true,
+            enabled = true,
+            indexChars = indexedText.length,
+            sourceUrl = url
+        )
+        saveItem(item)
+        return item
+    }
+
     fun reindex(item: SourceItem): SourceItem {
         val file = File(item.localPath)
-        val index = SourceTextIndexer.index(context, file, item.type)
+        val index = if (item.type == "WEB" && file.exists()) {
+            SourceTextIndexer.indexFileFor(file).also { it.writeText(file.readText(Charsets.UTF_8), Charsets.UTF_8) }
+        } else SourceTextIndexer.index(context, file, item.type)
         val updated = item.copy(
             indexed = index?.exists() == true,
             indexChars = index?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
@@ -153,6 +196,7 @@ class ClassSourceStore(private val context: Context) {
             val text = SourceTextIndexer.readIndex(File(item.localPath), minOf(perSourceChars, remaining))
             if (text.isBlank()) continue
             out.appendLine("\n=== FUENTE EXTERNA: ${item.displayName} (${item.type}) ===")
+            item.sourceUrl?.takeIf { it.isNotBlank() }?.let { out.appendLine("URL: $it") }
             out.appendLine(text)
         }
         return out.toString().take(totalChars)
@@ -192,6 +236,7 @@ class ClassSourceStore(private val context: Context) {
         .put("indexed", indexed)
         .put("enabled", enabled)
         .put("indexChars", indexChars)
+        .put("sourceUrl", sourceUrl)
 
     private fun JSONObject.toSourceItem(): SourceItem? = runCatching {
         SourceItem(
@@ -204,7 +249,8 @@ class ClassSourceStore(private val context: Context) {
             createdAtEpochMs = getLong("createdAtEpochMs"),
             indexed = optBoolean("indexed", false),
             enabled = optBoolean("enabled", true),
-            indexChars = optInt("indexChars", 0)
+            indexChars = optInt("indexChars", 0),
+            sourceUrl = optString("sourceUrl").takeIf { it.isNotBlank() && it != "null" }
         )
     }.getOrNull()
 

@@ -16,6 +16,7 @@ class NotCanAiService(private val context: Context) {
     private val appContext = context.applicationContext
     private val preferences = NotCanPreferences(appContext)
     private val credentials = MistralCredentialsStore(appContext)
+    private val webResearch = WebResearchService(appContext)
 
     fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
 
@@ -34,11 +35,15 @@ class NotCanAiService(private val context: Context) {
         }
 
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
+        val forcedWeb = question.contains(WEB_SEARCH_MARKER)
+        val autoWeb = question.contains(AUTO_WEB_MARKER)
         val socraticMode = question.contains(SOCRATIC_MARKER)
         val flashcardRequest = question.contains(FLASHCARDS_MARKER)
         val quizRequest = question.contains(QUIZ_MARKER)
         val cleanQuestion = question
             .replace(SOURCE_ONLY_MARKER, "")
+            .replace(WEB_SEARCH_MARKER, "")
+            .replace(AUTO_WEB_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
             .replace(FLASHCARDS_MARKER, "")
             .replace(QUIZ_MARKER, "")
@@ -50,6 +55,11 @@ class NotCanAiService(private val context: Context) {
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
+        val wantsWeb = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
+        val webResults = if (wantsWeb) {
+            runCatching { webResearch.research(cleanQuestion, limit = 5, readTop = 3) }.getOrDefault(emptyList())
+        } else emptyList()
+        val webContext = webResearch.formatForPrompt(webResults)
 
         if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank()) {
             return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
@@ -82,6 +92,14 @@ class NotCanAiService(private val context: Context) {
             appendLine("No abuses de comillas, asteriscos ni encabezados. La respuesta debe verse como apuntes bien editados, no como texto técnico del modelo.")
             appendLine()
             appendLine(TuNotCatholicSourcePolicy.promptPolicy())
+            if (wantsWeb) {
+                appendLine("MODO WEB DE NOTCAN ACTIVADO.")
+                appendLine("NotCan realizó la búsqueda fuera de Mistral y te entrega FUENTES WEB reales debajo.")
+                appendLine("Usa esas fuentes para datos actuales o externos. No inventes URLs ni atribuciones.")
+                appendLine("Distingue claramente información recuperada de la web de conocimiento general o material de clase.")
+                appendLine("Al final incluye una sección breve 'Fuentes web' con título y URL de las fuentes que realmente hayas usado.")
+                if (webResults.isEmpty()) appendLine("La búsqueda no devolvió resultados utilizables; dilo explícitamente si la respuesta depende de información actual.")
+            }
 
             if (strictSources) {
                 appendLine("MODO SOLO MIS FUENTES ACTIVADO.")
@@ -182,6 +200,11 @@ class NotCanAiService(private val context: Context) {
                 appendLine("\n--- MATERIAL DE CLASE DISPONIBLE ---")
                 appendLine(sourceText)
                 appendLine("--- FIN DEL MATERIAL DE CLASE ---\n")
+            }
+            if (webContext.isNotBlank()) {
+                appendLine("\n--- FUENTES WEB RECUPERADAS POR NOTCAN ---")
+                appendLine(webContext)
+                appendLine("--- FIN DE FUENTES WEB ---\n")
             }
 
             appendLine("SOLICITUD DEL USUARIO:")
@@ -322,6 +345,8 @@ class NotCanAiService(private val context: Context) {
     companion object {
         const val TEXT_MODEL = "Mistral Agent"
         const val SOURCE_ONLY_MARKER = "[SOLO_FUENTES]"
+        const val WEB_SEARCH_MARKER = "[BUSCAR_WEB_NOTCAN]"
+        const val AUTO_WEB_MARKER = "[AUTO_WEB_NOTCAN]"
         const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
         const val FLASHCARDS_MARKER = "[GENERAR_TARJETAS_NOTCAN]"
         const val QUIZ_MARKER = "[GENERAR_CUESTIONARIO_NOTCAN]"

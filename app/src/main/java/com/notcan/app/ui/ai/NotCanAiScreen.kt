@@ -348,7 +348,7 @@ private fun AiChat(
     val store = remember(context) { TuNotChatStore(context.applicationContext) }
     val scopeKey = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle.orEmpty()}" }
     var question by remember(scopeKey) { mutableStateOf("") }
-    var sourceOnly by remember(scopeKey) { mutableStateOf(false) }
+    var sourceMode by remember(scopeKey) { mutableIntStateOf(1) } // 0 Mis fuentes · 1 Auto · 2 Web
     var socraticMode by remember(scopeKey) { mutableStateOf(false) }
     var toolsOpen by remember(scopeKey) { mutableStateOf(false) }
     val messages = remember(scopeKey) {
@@ -397,7 +397,11 @@ private fun AiChat(
         persist()
         val previousAssistant = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty()
         val prompt = buildString {
-            if (sourceOnly) appendLine(NotCanAiService.SOURCE_ONLY_MARKER)
+            when (sourceMode) {
+                0 -> appendLine(NotCanAiService.SOURCE_ONLY_MARKER)
+                2 -> appendLine(NotCanAiService.WEB_SEARCH_MARKER)
+                else -> appendLine(NotCanAiService.AUTO_WEB_MARKER)
+            }
             if (socraticMode) {
                 appendLine(NotCanAiService.SOCRATIC_MARKER)
                 if (previousAssistant.isNotBlank()) {
@@ -419,13 +423,13 @@ private fun AiChat(
             if (wide) {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     AnimatedVisibility(visible = toolsOpen) {
-                        CompactAiTools(sourceOnly, socraticMode, messages.isNotEmpty(), { sourceOnly = it }, { socraticMode = it }, ::clearConversation, Modifier.width(250.dp))
+                        CompactAiTools(sourceMode, socraticMode, messages.isNotEmpty(), { sourceMode = it }, { socraticMode = it }, ::clearConversation, Modifier.width(250.dp))
                     }
                     ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 AnimatedVisibility(visible = toolsOpen) {
-                    CompactAiTools(sourceOnly, socraticMode, messages.isNotEmpty(), { sourceOnly = it }, { socraticMode = it }, ::clearConversation, Modifier.fillMaxWidth())
+                    CompactAiTools(sourceMode, socraticMode, messages.isNotEmpty(), { sourceMode = it }, { socraticMode = it }, ::clearConversation, Modifier.fillMaxWidth())
                 }
                 ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxWidth())
             }
@@ -435,17 +439,31 @@ private fun AiChat(
 
 @Composable
 private fun CompactAiTools(
-    sourceOnly: Boolean,
+    sourceMode: Int,
     socraticMode: Boolean,
     hasMessages: Boolean,
-    onSourceOnlyChange: (Boolean) -> Unit,
+    onSourceModeChange: (Int) -> Unit,
     onSocraticChange: (Boolean) -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanSurface.copy(alpha = 0.72f)), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = sourceOnly, onClick = { onSourceOnlyChange(!sourceOnly) }, label = { Text("Solo mis fuentes") }, leadingIcon = { Icon(Icons.Default.Source, null) })
+            Text("Fuentes de respuesta", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = sourceMode == 0, onClick = { onSourceModeChange(0) }, label = { Text("Mis fuentes") })
+                FilterChip(selected = sourceMode == 1, onClick = { onSourceModeChange(1) }, label = { Text("Auto") })
+                FilterChip(selected = sourceMode == 2, onClick = { onSourceModeChange(2) }, label = { Text("Web") })
+            }
+            Text(
+                when (sourceMode) {
+                    0 -> "Solo material guardado en NotCan"
+                    2 -> "Busca en DuckDuckGo antes de responder"
+                    else -> "Busca solo cuando la pregunta necesita información externa o actual"
+                },
+                color = NotCanGray,
+                style = MaterialTheme.typography.bodySmall
+            )
             FilterChip(selected = socraticMode, onClick = { onSocraticChange(!socraticMode) }, label = { Text("Socrático") }, leadingIcon = { Icon(Icons.Default.Quiz, null) })
             if (hasMessages) TextButton(onClick = onClear) { Text("Nueva conversación") }
         }
