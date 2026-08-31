@@ -169,9 +169,9 @@ fun StudyMapScreen(
             // El mapa usa un lienzo virtual grande. No se reduce el texto para intentar meterlo todo
             // en la pantalla: el usuario puede desplazarse y hacer zoom libremente.
             val textDemand = remember(visibleMap) {
-                visibleMap.nodes.sumOf { node ->
+                visibleMap.nodes.fold(0f) { total, node ->
                     val chars = node.title.length + (node.description?.length ?: 0)
-                    108f + (chars / 30f) * 14f
+                    total + 108f + (chars / 30f) * 14f
                 }
             }
             val virtualWidthPx = maxOf(
