@@ -32,15 +32,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package.json
+          cache-dependency-path: web/package-lock.json
 
-      - name: Install dependencies
+      - name: Install clean dependencies
         working-directory: web
-        run: npm install
+        run: |
+          rm -rf node_modules
+          npm ci
 
       - name: Build PWA
         working-directory: web
         env:
+          GITHUB_PAGES: true
           VITE_SUPABASE_URL: https://xpkxvhnttquvnbcfnbck.supabase.co
           VITE_SUPABASE_ANON_KEY: sb_publishable_wTChkG7BwOd00sz67lOWDQ_dZ8XdYpV
         run: npm run build
