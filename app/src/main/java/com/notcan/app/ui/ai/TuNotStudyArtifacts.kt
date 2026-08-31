@@ -33,7 +33,7 @@ internal object StudyFlashcardArtifactParser {
             ?: extractBareStudyArtifact(value) { root -> root.flexArray("cards", "flashcards", "tarjetas") != null }
             ?: return null
         return runCatching {
-            val root = JSONObject(artifact.json)
+            val root = JSONObject(repairStudyJson(artifact.json))
             val title = compact(root.flexString("title").ifBlank { "Tarjetas de estudio" }, 70)
             val array = root.flexArray("cards", "flashcards", "tarjetas") ?: return@runCatching null
             val cards = buildList {
@@ -106,7 +106,7 @@ internal object StudyQuizArtifactParser {
             ?: extractBareStudyArtifact(value) { root -> root.flexArray("questions", "preguntas") != null }
             ?: return null
         return runCatching {
-            val root = JSONObject(artifact.json)
+            val root = JSONObject(repairStudyJson(artifact.json))
             val title = compactStudyText(root.flexString("title").ifBlank { "Cuestionario" }, 80)
             val array = root.flexArray("questions", "preguntas") ?: return@runCatching null
             val questions = buildList {
@@ -216,6 +216,31 @@ internal class TuNotChatStore(context: Context) {
     }
 }
 
+private fun repairStudyJson(value: String): String {
+    val out = StringBuilder(value.length + 32)
+    var inString = false
+    var escaped = false
+    value.forEach { ch ->
+        if (inString) {
+            when {
+                escaped -> { out.append(ch); escaped = false }
+                ch == '\\' -> { out.append(ch); escaped = true }
+                ch == '"' -> { out.append(ch); inString = false }
+                ch == '\n' -> out.append("\\n")
+                ch == '\r' -> out.append("\\r")
+                ch == '\t' -> out.append("\\t")
+                else -> out.append(ch)
+            }
+        } else {
+            if (ch == '"') inString = true
+            out.append(ch)
+        }
+    }
+    return out.toString()
+        .replace('“', '"').replace('”', '"')
+        .replace(Regex(",\\s*([}\\]])"), "$1")
+}
+
 private fun extractStudyArtifact(
     value: String,
     startMarkers: List<String>,
@@ -251,7 +276,7 @@ private fun extractBareStudyArtifact(
     val jsonStart = value.indexOf('{').takeIf { it >= 0 } ?: return null
     val jsonEnd = balancedJsonObjectEnd(value, jsonStart, value.length) ?: return null
     val json = value.substring(jsonStart, jsonEnd).trim()
-    val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    val root = runCatching { JSONObject(repairStudyJson(json)) }.getOrNull() ?: return null
     if (!signature(root)) return null
     return StudyArtifactSlice(json = json, start = jsonStart, endExclusive = jsonEnd)
 }

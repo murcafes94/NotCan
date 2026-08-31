@@ -1,6 +1,8 @@
 package com.notcan.app.ui.home
 
+import android.content.Intent
 import android.media.MediaPlayer
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +68,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
 import com.notcan.app.data.local.DetectedCueEntity
@@ -76,8 +80,17 @@ import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
+import com.notcan.app.ui.ai.ParsedFlashcardArtifact
+import com.notcan.app.ui.ai.ParsedQuizArtifact
+import com.notcan.app.ui.ai.StudyFlashcardArtifactParser
+import com.notcan.app.ui.ai.StudyFlashcardsScreen
+import com.notcan.app.ui.ai.StudyQuizArtifactParser
+import com.notcan.app.ui.ai.StudyQuizScreen
 import com.notcan.app.ui.ai.StudyArtifactKind
 import com.notcan.app.ui.ai.TuNotArtifactStore
+import com.notcan.app.ui.maps.ParsedStudyMapArtifact
+import com.notcan.app.ui.maps.StudyMapArtifactParser
+import com.notcan.app.ui.maps.StudyMapScreen
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGraphite
 import com.notcan.app.ui.theme.NotCanGray
@@ -585,11 +598,20 @@ private fun TranscriptContentV5(
 
 @Composable
 private fun TranscriptRowV5(transcript: TranscriptEntity, onDelete: () -> Unit) {
+    val context = LocalContext.current
     var confirmDelete by remember(transcript.id) { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = {
+                    val title = transcript.modelName ?: "Transcripción NotCan"
+                    val intent = Intent(Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(Intent.EXTRA_SUBJECT, title)
+                        .putExtra(Intent.EXTRA_TEXT, transcript.body)
+                    context.startActivity(Intent.createChooser(intent, "Compartir transcripción"))
+                }) { Icon(Icons.Default.Share, "Compartir transcripción", tint = NotCanBlue) }
                 IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Eliminar transcripción", tint = NotCanRed) }
             }
             Spacer(Modifier.height(5.dp))
@@ -618,7 +640,39 @@ private fun StudyContentV5(
     val context = LocalContext.current
     val store = remember(context) { TuNotArtifactStore(context.applicationContext) }
     val scope = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle}" }
-    val artifacts = remember(scope) { store.load(scope) }
+    var revision by remember(scope) { mutableIntStateOf(0) }
+    val artifacts = remember(scope, revision) { store.load(scope) }
+    var openedMap by remember(scope) { mutableStateOf<ParsedStudyMapArtifact?>(null) }
+    var openedDeck by remember(scope) { mutableStateOf<ParsedFlashcardArtifact?>(null) }
+    var openedQuiz by remember(scope) { mutableStateOf<ParsedQuizArtifact?>(null) }
+
+    fun open(raw: String, kind: StudyArtifactKind) {
+        when (kind) {
+            StudyArtifactKind.MAP -> openedMap = StudyMapArtifactParser.parse(raw)
+            StudyArtifactKind.FLASHCARDS -> openedDeck = StudyFlashcardArtifactParser.parse(raw)
+            StudyArtifactKind.QUIZ -> openedQuiz = StudyQuizArtifactParser.parse(raw)
+        }
+    }
+
+    openedMap?.let { artifact ->
+        BackHandler { openedMap = null }
+        Dialog(
+            onDismissRequest = { openedMap = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { openedMap = null }) { Text("Volver") }
+                        Text(artifact.map.title, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                    }
+                    StudyMapScreen(artifact.map, modifier = Modifier.weight(1f).fillMaxWidth(), initialLayout = artifact.preferredLayout)
+                }
+            }
+        }
+    }
+    openedDeck?.let { deck -> StudyFlashcardsScreen(deck = deck, onBack = { openedDeck = null }) }
+    openedQuiz?.let { quiz -> StudyQuizScreen(quiz = quiz, onBack = { openedQuiz = null }) }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
@@ -639,12 +693,19 @@ private fun StudyContentV5(
                         StudyArtifactKind.FLASHCARDS -> "Tarjetas"
                         StudyArtifactKind.QUIZ -> "Cuestionario"
                     }
-                    Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NotCanGraphite),
+                        modifier = Modifier.fillMaxWidth().clickable { open(artifact.rawContent, artifact.kind) }
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(artifact.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                                Text("$kind · abrir desde IA → Estudio", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                                Text("$kind · toca para abrir", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                             }
+                            IconButton(onClick = {
+                                store.delete(scope, artifact.id)
+                                revision += 1
+                            }) { Icon(Icons.Default.Delete, "Eliminar material", tint = NotCanRed) }
                         }
                     }
                 }

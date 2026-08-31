@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
@@ -141,19 +143,21 @@ fun StudyMapScreen(
     }
 
     Column(modifier.fillMaxSize()) {
-        // La barra vive fuera del lienzo transformable: mover/zoom nunca puede taparla.
-        StudyMapToolbar(
-            map = map,
-            style = layoutStyle,
-            zoom = zoom,
-            onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest++ },
-            onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
-            onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
-            onFit = { fitRequest++ },
-            onCenter = { centerRequest++ },
-            onExport = ::exportAndShare
-        )
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+        // La barra está fuera del lienzo y por encima de él en el árbol de dibujo.
+        Box(Modifier.fillMaxWidth().zIndex(3f)) {
+            StudyMapToolbar(
+                map = map,
+                style = layoutStyle,
+                zoom = zoom,
+                onLayoutChange = { layoutStyle = it; collapsedNodes = emptySet(); fitRequest++ },
+                onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
+                onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
+                onFit = { fitRequest++ },
+                onCenter = { centerRequest++ },
+                onExport = ::exportAndShare
+            )
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
             val density = LocalDensity.current
             val widthPx = with(density) { maxWidth.toPx() }
             val heightPx = with(density) { maxHeight.toPx() }
@@ -162,8 +166,26 @@ fun StudyMapScreen(
                 viewportHeight = heightPx
             }
 
-            val nodes = remember(visibleMap, layoutStyle, widthPx, heightPx) {
-                StudyMapLayoutEngine.layout(visibleMap, layoutStyle, widthPx, heightPx)
+            // El mapa usa un lienzo virtual grande. No se reduce el texto para intentar meterlo todo
+            // en la pantalla: el usuario puede desplazarse y hacer zoom libremente.
+            val textDemand = remember(visibleMap) {
+                visibleMap.nodes.sumOf { node ->
+                    val chars = node.title.length + (node.description?.length ?: 0)
+                    108f + (chars / 30f) * 14f
+                }
+            }
+            val virtualWidthPx = maxOf(
+                widthPx,
+                when (layoutStyle) {
+                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> 1750f
+                    else -> 1450f
+                }
+            )
+            val virtualHeightPx = maxOf(heightPx, textDemand * 0.72f, visibleMap.nodes.size * 145f)
+            val virtualWidthDp = with(density) { virtualWidthPx.toDp() }
+            val virtualHeightDp = with(density) { virtualHeightPx.toDp() }
+            val nodes = remember(visibleMap, layoutStyle, virtualWidthPx, virtualHeightPx) {
+                StudyMapLayoutEngine.layout(visibleMap, layoutStyle, virtualWidthPx, virtualHeightPx)
             }
             val positionedById = remember(nodes) { nodes.associateBy { it.node.id } }
 
@@ -179,7 +201,7 @@ fun StudyMapScreen(
                 val fitted = minOf(
                     ((widthPx - padding * 2f) / contentWidth),
                     ((heightPx - padding * 2f) / contentHeight)
-                ).coerceIn(0.35f, 1.45f)
+                ).coerceIn(0.72f, 1.45f)
                 zoom = fitted
                 panX = (widthPx - contentWidth * fitted) / 2f - minX * fitted
                 panY = (heightPx - contentHeight * fitted) / 2f - minY * fitted
@@ -213,7 +235,7 @@ fun StudyMapScreen(
             ) {
                 Box(
                     Modifier
-                        .fillMaxSize()
+                        .size(virtualWidthDp, virtualHeightDp)
                         .graphicsLayer {
                             transformOrigin = TransformOrigin(0f, 0f)
                             translationX = panX

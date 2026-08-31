@@ -1,18 +1,15 @@
 package com.notcan.app.ui.home
 
-import android.content.Intent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
@@ -25,7 +22,6 @@ import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.recording.RecordingState
-import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanRed
 
 /** Compatibility wrapper kept while older PDF entities remain in the database. */
@@ -68,8 +64,6 @@ internal fun NotCanClassWorkspaceV4(
     onStopRecording: () -> Unit,
     onMarkMoment: () -> Unit
 ) {
-    val context = LocalContext.current
-    val latestTranscript = transcripts.firstOrNull()
     val recordingActive = recordingState is RecordingState.Recording || recordingState is RecordingState.Paused
 
     Box(modifier = modifier) {
@@ -114,25 +108,6 @@ internal fun NotCanClassWorkspaceV4(
             }
         }
 
-        if (latestTranscript != null && !recordingActive) {
-            IconButton(
-                onClick = {
-                    val text = buildString {
-                        appendLine(classSession?.title ?: "Transcripción NotCan")
-                        appendLine()
-                        append(latestTranscript.body)
-                    }
-                    val intent = Intent(Intent.ACTION_SEND)
-                        .setType("text/plain")
-                        .putExtra(Intent.EXTRA_SUBJECT, classSession?.title ?: "Transcripción NotCan")
-                        .putExtra(Intent.EXTRA_TEXT, text)
-                    context.startActivity(Intent.createChooser(intent, "Compartir transcripción"))
-                },
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 84.dp)
-            ) {
-                Icon(Icons.Default.Share, contentDescription = "Compartir transcripción", tint = NotCanBlue)
-            }
-        }
     }
 }
 

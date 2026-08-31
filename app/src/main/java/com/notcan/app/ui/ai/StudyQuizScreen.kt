@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -241,7 +242,13 @@ internal fun StudyQuizScreen(
                     }
 
                     if (answer != null) {
-                        Button(onClick = ::next, modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                        Button(
+                            onClick = ::next,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
+                        ) {
                             Text(if (position == order.lastIndex) "Ver resultado" else "Siguiente")
                         }
                     }
@@ -283,7 +290,7 @@ private fun QuizResults(
 ) {
     val wrongQuestions = quiz.questions.filter { answers[it.id]?.correct == false }
     Column(
-        Modifier.fillMaxSize().padding(22.dp),
+        Modifier.fillMaxSize().navigationBarsPadding().padding(22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

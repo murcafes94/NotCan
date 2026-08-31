@@ -573,7 +573,8 @@ private fun ChatBubble(
         ) {
             Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (user) "Tú" else "TuNot", color = if (user) NotCanBlue else NotCanGray, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                if (message.content.isNotBlank()) TuNotRichText(message.content, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
+                val safeVisibleContent = if (user) message.content else sanitizeUnparsedArtifact(message.content)
+                if (safeVisibleContent.isNotBlank()) TuNotRichText(safeVisibleContent, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
                 message.mapArtifact?.let { artifact ->
                     ArtifactCard(
                         icon = Icons.Default.AutoAwesome,

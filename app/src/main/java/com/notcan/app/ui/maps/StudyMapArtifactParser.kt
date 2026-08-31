@@ -20,11 +20,11 @@ internal object StudyMapArtifactParser {
     const val END_MARKER = "<<<END_NOTCAN_MAP>>>"
     private val START_MARKERS = listOf(START_MARKER, "<<NOTCAN_MAP>>", "<NOTCAN_MAP>")
     private val END_MARKERS = listOf(END_MARKER, "<<END_NOTCAN_MAP>>", "<END_NOTCAN_MAP>")
-    private const val MAX_NODES = 16
+    private const val MAX_NODES = 32
 
     fun parse(value: String): ParsedStudyMapArtifact? {
         val artifact = extractArtifact(value) ?: return null
-        return runCatching { parseJson(JSONObject(artifact.json)) }.getOrNull()
+        return runCatching { parseJson(JSONObject(repairModelJson(artifact.json))) }.getOrNull()
     }
 
     fun stripArtifact(value: String): String {
@@ -102,6 +102,31 @@ internal object StudyMapArtifactParser {
         return null
     }
 
+    private fun repairModelJson(value: String): String {
+        val out = StringBuilder(value.length + 32)
+        var inString = false
+        var escaped = false
+        value.forEach { ch ->
+            if (inString) {
+                when {
+                    escaped -> { out.append(ch); escaped = false }
+                    ch == '\\' -> { out.append(ch); escaped = true }
+                    ch == '"' -> { out.append(ch); inString = false }
+                    ch == '\n' -> out.append("\\n")
+                    ch == '\r' -> out.append("\\r")
+                    ch == '\t' -> out.append("\\t")
+                    else -> out.append(ch)
+                }
+            } else {
+                if (ch == '"') inString = true
+                out.append(ch)
+            }
+        }
+        return out.toString()
+            .replace('“', '"').replace('”', '"')
+            .replace(Regex(",\\s*([}\\]])"), "$1")
+    }
+
     private fun parseJson(root: JSONObject): ParsedStudyMapArtifact {
         val type = when (root.flexString("type").lowercase()) {
             "concept_map", "conceptual", "concept" -> StudyMapType.CONCEPT_MAP
@@ -115,7 +140,7 @@ internal object StudyMapArtifactParser {
             "constellation", "constelacion", "constelación" -> StudyMapLayoutStyle.CONSTELLATION
             else -> StudyMapLayoutStyle.HORIZONTAL_BRANCHES
         }
-        val title = compact(root.flexString("title").ifBlank { "Mapa de estudio" }, 54)
+        val title = compact(root.flexString("title").ifBlank { "Mapa de estudio" }, 96)
         val nodesArray = root.flexArray("nodes") ?: error("El mapa no contiene nodos")
         val allNodes = mutableListOf<StudyMapNode>()
         for (i in 0 until nodesArray.length()) {
@@ -123,19 +148,19 @@ internal object StudyMapArtifactParser {
             val level = item.optInt("level", if (i == 0) 0 else 1).coerceIn(0, 3)
             allNodes += StudyMapNode(
                 id = item.flexString("id").ifBlank { UUID.randomUUID().toString() },
-                title = compact(item.flexString("title").ifBlank { "Concepto" }, if (level == 0) 48 else 34),
+                title = compact(item.flexString("title").ifBlank { "Concepto" }, if (level == 0) 140 else 120),
                 description = item.flexString("description")
                     .takeIf { it.isNotBlank() }
-                    ?.let { compact(it, 150) },
+                    ?.let { compact(it, 1400) },
                 level = level,
                 sourceRefs = buildList {
                     val refs = item.flexArray("source_refs", "sourceRefs", "sourcerefs")
                     if (refs != null) {
-                        for (j in 0 until refs.length()) add(compact(refs.optString(j), 28))
+                        for (j in 0 until refs.length()) add(compact(refs.optString(j), 80))
                     } else {
                         item.flexString("source_ref", "sourceRef", "sourceref")
                             .takeIf { it.isNotBlank() }
-                            ?.let { add(compact(it, 28)) }
+                            ?.let { add(compact(it, 80)) }
                     }
                 }.filter { it.isNotBlank() }.distinct().take(3)
             )
@@ -170,7 +195,7 @@ internal object StudyMapArtifactParser {
                     to = to,
                     label = item.flexString("label")
                         .takeIf { it.isNotBlank() }
-                        ?.let { compact(it, 22) }
+                        ?.let { compact(it, 120) }
                 )
             }
         }
