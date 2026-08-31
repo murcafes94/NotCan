@@ -119,7 +119,7 @@ fun NotCanAiScreen(
     var openedDeck by remember { mutableStateOf<ParsedFlashcardArtifact?>(null) }
     var openedQuiz by remember { mutableStateOf<ParsedQuizArtifact?>(null) }
 
-    LaunchedEffect(result, artifactScope, autoSaveNextArtifact) {
+    LaunchedEffect(result, artifactScope) {
         if (autoSaveNextArtifact && result.isNotBlank()) {
             if (artifactStore.save(artifactScope, result) != null) {
                 artifactRevision += 1
