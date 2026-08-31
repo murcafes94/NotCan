@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 
+// TuNot routing: local Ollama, Mistral through the authenticated Edge Function, or source-only fallback.
 export type AiProvider = 'auto' | 'local' | 'mistral' | 'free'
 
 export type AiContextItem = {
