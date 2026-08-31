@@ -2,6 +2,8 @@ import {
   type ChangeEvent,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
   useEffect,
   useMemo,
   useRef,
@@ -116,6 +118,7 @@ export default function App() {
   const [pending, setPending] = useState(0)
   const [syncLabel, setSyncLabel] = useState<SyncLabel>({ text: 'Solo local', kind: 'muted' })
   const [page, setPage] = useState<Page>('home')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null)
 
@@ -147,6 +150,10 @@ export default function App() {
   })
   const [mapTitle, setMapTitle] = useState('Mi mapa conceptual')
   const [mapNodes, setMapNodes] = useState(['Idea central', 'Concepto 1', 'Concepto 2'])
+  const [mapNodeDraft, setMapNodeDraft] = useState('')
+  const [mapZoom, setMapZoom] = useState(1)
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 })
+  const mapDragRef = useRef<{ pointerId: number; startX: number; startY: number; panX: number; panY: number } | null>(null)
 
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiAnswer, setAiAnswer] = useState('')
@@ -196,6 +203,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('notcan-files-meta', JSON.stringify(localFiles))
   }, [localFiles])
+
+  useEffect(() => {
+    if (page !== 'home') setSidebarOpen(false)
+  }, [page])
 
   useEffect(() => {
     if (!supabase) return
@@ -259,6 +270,7 @@ export default function App() {
   function navigate(next: Page) {
     setEditorOpen(false)
     setPage(next)
+    setSidebarOpen(false)
     setSearch('')
   }
 
@@ -575,6 +587,51 @@ export default function App() {
     setAiMode('chat')
     setEditorOpen(false)
     setPage('ai')
+  }
+
+  function addMapNode() {
+    const value = mapNodeDraft.trim()
+    if (!value) return
+    setMapNodes((prev) => [...prev, value])
+    setMapNodeDraft('')
+  }
+
+  function handleMapPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement
+    if (target.closest('button,input,textarea')) return
+    mapDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: mapPan.x,
+      panY: mapPan.y,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function handleMapPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = mapDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setMapPan({
+      x: drag.panX + event.clientX - drag.startX,
+      y: drag.panY + event.clientY - drag.startY,
+    })
+  }
+
+  function handleMapPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    if (mapDragRef.current?.pointerId === event.pointerId) mapDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  function handleMapWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const next = mapZoom * (event.deltaY > 0 ? 0.9 : 1.1)
+    setMapZoom(Math.min(2.8, Math.max(0.45, next)))
+  }
+
+  function resetMapView() {
+    setMapZoom(1)
+    setMapPan({ x: 0, y: 0 })
   }
 
   const navGroups: { label: string; items: { page: Page; icon: string; label: string }[] }[] = [
@@ -907,8 +964,63 @@ export default function App() {
 
       {page === 'maps' && <section className="section-card map-workspace">
         <input className="map-title-input" value={mapTitle} onChange={(event) => setMapTitle(event.target.value)} />
-        <div className="map-canvas"><div className="map-node root">{mapNodes[0]}</div>{mapNodes.slice(1).map((node, index) => <div className={`map-node child child-${index}`} key={`${node}-${index}`}>{node}</div>)}</div>
-        <div className="map-controls"><input placeholder="Nuevo concepto" onKeyDown={(event) => { if (event.key === 'Enter') { const value = event.currentTarget.value.trim(); if (value) { setMapNodes((prev) => [...prev, value]); event.currentTarget.value = '' } } }} /><button onClick={() => setMapNodes((prev) => [...prev, `Concepto ${prev.length}`])}>＋ Nodo</button><button onClick={() => { setAiPrompt('Crea un mapa conceptual a partir de mis apuntes recientes.'); setAiMode('concept-map'); navigate('ai') }}>✦ Generar con IA</button></div>
+
+        <div className="map-toolbar">
+          <div className="map-toolbar-group">
+            <button onClick={() => setMapZoom((value) => Math.max(0.45, value / 1.15))} aria-label="Alejar mapa">−</button>
+            <span>{Math.round(mapZoom * 100)}%</span>
+            <button onClick={() => setMapZoom((value) => Math.min(2.8, value * 1.15))} aria-label="Acercar mapa">＋</button>
+            <button onClick={resetMapView}>Centrar</button>
+          </div>
+          <small>Arrastra para mover · rueda o pellizco del navegador para acercar y alejar</small>
+        </div>
+
+        <div
+          className="map-stage"
+          onPointerDown={handleMapPointerDown}
+          onPointerMove={handleMapPointerMove}
+          onPointerUp={handleMapPointerEnd}
+          onPointerCancel={handleMapPointerEnd}
+          onWheel={handleMapWheel}
+        >
+          <div
+            className="map-surface"
+            style={{ transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})` }}
+          >
+            <div className="map-node root">{mapNodes[0]}</div>
+            {mapNodes.slice(1).map((node, index) => {
+              const total = Math.max(1, mapNodes.length - 1)
+              const angle = (Math.PI * 2 * index) / total - Math.PI / 2
+              const radiusX = total > 8 ? 39 : 33
+              const radiusY = total > 8 ? 37 : 31
+              return <div
+                className="map-node child"
+                key={`${node}-${index}`}
+                style={{
+                  left: `${50 + Math.cos(angle) * radiusX}%`,
+                  top: `${50 + Math.sin(angle) * radiusY}%`,
+                }}
+              >{node}</div>
+            })}
+          </div>
+        </div>
+
+        <div className="map-node-composer">
+          <textarea
+            value={mapNodeDraft}
+            onChange={(event) => setMapNodeDraft(event.target.value)}
+            placeholder="Escribe un concepto, explicación o fragmento largo…"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault()
+                addMapNode()
+              }
+            }}
+          />
+          <button onClick={addMapNode}>＋ Nodo</button>
+          <button onClick={() => { setAiPrompt('Crea un mapa conceptual a partir de mis apuntes recientes.'); setAiMode('concept-map'); navigate('ai') }}>✦ Generar con IA</button>
+        </div>
+        <small className="map-composer-hint">El texto de cada nodo se muestra completo. Ctrl/⌘ + Enter añade el nodo.</small>
       </section>}
 
       {page === 'sync' && <section className="section-card settings-list"><article><div><strong>{session ? 'Cuenta conectada' : 'Modo local'}</strong><p>{session ? session.user.email : 'Puedes trabajar sin cuenta. Para sincronizar entre dispositivos necesitas iniciar sesión.'}</p></div><button className="primary" onClick={session ? handleSync : () => setAccountOpen(true)}>{session ? 'Sincronizar ahora' : 'Iniciar sesión'}</button></article><article><div><strong>Cambios pendientes</strong><p>{pending} operaciones esperan sincronización.</p></div><span className="big-number">{pending}</span></article></section>}
@@ -927,7 +1039,7 @@ export default function App() {
   const currentEditorNote = editorNoteId ? notes.find((note) => note.id === editorNoteId) ?? null : null
   const wordCount = stripHtml(editorBody).split(/\s+/).filter(Boolean).length
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${page === 'home' ? 'sidebar-home' : sidebarOpen ? 'sidebar-open' : 'sidebar-hidden'}`}>
     <aside className="sidebar">
       <div className="brand-row"><div className="brand-mark">N</div><div><strong>NotCan</strong><span>Web</span></div></div>
       {navGroups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button key={item.page} className={`nav-item ${page === item.page && !editorOpen ? 'active' : ''} ${item.page === 'ai' ? 'ai-nav' : ''}`} onClick={() => navigate(item.page)}><span>{item.icon}</span>{item.label}</button>)}</div>)}
@@ -937,9 +1049,11 @@ export default function App() {
         <button className={`nav-item ${page === 'account' ? 'active' : ''}`} onClick={() => navigate('account')}><span>○</span>Cuenta</button>
       </div>
     </aside>
+    {page !== 'home' && sidebarOpen && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setSidebarOpen(false)} />}
 
     <div className="page-area">
       <header className="global-topbar">
+        {page !== 'home' && <button className="sidebar-toggle" aria-label="Abrir navegación" onClick={() => setSidebarOpen(true)}>☰</button>}
         <div className="search-wrap">
           <label className="search-box"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar en NotCan…" /><kbd>Ctrl K</kbd></label>
           {searchResults.length > 0 && <div className="search-results">{searchResults.map((result, index) => <button key={`${result.type}-${index}`} onClick={result.action}><small>{result.type}</small><strong>{result.title}</strong></button>)}</div>}
