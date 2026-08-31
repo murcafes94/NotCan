@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Patch academic dashboard
+      - name: Finalize academic dashboard styles
         run: python3 ci/apply_web_academic_upgrade.py
 
       - name: Install dependencies
@@ -31,14 +31,14 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Commit upgrade
+      - name: Commit validated web changes
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add web/src/App.tsx web/src/features.css
+          git add web/src/features.css
           if git diff --cached --quiet; then
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m 'feat(web): upgrade grades and academic calendar'
+          git commit -m 'fix(web): align academic dashboard theme variables'
           git push
