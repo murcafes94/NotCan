@@ -1,0 +1,44 @@
+name: Apply Android video fixes 0.8.5
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-android-video-fixes-085.yml'
+permissions:
+  contents: write
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Android 0.8.5 fixes
+        run: python3 ci/apply_android_video_fixes_085.py
+      - name: Commit Android corrections
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          git commit -m 'fix(android): polish maps quiz transcripts and study library'
+          git push
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NotCan-v0.8.5-test
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
