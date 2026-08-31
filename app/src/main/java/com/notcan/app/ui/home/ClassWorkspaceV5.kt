@@ -62,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,8 @@ import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
+import com.notcan.app.ui.ai.StudyArtifactKind
+import com.notcan.app.ui.ai.TuNotArtifactStore
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGraphite
 import com.notcan.app.ui.theme.NotCanGray
@@ -149,6 +152,8 @@ internal fun NotCanClassWorkspaceV5(
                     )
                 } else {
                     NormalClassTabs(
+                        subjectName = subject?.name,
+                        classTitle = classSession.title,
                         classSessionId = classSession.id,
                         audioRecordings = audioRecordings,
                         importantMoments = importantMoments,
@@ -300,6 +305,8 @@ private fun LiveTranscriptPanel(transcript: String, status: String, modifier: Mo
 
 @Composable
 private fun NormalClassTabs(
+    subjectName: String?,
+    classTitle: String,
     classSessionId: String,
     audioRecordings: List<AudioRecordingEntity>,
     importantMoments: List<ImportantMomentEntity>,
@@ -335,7 +342,7 @@ private fun NormalClassTabs(
                 0 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
                 1 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal, onDeleteTranscript)
                 2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)
-                else -> StudyContentV5(transcripts, notePages, detectedCues)
+                else -> StudyContentV5(subjectName, classTitle, transcripts, notePages, detectedCues)
             }
         }
     }
@@ -596,12 +603,47 @@ private fun TranscriptRowV5(transcript: TranscriptEntity, onDelete: () -> Unit) 
 }
 
 @Composable
-private fun StudyContentV5(transcripts: List<TranscriptEntity>, notes: List<NotePageEntity>, cues: List<DetectedCueEntity>) {
-    Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("Estudio", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-            Text("${transcripts.size} transcripción(es) · ${notes.size} página(s) · ${cues.size} señal(es) académicas", color = NotCanGray)
-            Text("Las herramientas completas de resumen, cuestionario, oral, mapa mental y repaso están en IA → Estudio.", color = NotCanGray)
+private fun StudyContentV5(
+    subjectName: String?,
+    classTitle: String,
+    transcripts: List<TranscriptEntity>,
+    notes: List<NotePageEntity>,
+    cues: List<DetectedCueEntity>
+) {
+    val context = LocalContext.current
+    val store = remember(context) { TuNotArtifactStore(context.applicationContext) }
+    val scope = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle}" }
+    val artifacts = remember(scope) { store.load(scope) }
+
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("Estudio", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                Text("${transcripts.size} transcripción(es) · ${notes.size} página(s) · ${cues.size} señal(es) académicas", color = NotCanGray)
+                Text(
+                    if (artifacts.isEmpty()) "Genera mapas, tarjetas o cuestionarios desde IA → Estudio; quedarán guardados aquí por clase." else "${artifacts.size} material(es) de TuNot guardados para esta clase.",
+                    color = if (artifacts.isEmpty()) NotCanGray else NotCanBlue
+                )
+            }
+        }
+        if (artifacts.isNotEmpty()) {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(artifacts, key = { it.id }) { artifact ->
+                    val kind = when (artifact.kind) {
+                        StudyArtifactKind.MAP -> "Mapa"
+                        StudyArtifactKind.FLASHCARDS -> "Tarjetas"
+                        StudyArtifactKind.QUIZ -> "Cuestionario"
+                    }
+                    Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(artifact.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                                Text("$kind · abrir desde IA → Estudio", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

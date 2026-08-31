@@ -110,10 +110,23 @@ fun NotCanAiScreen(
     val preferences = remember(context) { NotCanPreferences(context.applicationContext) }
     val credentialStore = remember(context) { MistralCredentialsStore(context.applicationContext) }
     val onlineConfigured = credentialStore.hasApiKey() && preferences.mistralAgentId.isNotBlank()
+    val artifactStore = remember(context) { TuNotArtifactStore(context.applicationContext) }
+    val artifactScope = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle.orEmpty()}" }
+    var artifactRevision by remember(artifactScope) { mutableIntStateOf(0) }
+    var autoSaveNextArtifact by remember(artifactScope) { mutableStateOf(false) }
     var section by remember { mutableIntStateOf(1) }
     var openedMap by remember { mutableStateOf<ParsedStudyMapArtifact?>(null) }
     var openedDeck by remember { mutableStateOf<ParsedFlashcardArtifact?>(null) }
     var openedQuiz by remember { mutableStateOf<ParsedQuizArtifact?>(null) }
+
+    LaunchedEffect(result, artifactScope, autoSaveNextArtifact) {
+        if (autoSaveNextArtifact && result.isNotBlank()) {
+            if (artifactStore.save(artifactScope, result) != null) {
+                artifactRevision += 1
+                autoSaveNextArtifact = false
+            }
+        }
+    }
 
     openedMap?.let { artifact ->
         FullScreenStudyMap(artifact = artifact, onBack = { openedMap = null })
@@ -147,12 +160,30 @@ fun NotCanAiScreen(
                     onClear = onClear,
                     onOpenMap = { openedMap = it },
                     onOpenDeck = { openedDeck = it },
-                    onOpenQuiz = { openedQuiz = it }
+                    onOpenQuiz = { openedQuiz = it },
+                    onSaveArtifact = { raw ->
+                        if (artifactStore.save(artifactScope, raw) != null) artifactRevision += 1
+                    }
                 )
-                else -> AiStudio(onlineConfigured, busy) { prompt ->
-                    onAsk(prompt)
-                    section = 1
-                }
+                else -> AiStudio(
+                    subjectName = subjectName,
+                    classTitle = classTitle,
+                    configured = onlineConfigured,
+                    busy = busy,
+                    artifactRevision = artifactRevision,
+                    onAsk = { prompt, expectsArtifact ->
+                        autoSaveNextArtifact = expectsArtifact
+                        onAsk(prompt)
+                        section = 1
+                    },
+                    onOpenMap = { openedMap = it },
+                    onOpenDeck = { openedDeck = it },
+                    onOpenQuiz = { openedQuiz = it },
+                    onDeleteArtifact = { id ->
+                        artifactStore.delete(artifactScope, id)
+                        artifactRevision += 1
+                    }
+                )
             }
         }
         NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -300,7 +331,8 @@ private fun AiChat(
     onClear: () -> Unit,
     onOpenMap: (ParsedStudyMapArtifact) -> Unit,
     onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
-    onOpenQuiz: (ParsedQuizArtifact) -> Unit
+    onOpenQuiz: (ParsedQuizArtifact) -> Unit,
+    onSaveArtifact: (String) -> Unit
 ) {
     val context = LocalContext.current
     val store = remember(context) { TuNotChatStore(context.applicationContext) }
@@ -379,13 +411,13 @@ private fun AiChat(
                     AnimatedVisibility(visible = toolsOpen) {
                         CompactAiTools(sourceOnly, socraticMode, messages.isNotEmpty(), { sourceOnly = it }, { socraticMode = it }, ::clearConversation, Modifier.width(250.dp))
                     }
-                    ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, Modifier.weight(1f).fillMaxSize())
+                    ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 AnimatedVisibility(visible = toolsOpen) {
                     CompactAiTools(sourceOnly, socraticMode, messages.isNotEmpty(), { sourceOnly = it }, { socraticMode = it }, ::clearConversation, Modifier.fillMaxWidth())
                 }
-                ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, Modifier.weight(1f).fillMaxWidth())
+                ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxWidth())
             }
         }
     }
@@ -452,6 +484,7 @@ private fun ConversationPanel(
     onOpenMap: (ParsedStudyMapArtifact) -> Unit,
     onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
     onOpenQuiz: (ParsedQuizArtifact) -> Unit,
+    onSaveArtifact: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(20.dp)) {
@@ -463,7 +496,7 @@ private fun ConversationPanel(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (messages.isEmpty()) item { EmptyConversation(configured) }
-                items(messages) { message -> ChatBubble(message, onOpenMap, onOpenDeck, onOpenQuiz) }
+                items(messages) { message -> ChatBubble(message, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact) }
                 if (busy) item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
                         CircularProgressIndicator(modifier = Modifier.width(17.dp), strokeWidth = 2.dp)
@@ -518,7 +551,8 @@ private fun ChatBubble(
     message: ChatMessage,
     onOpenMap: (ParsedStudyMapArtifact) -> Unit,
     onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
-    onOpenQuiz: (ParsedQuizArtifact) -> Unit
+    onOpenQuiz: (ParsedQuizArtifact) -> Unit,
+    onSaveArtifact: (String) -> Unit
 ) {
     val user = message.role == ChatRole.USER
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
@@ -536,7 +570,8 @@ private fun ChatBubble(
                         title = artifact.map.title,
                         subtitle = "Mapa interactivo · pantalla completa",
                         action = "Abrir mapa",
-                        onClick = { onOpenMap(artifact) }
+                        onClick = { onOpenMap(artifact) },
+                        onSave = { onSaveArtifact(message.rawContent) }
                     )
                 }
                 message.flashcards?.let { deck ->
@@ -545,7 +580,8 @@ private fun ChatBubble(
                         title = deck.title,
                         subtitle = "${deck.cards.size} tarjetas · repaso activo",
                         action = "Abrir tarjetas",
-                        onClick = { onOpenDeck(deck) }
+                        onClick = { onOpenDeck(deck) },
+                        onSave = { onSaveArtifact(message.rawContent) }
                     )
                 }
                 message.quizArtifact?.let { quiz ->
@@ -554,7 +590,8 @@ private fun ChatBubble(
                         title = quiz.title,
                         subtitle = "${quiz.questions.size} preguntas · corrección y repaso de errores",
                         action = "Responder",
-                        onClick = { onOpenQuiz(quiz) }
+                        onClick = { onOpenQuiz(quiz) },
+                        onSave = { onSaveArtifact(message.rawContent) }
                     )
                 }
             }
@@ -563,7 +600,14 @@ private fun ChatBubble(
 }
 
 @Composable
-private fun ArtifactCard(icon: ImageVector, title: String, subtitle: String, action: String, onClick: () -> Unit) {
+private fun ArtifactCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    action: String,
+    onClick: () -> Unit,
+    onSave: (() -> Unit)? = null
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(shape = RoundedCornerShape(12.dp), color = NotCanBlue.copy(alpha = 0.12f)) {
@@ -573,6 +617,7 @@ private fun ArtifactCard(icon: ImageVector, title: String, subtitle: String, act
                 Text(title, color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
+            onSave?.let { save -> TextButton(onClick = save) { Text("Guardar") } }
             TextButton(onClick = onClick) { Text(action) }
         }
     }
@@ -587,7 +632,22 @@ private data class StudyTool(
 )
 
 @Composable
-private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit) {
+private fun AiStudio(
+    subjectName: String?,
+    classTitle: String?,
+    configured: Boolean,
+    busy: Boolean,
+    artifactRevision: Int,
+    onAsk: (String, Boolean) -> Unit,
+    onOpenMap: (ParsedStudyMapArtifact) -> Unit,
+    onOpenDeck: (ParsedFlashcardArtifact) -> Unit,
+    onOpenQuiz: (ParsedQuizArtifact) -> Unit,
+    onDeleteArtifact: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val store = remember(context) { TuNotArtifactStore(context.applicationContext) }
+    val scope = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle.orEmpty()}" }
+    val savedArtifacts = remember(scope, artifactRevision) { store.load(scope) }
     val options = listOf(
         StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones."),
         StudyTool("Tarjetas didácticas", "Repaso activo, una pregunta por tarjeta", Icons.Default.Style, "Crea entre 12 y 20 tarjetas didácticas de esta clase.", NotCanAiService.FLASHCARDS_MARKER),
@@ -599,9 +659,10 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text("Herramientas de estudio", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("TuNot genera el material y NotCan lo presenta en el formato adecuado para estudiar.", color = NotCanGray)
+            Text("TuNot genera el material y NotCan lo guarda dentro de esta clase para reutilizarlo sin otra llamada al modelo.", color = NotCanGray)
         }
         items(options) { tool ->
+            val expectsArtifact = tool.marker != null || tool.title.startsWith("Mapa")
             Card(
                 modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) {
                     onAsk(
@@ -609,7 +670,8 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
                             appendLine(NotCanAiService.SOURCE_ONLY_MARKER)
                             tool.marker?.let { appendLine(it) }
                             append(tool.prompt)
-                        }
+                        },
+                        expectsArtifact
                     )
                 },
                 colors = CardDefaults.cardColors(containerColor = NotCanSurface),
@@ -628,5 +690,44 @@ private fun AiStudio(configured: Boolean, busy: Boolean, onAsk: (String) -> Unit
             }
         }
         if (!configured) item { Text("Configura Mistral desde Configuración para activar estas herramientas.", color = NotCanGray) }
+
+        item {
+            Spacer(Modifier.padding(top = 4.dp))
+            Text("Guardado en esta clase", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (savedArtifacts.isEmpty()) "Los mapas, tarjetas y cuestionarios que generes desde aquí aparecerán en esta sección." else "${savedArtifacts.size} material(es) disponibles sin volver a generar.",
+                color = NotCanGray,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        items(savedArtifacts, key = { it.id }) { artifact ->
+            val icon = when (artifact.kind) {
+                StudyArtifactKind.MAP -> Icons.Default.AutoAwesome
+                StudyArtifactKind.FLASHCARDS -> Icons.Default.Style
+                StudyArtifactKind.QUIZ -> Icons.Default.Quiz
+            }
+            val kindLabel = when (artifact.kind) {
+                StudyArtifactKind.MAP -> "Mapa"
+                StudyArtifactKind.FLASHCARDS -> "Tarjetas"
+                StudyArtifactKind.QUIZ -> "Cuestionario"
+            }
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(icon, null, tint = NotCanBlue)
+                    Column(Modifier.weight(1f)) {
+                        Text(artifact.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                        Text(kindLabel, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = {
+                        when (artifact.kind) {
+                            StudyArtifactKind.MAP -> StudyMapArtifactParser.parse(artifact.rawContent)?.let(onOpenMap)
+                            StudyArtifactKind.FLASHCARDS -> StudyFlashcardArtifactParser.parse(artifact.rawContent)?.let(onOpenDeck)
+                            StudyArtifactKind.QUIZ -> StudyQuizArtifactParser.parse(artifact.rawContent)?.let(onOpenQuiz)
+                        }
+                    }) { Text("Abrir") }
+                    TextButton(onClick = { onDeleteArtifact(artifact.id) }) { Text("Eliminar") }
+                }
+            }
+        }
     }
 }
