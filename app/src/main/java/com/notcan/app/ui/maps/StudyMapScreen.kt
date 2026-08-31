@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,12 +47,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -96,6 +100,8 @@ fun StudyMapScreen(
     var viewportWidth by remember(map.id) { mutableFloatStateOf(1280f) }
     var viewportHeight by remember(map.id) { mutableFloatStateOf(800f) }
     var collapsedNodes by remember(map.id) { mutableStateOf(setOf<String>()) }
+    var fitRequest by remember(map.id) { mutableIntStateOf(0) }
+    var centerRequest by remember(map.id) { mutableIntStateOf(0) }
 
     val visibleMap = remember(map, collapsedNodes) { buildVisibleMap(map, collapsedNodes) }
 
@@ -138,12 +144,16 @@ fun StudyMapScreen(
         StudyMapToolbar(
             map = map,
             style = layoutStyle,
+            zoom = zoom,
             onLayoutChange = {
                 layoutStyle = it
-                zoom = 1f
-                panX = 0f
-                panY = 0f
+                collapsedNodes = emptySet()
+                fitRequest++
             },
+            onZoomOut = { zoom = (zoom / 1.18f).coerceIn(0.35f, 3.5f) },
+            onZoomIn = { zoom = (zoom * 1.18f).coerceIn(0.35f, 3.5f) },
+            onFit = { fitRequest++ },
+            onCenter = { centerRequest++ },
             onExport = ::exportAndShare
         )
 
@@ -155,19 +165,53 @@ fun StudyMapScreen(
                 viewportWidth = widthPx
                 viewportHeight = heightPx
             }
+
             val nodes = remember(visibleMap, layoutStyle, widthPx, heightPx) {
                 StudyMapLayoutEngine.layout(visibleMap, layoutStyle, widthPx, heightPx)
             }
             val positionedById = remember(nodes) { nodes.associateBy { it.node.id } }
 
+            LaunchedEffect(nodes, widthPx, heightPx, fitRequest) {
+                if (nodes.isEmpty() || widthPx <= 0f || heightPx <= 0f) return@LaunchedEffect
+                val minX = nodes.minOf { it.x }
+                val minY = nodes.minOf { it.y }
+                val maxX = nodes.maxOf { it.x + it.width }
+                val maxY = nodes.maxOf { it.y + it.height }
+                val contentWidth = (maxX - minX).coerceAtLeast(1f)
+                val contentHeight = (maxY - minY).coerceAtLeast(1f)
+                val padding = 76f
+                val fitted = minOf(
+                    ((widthPx - padding * 2f) / contentWidth),
+                    ((heightPx - padding * 2f) / contentHeight)
+                ).coerceIn(0.35f, 1.45f)
+                zoom = fitted
+                panX = (widthPx - contentWidth * fitted) / 2f - minX * fitted
+                panY = (heightPx - contentHeight * fitted) / 2f - minY * fitted
+            }
+
+            LaunchedEffect(centerRequest) {
+                if (centerRequest == 0 || nodes.isEmpty() || widthPx <= 0f || heightPx <= 0f) return@LaunchedEffect
+                val minX = nodes.minOf { it.x }
+                val minY = nodes.minOf { it.y }
+                val maxX = nodes.maxOf { it.x + it.width }
+                val maxY = nodes.maxOf { it.y + it.height }
+                val centerX = (minX + maxX) / 2f
+                val centerY = (minY + maxY) / 2f
+                panX = widthPx / 2f - centerX * zoom
+                panY = heightPx / 2f - centerY * zoom
+            }
+
             Box(
                 Modifier
                     .fillMaxSize()
                     .pointerInput(map.id, layoutStyle) {
-                        detectTransformGestures { _, pan, gestureZoom, _ ->
-                            zoom = (zoom * gestureZoom).coerceIn(0.45f, 3f)
-                            panX += pan.x
-                            panY += pan.y
+                        detectTransformGestures { centroid, pan, gestureZoom, _ ->
+                            val oldZoom = zoom
+                            val newZoom = (oldZoom * gestureZoom).coerceIn(0.35f, 3.5f)
+                            val ratio = if (oldZoom == 0f) 1f else newZoom / oldZoom
+                            panX = centroid.x - (centroid.x - panX) * ratio + pan.x
+                            panY = centroid.y - (centroid.y - panY) * ratio + pan.y
+                            zoom = newZoom
                         }
                     }
             ) {
@@ -175,6 +219,7 @@ fun StudyMapScreen(
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
+                            transformOrigin = TransformOrigin(0f, 0f)
                             translationX = panX
                             translationY = panY
                             scaleX = zoom
@@ -214,14 +259,47 @@ fun StudyMapScreen(
                                 color = branchColor.copy(alpha = if (layoutStyle == StudyMapLayoutStyle.IDEA_BOARD) 0.76f else 0.68f),
                                 style = Stroke(
                                     width = when (layoutStyle) {
-                                        StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> 4.5f
+                                        StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> 4.2f
                                         StudyMapLayoutStyle.IDEA_BOARD -> 3.2f
-                                        else -> 3.5f
+                                        else -> 3.4f
                                     },
                                     pathEffect = if (layoutStyle == StudyMapLayoutStyle.IDEA_BOARD) {
                                         PathEffect.dashPathEffect(floatArrayOf(13f, 9f))
                                     } else null
                                 )
+                            )
+                        }
+                    }
+
+                    visibleMap.edges.forEach { edge ->
+                        val label = edge.label?.trim().orEmpty()
+                        if (label.isBlank()) return@forEach
+                        val from = positionedById[edge.from] ?: return@forEach
+                        val to = positionedById[edge.to] ?: return@forEach
+                        val horizontal = layoutStyle == StudyMapLayoutStyle.HORIZONTAL_BRANCHES || layoutStyle == StudyMapLayoutStyle.TREE
+                        val startX = if (horizontal) from.x + from.width else from.x + from.width / 2f
+                        val startY = from.y + from.height / 2f
+                        val endX = if (horizontal) to.x else to.x + to.width / 2f
+                        val endY = to.y + to.height / 2f
+                        val labelX = (startX + endX) / 2f - 45f
+                        val labelY = (startY + endY) / 2f - 14f
+                        Surface(
+                            modifier = Modifier
+                                .offset { IntOffset(labelX.roundToInt(), labelY.roundToInt()) }
+                                .widthIn(min = 54.dp, max = 118.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                            shape = MaterialTheme.shapes.small,
+                            tonalElevation = 2.dp
+                        ) {
+                            Text(
+                                label,
+                                color = branchColorFor(edge.to, visibleMap),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -261,7 +339,12 @@ fun StudyMapScreen(
 private fun StudyMapToolbar(
     map: StudyMap,
     style: StudyMapLayoutStyle,
+    zoom: Float,
     onLayoutChange: (StudyMapLayoutStyle) -> Unit,
+    onZoomOut: () -> Unit,
+    onZoomIn: () -> Unit,
+    onFit: () -> Unit,
+    onCenter: () -> Unit,
     onExport: (StudyMapExportFormat, StudyMapExportScope) -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -284,28 +367,18 @@ private fun StudyMapToolbar(
                     Icon(Icons.Default.MoreVert, contentDescription = "Compartir y exportar", tint = NotCanOffWhite)
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Compartir PNG · mapa completo") },
-                        onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PNG, StudyMapExportScope.FULL_MAP) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Compartir PNG · vista actual") },
-                        onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PNG, StudyMapExportScope.CURRENT_VIEW) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Compartir PDF · mapa completo") },
-                        onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PDF, StudyMapExportScope.FULL_MAP) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Compartir PDF · vista actual") },
-                        onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PDF, StudyMapExportScope.CURRENT_VIEW) }
-                    )
+                    DropdownMenuItem(text = { Text("Compartir PNG · mapa completo") }, onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PNG, StudyMapExportScope.FULL_MAP) })
+                    DropdownMenuItem(text = { Text("Compartir PNG · vista actual") }, onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PNG, StudyMapExportScope.CURRENT_VIEW) })
+                    DropdownMenuItem(text = { Text("Compartir PDF · mapa completo") }, onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PDF, StudyMapExportScope.FULL_MAP) })
+                    DropdownMenuItem(text = { Text("Compartir PDF · vista actual") }, onClick = { menuExpanded = false; onExport(StudyMapExportFormat.PDF, StudyMapExportScope.CURRENT_VIEW) })
                 }
             }
         }
+
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(shape = MaterialTheme.shapes.medium, color = NotCanBlue.copy(alpha = 0.15f)) {
                 Text(
@@ -321,6 +394,18 @@ private fun StudyMapToolbar(
             MapStyleButton("Ideas", style == StudyMapLayoutStyle.IDEA_BOARD) { onLayoutChange(StudyMapLayoutStyle.IDEA_BOARD) }
             MapStyleButton("Árbol", style == StudyMapLayoutStyle.TREE) { onLayoutChange(StudyMapLayoutStyle.TREE) }
             MapStyleButton("Constelación", style == StudyMapLayoutStyle.CONSTELLATION) { onLayoutChange(StudyMapLayoutStyle.CONSTELLATION) }
+            MapControlButton("−", onZoomOut)
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
+                Text(
+                    "${(zoom * 100f).roundToInt()}%",
+                    color = NotCanGray,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                )
+            }
+            MapControlButton("+", onZoomIn)
+            MapControlButton("Ajustar", onFit)
+            MapControlButton("Centrar", onCenter)
         }
     }
 }
@@ -334,6 +419,13 @@ private fun MapStyleButton(label: String, selected: Boolean, onClick: () -> Unit
         TextButton(onClick = onClick) {
             Text(label, color = if (selected) NotCanBlue else NotCanGray)
         }
+    }
+}
+
+@Composable
+private fun MapControlButton(label: String, onClick: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
+        TextButton(onClick = onClick) { Text(label, color = NotCanOffWhite) }
     }
 }
 
@@ -361,10 +453,7 @@ private fun StudyMapNodeCard(
         elevation = CardDefaults.cardElevation(defaultElevation = if (visualCard) 2.dp else 0.dp)
     ) {
         Column(
-            Modifier.padding(
-                horizontal = if (visualCard) 15.dp else 12.dp,
-                vertical = if (visualCard) 13.dp else 10.dp
-            ),
+            Modifier.padding(horizontal = if (visualCard) 15.dp else 12.dp, vertical = if (visualCard) 13.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(if (visualCard) 7.dp else 4.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -404,16 +493,18 @@ private fun StudyMapNodeCard(
                     it,
                     color = if (visualCard) NotCanOffWhite.copy(alpha = 0.78f) else NotCanGray,
                     style = if (visualCard) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
-                    maxLines = if (visualCard) 5 else 2,
+                    maxLines = if (visualCard) 5 else 3,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (visualCard && node.sourceRefs.isNotEmpty()) {
+            if (node.sourceRefs.isNotEmpty()) {
                 Text(
-                    "${node.sourceRefs.size} fuente(s)",
+                    node.sourceRefs.joinToString(" · "),
                     color = branchColor,
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
