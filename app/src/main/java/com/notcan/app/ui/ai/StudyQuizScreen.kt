@@ -2,6 +2,7 @@ package com.notcan.app.ui.ai
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -81,6 +83,13 @@ internal fun StudyQuizScreen(
         if (position < order.lastIndex) position++ else finished = true
     }
 
+    fun previous() {
+        if (position <= 0) return
+        typedAnswer = ""
+        revealShortAnswer = false
+        position--
+    }
+
     fun repeatErrors() {
         val wrong = order.filter { index ->
             val q = quiz.questions[index]
@@ -117,7 +126,28 @@ internal fun StudyQuizScreen(
                 val question = quiz.questions[questionIndex]
                 val answer = answers[question.id]
 
-                Column(Modifier.fillMaxSize()) {
+                var swipeDistance = 0f
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(question.id, position, answer) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { swipeDistance = 0f },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    swipeDistance += dragAmount
+                                    change.consume()
+                                },
+                                onDragEnd = {
+                                    when {
+                                        swipeDistance <= -72f && answer != null -> next()
+                                        swipeDistance >= 72f && position > 0 -> previous()
+                                    }
+                                    swipeDistance = 0f
+                                },
+                                onDragCancel = { swipeDistance = 0f }
+                            )
+                        }
+                ) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
