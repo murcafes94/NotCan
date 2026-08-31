@@ -105,6 +105,8 @@ create index if not exists note_pages_sync_idx on public.note_pages(user_id, upd
 create index if not exists grade_items_sync_idx on public.grade_items(user_id, updated_at);
 create index if not exists file_assets_user_updated_idx on public.file_assets(user_id, updated_at);
 create index if not exists file_assets_user_subject_idx on public.file_assets(user_id, subject_id);
+create index if not exists file_assets_subject_id_idx on public.file_assets(subject_id);
+create index if not exists file_assets_class_session_id_idx on public.file_assets(class_session_id);
 
 alter table public.study_cycles enable row level security;
 alter table public.subjects enable row level security;
