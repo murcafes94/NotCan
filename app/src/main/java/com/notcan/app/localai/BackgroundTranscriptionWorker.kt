@@ -41,7 +41,7 @@ class BackgroundTranscriptionWorker(
         setForeground(foregroundInfo("Preparando $displayName…"))
 
         return try {
-            val transcription = LocalWhisperEngine(applicationContext).transcribeM4a(audio)
+            val transcription = LocalWhisperEngine(applicationContext).transcribeM4aDetailed(audio)
             val plainText = transcription.text.trim()
             val timedText = transcription.segments
                 .joinToString(separator = "\n\n") { segment ->

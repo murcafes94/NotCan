@@ -19,7 +19,13 @@ data class WhisperTranscriptionResult(
 class LocalWhisperEngine(private val context: Context) {
     private val modelManager = WhisperModelManager(context)
 
-    suspend fun transcribeM4a(audio: File): WhisperTranscriptionResult {
+    /**
+     * Compatibilidad con los consumidores existentes: devuelve solamente el texto.
+     * Para conservar los tiempos por segmento usa [transcribeM4aDetailed].
+     */
+    suspend fun transcribeM4a(audio: File): String = transcribeM4aDetailed(audio).text
+
+    suspend fun transcribeM4aDetailed(audio: File): WhisperTranscriptionResult {
         val modelFile = modelManager.modelFile()
         require(modelFile.exists() && modelFile.length() >= WhisperModelSpec.MIN_VALID_BYTES) {
             "Primero descarga ${WhisperModelSpec.DISPLAY_NAME}."
