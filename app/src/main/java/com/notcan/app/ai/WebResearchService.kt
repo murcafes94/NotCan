@@ -44,6 +44,9 @@ class WebResearchService(context: Context) {
     }
 
     fun research(query: String, limit: Int = 5, readTop: Int = 3): List<Result> {
+        if (isCatholicAcademicQuery(null, query)) {
+            return researchCatholic(query, limit, readTop)
+        }
         val results = search(query, limit)
         return readTopResults(results, readTop)
     }
@@ -294,7 +297,8 @@ class WebResearchService(context: Context) {
             "canon", "derecho canonico", "filosof", "metafis", "ontolog", "bioet",
             "moral", "iglesia", "concilio", "enciclica", "papa", "vaticano",
             "eucarist", "bautismo", "confirmacion", "orden sacerdotal", "patristica",
-            "padres de la iglesia", "santo tomas", "ratzinger", "agustin", "jeronimo"
+            "padres de la iglesia", "santo tomas", "ratzinger", "agustin", "jeronimo",
+            "apologet", "teodice", "gnoseolog", "hagiograf", "ecumenis"
         )
 
         fun shouldAutoSearch(question: String): Boolean {
