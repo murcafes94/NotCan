@@ -11,8 +11,11 @@ import kotlin.math.max
  *
  * La librería whisper-android usada por NotCan no expone initial_prompt. En vez de
  * sustituir el motor o inventar correcciones, esta capa usa el vocabulario que ya
- * guarda NotCan y conceptos detectados de forma conservadora en apuntes anteriores.
- * Solo corrige coincidencias ortográficas muy cercanas.
+ * guarda NotCan, conceptos detectados de forma conservadora en apuntes anteriores
+ * y un léxico base curado para materias teológicas/filosóficas.
+ *
+ * El léxico base contiene solo términos. No importa definiciones doctrinales de
+ * glosarios externos: su función es exclusivamente ayudar al reconocimiento ASR.
  */
 data class AcademicTranscriptionTerm(
     val value: String,
@@ -30,6 +33,99 @@ object AcademicTranscriptionContext {
         "primero", "segundo", "tercero", "finalmente", "pregunta", "respuesta",
         "profesor", "profesora", "documento", "apuntes", "clase", "materia",
         "ejemplo", "explicacion", "conclusion", "introduccion", "recordar"
+    )
+
+    /**
+     * Términos comunes en formación teológica católica y filosofía clásica.
+     * Incluye vocablos compartidos por glosarios teológicos generales (p. ej.
+     * aseidad, antropomorfismo, visión beatífica, ser contingente y esencia),
+     * pero nunca sus definiciones.
+     */
+    private val theologicalBaseTerms = listOf(
+        "aseidad",
+        "analogía",
+        "antropomorfismo",
+        "atributos de Dios",
+        "atributos morales",
+        "atributos metafísicos",
+        "visión beatífica",
+        "ser contingente",
+        "ser necesario",
+        "causa eficiente",
+        "causa final",
+        "causa formal",
+        "argumento cosmológico",
+        "esencia",
+        "existencia",
+        "eternidad",
+        "expiación",
+        "providencia",
+        "revelación",
+        "inspiración",
+        "Tradición",
+        "Magisterio",
+        "Encarnación",
+        "unión hipostática",
+        "Cristología",
+        "Soteriología",
+        "Eclesiología",
+        "Escatología",
+        "Pneumatología",
+        "Mariología",
+        "antropología teológica",
+        "gracia santificante",
+        "pecado original",
+        "justificación",
+        "santificación",
+        "transubstanciación",
+        "consustancial",
+        "homoousios",
+        "hipóstasis",
+        "perichóresis",
+        "Imago Dei",
+        "kénosis",
+        "Theotokos",
+        "sacramentalidad",
+        "ex opere operato",
+        "epíclesis",
+        "anámnesis",
+        "parusía",
+        "Eucaristía",
+        "Bautismo",
+        "Confirmación",
+        "Orden sacerdotal",
+        "Unción de los enfermos",
+        "Derecho canónico",
+        "dispensa",
+        "impedimento",
+        "Concilio ecuménico",
+        "Padres apostólicos",
+        "Patrística",
+        "exégesis",
+        "hermenéutica",
+        "Septuaginta",
+        "Vulgata",
+        "evangelios sinópticos",
+        "koinonía",
+        "Logos",
+        "kerigma",
+        "parénesis",
+        "escatón",
+        "ontología",
+        "metafísica",
+        "hilemorfismo",
+        "potencia y acto",
+        "ley natural",
+        "dignidad humana",
+        "bioética"
+    )
+
+    private val theologicalContextMarkers = listOf(
+        "teolog", "cristolog", "patrolog", "patrist", "eclesiolog", "soteriolog",
+        "escatolog", "pneumatolog", "mariolog", "sacrament", "liturg", "biblia",
+        "biblic", "exeg", "hermeneut", "dogmat", "fundamental", "magister",
+        "canon", "filosof", "metafis", "ontolog", "antropolog", "bioet", "moral",
+        "escritura", "revelacion", "revelación", "padres de la iglesia"
     )
 
     fun buildTerms(
@@ -62,6 +158,10 @@ object AcademicTranscriptionContext {
                 add(term.term, term.weight.coerceAtLeast(1f), explicit = userConfirmed)
             }
 
+        if (isTheologicalContext(subjectName, classTitle, contextTexts)) {
+            theologicalBaseTerms.forEach { add(it, 1.35f, explicit = true) }
+        }
+
         inferFromContext(contextTexts).forEach { add(it, 1.6f, explicit = false) }
         subjectName?.let { add(it, 3.5f, explicit = false) }
         classTitle
@@ -71,6 +171,24 @@ object AcademicTranscriptionContext {
         return terms.values
             .sortedWith(compareByDescending<AcademicTranscriptionTerm> { it.explicit }.thenByDescending { it.weight })
             .take(MAX_CONTEXT_TERMS)
+    }
+
+    private fun isTheologicalContext(
+        subjectName: String?,
+        classTitle: String?,
+        contextTexts: List<String>
+    ): Boolean {
+        val sample = buildString {
+            append(subjectName.orEmpty())
+            append(' ')
+            append(classTitle.orEmpty())
+            contextTexts.asSequence().take(3).forEach { text ->
+                append(' ')
+                append(text.take(1_000))
+            }
+        }
+        val normalized = normalize(sample)
+        return theologicalContextMarkers.any { marker -> normalized.contains(normalize(marker)) }
     }
 
     private fun inferFromContext(texts: List<String>): List<String> {
@@ -93,7 +211,7 @@ object AcademicTranscriptionContext {
                 .take(12)
                 .forEach(found::add)
 
-            // Nombres propios y conceptos teológicos/filosóficos escritos con mayúscula.
+            // Nombres propios y conceptos académicos escritos con mayúscula.
             capitalizedWord.findAll(text).map { it.value }.forEach { candidate ->
                 if (normalize(candidate) !in ignoredInferred) found += candidate
             }
@@ -244,7 +362,7 @@ object AcademicTranscriptionContext {
     }
 
     private const val MAX_STORED_TERMS = 220
-    private const val MAX_CONTEXT_TERMS = 180
+    private const val MAX_CONTEXT_TERMS = 220
     private const val MAX_INFERRED_TERMS = 80
     private const val MAX_CONTEXT_TEXTS = 12
     private const val MAX_CONTEXT_CHARS_PER_TEXT = 12_000
