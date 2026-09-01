@@ -9,6 +9,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.text.Normalizer
+import java.util.Locale
 
 /**
  * Web research layer for TuNot.
@@ -16,6 +18,10 @@ import java.net.URLEncoder
  * Search is intentionally independent from Mistral: NotCan first retrieves web results, then passes
  * them to the model as explicit sources. A Supabase/SearXNG backend is attempted when available and
  * DuckDuckGo HTML remains the zero-key fallback.
+ *
+ * Catholic/theological research gets a separate route: results are filtered through
+ * [TuNotCatholicSourcePolicy], ranked by source authority/topic relevance and, when necessary,
+ * a focused site: query is issued so trusted Catholic sources are not left to search-engine chance.
  */
 class WebResearchService(context: Context) {
     private val appContext = context.applicationContext
@@ -39,11 +45,41 @@ class WebResearchService(context: Context) {
 
     fun research(query: String, limit: Int = 5, readTop: Int = 3): List<Result> {
         val results = search(query, limit)
-        return results.mapIndexed { index, item ->
+        return readTopResults(results, readTop)
+    }
+
+    /**
+     * Research mode for theology, Scripture, liturgy, patristics, canon law and related subjects.
+     * Only allow-listed Catholic sources reach TuNot in this mode.
+     */
+    fun researchCatholic(query: String, limit: Int = 5, readTop: Int = 3): List<Result> {
+        val wanted = limit.coerceIn(1, 8)
+        val firstPass = search(query, 8)
+            .filter { TuNotCatholicSourcePolicy.isAllowedUrl(it.url) }
+
+        val combined = LinkedHashMap<String, Result>()
+        firstPass.forEach { combined[it.url] = it }
+
+        if (combined.size < wanted) {
+            val preferredSources = preferredCatholicSources(query).take(MAX_FOCUSED_DOMAINS)
+            if (preferredSources.isNotEmpty()) {
+                val sites = preferredSources.joinToString(" OR ") { "site:${it.domain}" }
+                val focusedQuery = "$query ($sites)".take(500)
+                search(focusedQuery, 8)
+                    .filter { TuNotCatholicSourcePolicy.isAllowedUrl(it.url) }
+                    .forEach { combined.putIfAbsent(it.url, it) }
+            }
+        }
+
+        val ranked = rankCatholic(combined.values.toList(), query).take(wanted)
+        return readTopResults(ranked, readTop)
+    }
+
+    private fun readTopResults(results: List<Result>, readTop: Int): List<Result> =
+        results.mapIndexed { index, item ->
             if (index >= readTop) item
             else item.copy(pageText = runCatching { readPage(item.url) }.getOrDefault(""))
         }
-    }
 
     fun readPage(rawUrl: String, maxChars: Int = 70_000): String {
         val url = URL(rawUrl)
@@ -83,6 +119,9 @@ class WebResearchService(context: Context) {
             appendLine("\n=== FUENTE WEB ${index + 1} ===")
             appendLine("Título: ${item.title}")
             appendLine("URL: ${item.url}")
+            TuNotCatholicSourcePolicy.sourceForUrl(item.url)?.let { source ->
+                appendLine("Autoridad configurada: ${source.label} · prioridad ${source.priority}")
+            }
             if (item.snippet.isNotBlank()) appendLine("Resultado: ${item.snippet}")
             val body = item.pageText.ifBlank { item.snippet }
             if (body.isNotBlank()) {
@@ -91,6 +130,45 @@ class WebResearchService(context: Context) {
             }
         }
     }.take(maxChars)
+
+    private fun preferredCatholicSources(query: String): List<TuNotWebSource> {
+        val normalizedQuery = normalizeSearch(query)
+        return TuNotCatholicSourcePolicy.sources
+            .asSequence()
+            .filter { it.searchable }
+            .map { source ->
+                val topicHits = source.topics.count { topic ->
+                    val normalizedTopic = normalizeSearch(topic)
+                    normalizedTopic.isNotBlank() && (
+                        normalizedQuery.contains(normalizedTopic) ||
+                            normalizedTopic.split(' ').any { token -> token.length >= 5 && normalizedQuery.contains(token) }
+                        )
+                }
+                val broadBonus = if (source.domain == "vatican.va") 7 else 0
+                source to (source.priority + topicHits * 12 + broadBonus)
+            }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .toList()
+    }
+
+    private fun rankCatholic(results: List<Result>, query: String): List<Result> {
+        val normalizedQuery = normalizeSearch(query)
+        return results.sortedByDescending { result ->
+            val source = TuNotCatholicSourcePolicy.sourceForUrl(result.url)
+            if (source == null) Int.MIN_VALUE
+            else {
+                val topicHits = source.topics.count { topic ->
+                    val normalizedTopic = normalizeSearch(topic)
+                    normalizedTopic.isNotBlank() && (
+                        normalizedQuery.contains(normalizedTopic) ||
+                            normalizedTopic.split(' ').any { token -> token.length >= 5 && normalizedQuery.contains(token) }
+                        )
+                }
+                source.priority + topicHits * 12
+            }
+        }
+    }
 
     private fun searchViaSupabase(query: String, limit: Int): List<Result> {
         val endpoint = "${BuildConfig.SUPABASE_URL.trimEnd('/')}/functions/v1/notcan-web-search"
@@ -206,14 +284,23 @@ class WebResearchService(context: Context) {
 
     companion object {
         private const val MAX_HTML_CHARS = 650_000
+        private const val MAX_FOCUSED_DOMAINS = 8
         private const val MOBILE_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36 NotCan/0.8"
+
+        private val catholicAcademicMarkers = listOf(
+            "teolog", "cristolog", "patrolog", "patrist", "eclesiolog", "soteriolog",
+            "escatolog", "pneumatolog", "mariolog", "sacrament", "liturg", "biblia",
+            "biblic", "escritura", "exeg", "hermeneut", "magister", "catecismo",
+            "canon", "derecho canonico", "filosof", "metafis", "ontolog", "bioet",
+            "moral", "iglesia", "concilio", "enciclica", "papa", "vaticano",
+            "eucarist", "bautismo", "confirmacion", "orden sacerdotal", "patristica",
+            "padres de la iglesia", "santo tomas", "ratzinger", "agustin", "jeronimo"
+        )
 
         fun shouldAutoSearch(question: String): Boolean {
             val q = question.lowercase().trim()
             if (q.length < 3) return false
 
-            // In Auto, the web is the default research layer. We only stay local when the wording
-            // clearly asks TuNot to work from material already stored in the current class.
             val localOnlyHints = listOf(
                 "mis apuntes", "mis fuentes", "esta transcripción", "la transcripción",
                 "según mis apuntes", "según la transcripción", "según el profesor",
@@ -225,6 +312,17 @@ class WebResearchService(context: Context) {
 
             return true
         }
+
+        fun isCatholicAcademicQuery(subjectName: String?, question: String): Boolean {
+            val sample = normalizeSearch("${subjectName.orEmpty()} $question")
+            return catholicAcademicMarkers.any { marker -> sample.contains(normalizeSearch(marker)) }
+        }
+
+        private fun normalizeSearch(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .trim()
 
         private fun isHttpUrl(value: String): Boolean = value.startsWith("https://") || value.startsWith("http://")
     }
