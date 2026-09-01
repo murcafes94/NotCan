@@ -5,7 +5,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -13,23 +15,47 @@ import androidx.compose.ui.unit.sp
 
 private val NotCanDarkScheme = darkColorScheme(
     primary = NotCanBlue,
-    onPrimary = NotCanOffWhite,
+    onPrimary = Color.White,
     primaryContainer = NotCanBlue.copy(alpha = 0.20f),
-    onPrimaryContainer = NotCanOffWhite,
+    onPrimaryContainer = Color.White,
     secondary = NotCanPurple,
-    onSecondary = NotCanOffWhite,
+    onSecondary = Color.White,
     secondaryContainer = NotCanPurple.copy(alpha = 0.18f),
     tertiary = NotCanGreen,
-    onTertiary = NotCanBlack,
-    background = NotCanBlack,
-    onBackground = NotCanOffWhite,
-    surface = NotCanGraphite,
-    onSurface = NotCanOffWhite,
-    surfaceVariant = NotCanSurface,
-    onSurfaceVariant = NotCanGray,
-    outline = NotCanBorder,
+    onTertiary = Color(0xFF08110C),
+    background = Color(0xFF080D15),
+    onBackground = Color(0xFFF4F7FB),
+    surface = Color(0xFF0D1420),
+    onSurface = Color(0xFFF4F7FB),
+    surfaceVariant = Color(0xFF131D2A),
+    onSurfaceVariant = Color(0xFFA7B2C3),
+    outline = Color(0xFF263548),
     error = NotCanRed,
-    onError = NotCanOffWhite
+    onError = Color.White
+)
+
+private val NotCanLightScheme = lightColorScheme(
+    primary = NotCanBlue,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFDCE8FF),
+    onPrimaryContainer = Color(0xFF17345F),
+    secondary = NotCanBrownAccent,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE9DDD0),
+    onSecondaryContainer = Color(0xFF45301F),
+    tertiary = NotCanGreen,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFDCEFE4),
+    onTertiaryContainer = Color(0xFF173B28),
+    background = Color(0xFFFFFCF7),
+    onBackground = Color(0xFF20252C),
+    surface = Color(0xFFF6EFE6),
+    onSurface = Color(0xFF20252C),
+    surfaceVariant = Color(0xFFFFFFFF),
+    onSurfaceVariant = Color(0xFF5D6672),
+    outline = Color(0xFFD8C9B9),
+    error = NotCanRed,
+    onError = Color.White
 )
 
 private val NotCanShapes = Shapes(
@@ -54,9 +80,10 @@ private val NotCanTypography = Typography(
 )
 
 @Composable
-fun NotCanTheme(content: @Composable () -> Unit) {
+fun NotCanTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
+    applyNotCanPalette(darkTheme)
     MaterialTheme(
-        colorScheme = NotCanDarkScheme,
+        colorScheme = if (darkTheme) NotCanDarkScheme else NotCanLightScheme,
         shapes = NotCanShapes,
         typography = NotCanTypography,
         content = content
