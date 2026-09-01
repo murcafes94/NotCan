@@ -15,12 +15,14 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.notcan.app.R
+import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.settings.NotCanPreferences
+import kotlinx.coroutines.flow.first
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 
 class BackgroundTranscriptionWorker(
     appContext: Context,
@@ -39,26 +41,70 @@ class BackgroundTranscriptionWorker(
         setForeground(foregroundInfo("Preparando $displayName…"))
 
         return try {
-            val text = LocalWhisperEngine(applicationContext).transcribeM4a(audio)
+            val transcription = LocalWhisperEngine(applicationContext).transcribeM4a(audio)
+            val plainText = transcription.text.trim()
+            val timedText = transcription.segments
+                .joinToString(separator = "\n\n") { segment ->
+                    "[${formatTimestamp(segment.startMs)}–${formatTimestamp(segment.endMs)}] ${segment.text}"
+                }
+                .ifBlank { plainText }
+
             val now = System.currentTimeMillis()
-            val transcriptId = UUID.randomUUID().toString()
+            val transcriptId = "final-$audioId"
             val dao = NotCanDatabase.getInstance(applicationContext).dao()
             dao.insertTranscript(
                 TranscriptEntity(
                     id = transcriptId,
                     classSessionId = classSessionId,
                     audioId = audioId,
-                    body = text,
-                    status = "FINAL_LOCAL",
+                    body = timedText,
+                    status = "FINAL_LOCAL_TIMED",
                     modelName = WhisperModelSpec.DISPLAY_NAME,
                     createdAtEpochMs = now,
                     updatedAtEpochMs = now
                 )
             )
 
+            // La transcripción definitiva también queda como un apunte normal y editable.
+            // El id determinista evita crear copias si WorkManager reintenta el mismo audio.
+            val noteId = "transcript-note-$audioId"
+            if (dao.getNotePage(noteId) == null && plainText.isNotBlank()) {
+                dao.insertNotePage(
+                    NotePageEntity(
+                        id = noteId,
+                        classSessionId = classSessionId,
+                        title = "Transcripción — $displayName",
+                        body = plainText,
+                        createdAtEpochMs = now,
+                        updatedAtEpochMs = now
+                    )
+                )
+            }
+
+            // Completa los marcadores creados durante la grabación con el texto que se
+            // estaba diciendo en ese instante. El tiempo exacto del marcador se conserva.
+            if (transcription.segments.isNotEmpty()) {
+                dao.observeImportantMoments(classSessionId).first()
+                    .asSequence()
+                    .filter { it.audioId == audioId && it.note.isNullOrBlank() }
+                    .forEach { moment ->
+                        val segment = findSegment(transcription.segments, moment.offsetMs)
+                        if (segment != null) {
+                            dao.insertImportantMoment(
+                                moment.copy(
+                                    note = segment.text
+                                        .replace(Regex("\\s+"), " ")
+                                        .trim()
+                                        .take(280)
+                                )
+                            )
+                        }
+                    }
+            }
+
             if (NotCanPreferences(applicationContext).autoDetectAcademicCues) {
                 dao.deleteDetectedCuesForTranscript(transcriptId)
-                AcademicCueDetector.detect(text, classSessionId, transcriptId, audioId)
+                AcademicCueDetector.detect(plainText, classSessionId, transcriptId, audioId)
                     .forEach { dao.insertDetectedCue(it) }
             }
 
@@ -69,12 +115,36 @@ class BackgroundTranscriptionWorker(
         }
     }
 
+    private fun findSegment(segments: List<WhisperSegmentResult>, offsetMs: Long): WhisperSegmentResult? {
+        segments.firstOrNull { offsetMs in it.startMs..it.endMs }?.let { return it }
+        return segments.minByOrNull { segment ->
+            val center = segment.startMs + ((segment.endMs - segment.startMs) / 2L)
+            abs(center - offsetMs)
+        }
+    }
+
+    private fun formatTimestamp(ms: Long): String {
+        val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3_600L
+        val minutes = (totalSeconds % 3_600L) / 60L
+        val seconds = totalSeconds % 60L
+        return if (hours > 0L) {
+            "%d:%02d:%02d".format(hours, minutes, seconds)
+        } else {
+            "%02d:%02d".format(minutes, seconds)
+        }
+    }
+
     private fun foregroundInfo(message: String): ForegroundInfo {
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("NotCan · Transcripción local")
             .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("Whisper large-v3-turbo está transcribiendo en segundo plano. Puedes cerrar NotCan."))
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    "${WhisperModelSpec.DISPLAY_NAME} está transcribiendo en segundo plano. Puedes cerrar NotCan."
+                )
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setProgress(0, 0, true)
@@ -105,7 +175,7 @@ class BackgroundTranscriptionWorker(
             NotificationCompat.Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Transcripción terminada")
-                .setContentText(displayName)
+                .setContentText("$displayName · apunte editable creado")
                 .setAutoCancel(true)
                 .build()
         )
