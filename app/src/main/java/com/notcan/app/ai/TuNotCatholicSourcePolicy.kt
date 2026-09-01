@@ -126,6 +126,22 @@ object TuNotCatholicSourcePolicy {
             note = "Fuente enciclopédica secundaria. Para 'qué enseña la Iglesia', priorizar documentos oficiales enlazados o equivalentes."
         ),
         TuNotWebSource(
+            domain = "mercaba.org",
+            label = "Enciclopedia Mercabá",
+            authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
+            priority = 78,
+            topics = setOf("teologia", "biblia", "patristica", "filosofia", "derecho canonico", "liturgia", "sacramentos", "historia", "bioetica", "mariologia", "cristologia", "espiritualidad", "apologetica", "bibliografia"),
+            note = "Repositorio católico amplio y de gran valor académico/enciclopédico. Tratarlo como fuente secundaria; no usar su sección de noticias como fuente primaria ni sustituir documentos oficiales."
+        ),
+        TuNotWebSource(
+            domain = "mercaba.es",
+            label = "Enciclopedia Mercabá",
+            authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
+            priority = 78,
+            topics = setOf("teologia", "biblia", "patristica", "filosofia", "derecho canonico", "liturgia", "sacramentos", "historia", "bioetica", "mariologia", "cristologia", "espiritualidad", "apologetica", "bibliografia"),
+            note = "Dominio complementario de Mercabá. Misma jerarquía: referencia secundaria, no sustituto de Santa Sede ni de fuentes primarias."
+        ),
+        TuNotWebSource(
             domain = "comillas.edu",
             label = "Universidad Pontificia Comillas",
             authority = TuNotSourceAuthority.CATHOLIC_ACADEMIC,
@@ -277,6 +293,8 @@ object TuNotCatholicSourcePolicy {
         appendLine("No atribuyas al Magisterio una conclusión que solo aparezca en una fuente secundaria.")
         appendLine("No uses como fundamento doctrinal páginas protestantes, evangélicas, ortodoxas, ecuménicas generales, wikis NO autorizadas, foros, Reddit, redes sociales, directorios de enlaces o sitios sin autoridad identificable.")
         appendLine("El formato wiki de un dominio incluido expresamente en esta lista blanca (por ejemplo ec.aciprensa.com) no lo desautoriza por sí mismo.")
+        appendLine("Mercabá puede usarse como biblioteca enciclopédica, histórica, bíblica, patrística, filosófica y teológica; cuando reproduzca o resuma una fuente primaria, intenta identificar y preferir esa fuente primaria si está disponible.")
+        appendLine("No uses las secciones de noticias de repositorios enciclopédicos como fundamento doctrinal ni como fuente principal de actualidad.")
         appendLine("No uses bancos de imágenes o sitios devocionales como fuente doctrinal.")
         appendLine("Magisterium AI queda SOLO COMO REFERENCIA CONCEPTUAL: TuNot no debe invocar su IA, API ni ningún servicio de Magisterium que genere cargos por tokens. Si una idea conocida por esa plataforma resulta útil, debe preferirse la fuente primaria católica equivalente disponible en la lista blanca.")
         appendLine("IDIOMA: responde siempre en español. Si una fuente está en inglés, francés, italiano, alemán u otro idioma moderno, extrae su contenido relevante y tradúcelo o sintetízalo al español antes de presentarlo.")
