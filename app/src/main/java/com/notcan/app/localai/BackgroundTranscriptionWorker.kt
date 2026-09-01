@@ -41,7 +41,32 @@ class BackgroundTranscriptionWorker(
         setForeground(foregroundInfo("Preparando $displayName…"))
 
         return try {
-            val transcription = LocalWhisperEngine(applicationContext).transcribeM4aDetailed(audio)
+            val dao = NotCanDatabase.getInstance(applicationContext).dao()
+            val classSession = dao.getClassSession(classSessionId)
+            val subject = classSession?.let { dao.getSubject(it.subjectId) }
+            val storedVocabulary = subject?.let { selectedSubject ->
+                dao.observeVocabularyForCycle(selectedSubject.cycleId)
+                    .first()
+                    .filter { term -> term.subjectId == null || term.subjectId == selectedSubject.id }
+            }.orEmpty()
+            val academicTerms = AcademicTranscriptionContext.buildTerms(
+                subjectName = subject?.name,
+                classTitle = displayName,
+                stored = storedVocabulary
+            )
+
+            setForeground(
+                foregroundInfo(
+                    if (academicTerms.isNotEmpty()) {
+                        "Transcribiendo $displayName · vocabulario académico…"
+                    } else {
+                        "Transcribiendo $displayName…"
+                    }
+                )
+            )
+
+            val rawTranscription = LocalWhisperEngine(applicationContext).transcribeM4aDetailed(audio)
+            val transcription = AcademicTranscriptionContext.correct(rawTranscription, academicTerms)
             val plainText = transcription.text.trim()
             val timedText = transcription.segments
                 .joinToString(separator = "\n\n") { segment ->
@@ -51,7 +76,6 @@ class BackgroundTranscriptionWorker(
 
             val now = System.currentTimeMillis()
             val transcriptId = "final-$audioId"
-            val dao = NotCanDatabase.getInstance(applicationContext).dao()
             dao.insertTranscript(
                 TranscriptEntity(
                     id = transcriptId,
@@ -59,7 +83,11 @@ class BackgroundTranscriptionWorker(
                     audioId = audioId,
                     body = timedText,
                     status = "FINAL_LOCAL_TIMED",
-                    modelName = WhisperModelSpec.DISPLAY_NAME,
+                    modelName = if (academicTerms.isNotEmpty()) {
+                        "${WhisperModelSpec.DISPLAY_NAME} · contexto académico"
+                    } else {
+                        WhisperModelSpec.DISPLAY_NAME
+                    },
                     createdAtEpochMs = now,
                     updatedAtEpochMs = now
                 )
@@ -102,14 +130,29 @@ class BackgroundTranscriptionWorker(
                     }
             }
 
+            // Los capítulos son navegación de la clase, no una modificación del texto.
+            // Se regeneran de forma determinista cada vez que se vuelve a procesar el audio.
+            dao.deleteDetectedCuesForTranscript(transcriptId)
+            ClassChapterDetector.detect(
+                segments = transcription.segments,
+                terms = academicTerms,
+                classSessionId = classSessionId,
+                transcriptId = transcriptId,
+                audioId = audioId
+            ).forEach { dao.insertDetectedCue(it) }
+
             if (NotCanPreferences(applicationContext).autoDetectAcademicCues) {
-                dao.deleteDetectedCuesForTranscript(transcriptId)
                 AcademicCueDetector.detect(plainText, classSessionId, transcriptId, audioId)
                     .forEach { dao.insertDetectedCue(it) }
             }
 
-            notifyFinished(displayName)
-            Result.success(workDataOf(KEY_TRANSCRIPT_ID to transcriptId))
+            notifyFinished(displayName, academicTerms.isNotEmpty())
+            Result.success(
+                workDataOf(
+                    KEY_TRANSCRIPT_ID to transcriptId,
+                    KEY_CONTEXT_TERMS to academicTerms.size
+                )
+            )
         } catch (t: Throwable) {
             Result.failure(workDataOf(KEY_ERROR to (t.message ?: "No se pudo transcribir el audio")))
         }
@@ -168,14 +211,20 @@ class BackgroundTranscriptionWorker(
         )
     }
 
-    private fun notifyFinished(displayName: String) {
+    private fun notifyFinished(displayName: String, usedAcademicContext: Boolean) {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(
             COMPLETED_NOTIFICATION_ID,
             NotificationCompat.Builder(applicationContext, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Transcripción terminada")
-                .setContentText("$displayName · apunte editable creado")
+                .setContentText(
+                    if (usedAcademicContext) {
+                        "$displayName · apunte editable y capítulos creados"
+                    } else {
+                        "$displayName · apunte editable creado"
+                    }
+                )
                 .setAutoCancel(true)
                 .build()
         )
@@ -191,6 +240,7 @@ class BackgroundTranscriptionWorker(
         const val KEY_AUDIO_PATH = "audio_path"
         const val KEY_DISPLAY_NAME = "display_name"
         const val KEY_TRANSCRIPT_ID = "transcript_id"
+        const val KEY_CONTEXT_TERMS = "context_terms"
         const val KEY_ERROR = "error"
     }
 }

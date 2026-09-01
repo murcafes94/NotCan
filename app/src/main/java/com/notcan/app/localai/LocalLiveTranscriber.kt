@@ -8,13 +8,16 @@ import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 
 /**
  * Transcripción provisional en vivo, totalmente local.
  *
  * Moonshine ES sigue siendo el reconocedor. Cuando Silero VAD está disponible,
  * el audio se agrupa por frases reales y pausas; si VAD no puede iniciarse,
- * NotCan conserva automáticamente el comportamiento anterior de bloques de 6 s.
+ * NotCan conserva automáticamente el comportamiento compatible por bloques.
+ * Ese fallback usa 400 ms de solapamiento para no perder palabras cortadas y
+ * elimina únicamente la repetición evidente producida por ese solapamiento.
  */
 class LocalLiveTranscriber(
     private val modelManager: LiveTranscriptionModelManager,
@@ -25,6 +28,7 @@ class LocalLiveTranscriber(
     private var vad: Vad? = null
     private val vadPending = ByteArrayOutputStream(VAD_WINDOW_BYTES * 4)
     private val fallbackPending = ByteArrayOutputStream(FALLBACK_CHUNK_BYTES * 2)
+    private var lastFallbackText: String = ""
 
     fun start(): Boolean {
         if (modelManager.state() != LiveTranscriptionModelState.INSTALLED) {
@@ -32,6 +36,9 @@ class LocalLiveTranscriber(
             return false
         }
         return try {
+            vadPending.reset()
+            fallbackPending.reset()
+            lastFallbackText = ""
             val config = OfflineRecognizerConfig(
                 modelConfig = OfflineModelConfig(
                     moonshine = OfflineMoonshineModelConfig(
@@ -83,12 +90,13 @@ class LocalLiveTranscriber(
                 runCatching { activeVad.flush() }
                 drainCompletedSpeech(active, activeVad)
             } else if (fallbackPending.size() >= MIN_FINAL_BYTES) {
-                decode(active, fallbackPending.toByteArray())
+                decode(active, fallbackPending.toByteArray(), dedupeFallbackOverlap = true)
             }
         }
 
         vadPending.reset()
         fallbackPending.reset()
+        lastFallbackText = ""
         runCatching { vad?.release() }
         vad = null
         runCatching { recognizer?.release() }
@@ -128,11 +136,11 @@ class LocalLiveTranscriber(
             runCatching { activeVad.acceptWaveform(pcmToFloat(window)) }
                 .onFailure {
                     // VAD es una mejora, nunca un punto único de fallo: volvemos al
-                    // procesamiento por bloques sin detener la grabación.
+                    // procesamiento solapado por bloques sin detener la grabación.
                     runCatching { activeVad.release() }
                     vad = null
                     if (all.isNotEmpty()) acceptFallback(active, all)
-                    onStatus("Transcripción en vivo · modo compatible")
+                    onStatus("Transcripción en vivo · modo compatible con solapamiento")
                     return
                 }
             drainCompletedSpeech(active, activeVad)
@@ -153,31 +161,76 @@ class LocalLiveTranscriber(
             val all = fallbackPending.toByteArray()
             val chunk = all.copyOfRange(0, FALLBACK_CHUNK_BYTES)
             fallbackPending.reset()
-            if (all.size > FALLBACK_CHUNK_BYTES) {
-                fallbackPending.write(all, FALLBACK_CHUNK_BYTES, all.size - FALLBACK_CHUNK_BYTES)
+
+            // Avanzamos 5.6 s en cada bloque de 6 s: los últimos 400 ms vuelven
+            // a entrar en el siguiente bloque para conservar palabras en el borde.
+            val keepFrom = (FALLBACK_CHUNK_BYTES - FALLBACK_OVERLAP_BYTES).coerceAtLeast(0)
+            if (all.size > keepFrom) {
+                fallbackPending.write(all, keepFrom, all.size - keepFrom)
             }
-            decode(active, chunk)
+            decode(active, chunk, dedupeFallbackOverlap = true)
         }
     }
 
-    private fun decode(active: OfflineRecognizer, pcm: ByteArray) {
+    private fun decode(
+        active: OfflineRecognizer,
+        pcm: ByteArray,
+        dedupeFallbackOverlap: Boolean = false
+    ) {
         if (pcm.size < 2) return
-        decodeSamples(active, pcmToFloat(pcm))
+        decodeSamples(active, pcmToFloat(pcm), dedupeFallbackOverlap)
     }
 
-    private fun decodeSamples(active: OfflineRecognizer, samples: FloatArray) {
+    private fun decodeSamples(
+        active: OfflineRecognizer,
+        samples: FloatArray,
+        dedupeFallbackOverlap: Boolean = false
+    ) {
         if (samples.isEmpty()) return
         val stream = active.createStream()
         try {
             stream.acceptWaveform(samples, SAMPLE_RATE)
             active.decode(stream)
-            active.getResult(stream).text.trim().takeIf { it.isNotBlank() }?.let(onTranscriptChunk)
+            val raw = active.getResult(stream).text.trim()
+            if (raw.isBlank()) return
+
+            val resolved = if (dedupeFallbackOverlap) {
+                val withoutOverlap = removeRepeatedOverlap(lastFallbackText, raw)
+                lastFallbackText = raw
+                withoutOverlap
+            } else {
+                raw
+            }
+            resolved.takeIf { it.isNotBlank() }?.let(onTranscriptChunk)
         } catch (t: Throwable) {
             onStatus("Transcripción provisional interrumpida: ${t.message ?: "error"}")
         } finally {
             stream.release()
         }
     }
+
+    private fun removeRepeatedOverlap(previous: String, current: String): String {
+        if (previous.isBlank() || current.isBlank()) return current
+        val previousWords = previous.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val currentWords = current.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (previousWords.size < 2 || currentWords.size < 2) return current
+
+        val maxWords = minOf(MAX_DEDUPE_WORDS, previousWords.size, currentWords.size)
+        for (count in maxWords downTo MIN_DEDUPE_WORDS) {
+            val suffix = previousWords.takeLast(count).map(::normalizeWord)
+            val prefix = currentWords.take(count).map(::normalizeWord)
+            if (suffix.any { it.isBlank() } || suffix != prefix) continue
+            val matchedChars = prefix.sumOf { it.length }
+            if (count >= 3 || matchedChars >= MIN_DEDUPE_CHARS) {
+                return currentWords.drop(count).joinToString(" ")
+            }
+        }
+        return current
+    }
+
+    private fun normalizeWord(value: String): String = value
+        .lowercase(Locale.ROOT)
+        .replace(Regex("[^\\p{L}\\p{N}]"), "")
 
     private fun pcmToFloat(pcm: ByteArray): FloatArray {
         val sampleCount = pcm.size / 2
@@ -199,6 +252,11 @@ class LocalLiveTranscriber(
         private const val VAD_WINDOW_BYTES = VAD_WINDOW_SAMPLES * 2
         private const val FALLBACK_CHUNK_SECONDS = 6
         private const val FALLBACK_CHUNK_BYTES = SAMPLE_RATE * 2 * FALLBACK_CHUNK_SECONDS
+        private const val FALLBACK_OVERLAP_MS = 400
+        private const val FALLBACK_OVERLAP_BYTES = SAMPLE_RATE * 2 * FALLBACK_OVERLAP_MS / 1_000
         private const val MIN_FINAL_BYTES = SAMPLE_RATE * 2
+        private const val MAX_DEDUPE_WORDS = 10
+        private const val MIN_DEDUPE_WORDS = 2
+        private const val MIN_DEDUPE_CHARS = 14
     }
 }
