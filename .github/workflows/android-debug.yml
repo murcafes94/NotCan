@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.2-test"
+          TAG="v0.8.13-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.2-test.apk" \
+            "$APK#NotCan-v0.8.13-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.2 · prueba" \
-            --notes "APK de prueba de NotCan v0.8.2. Añade controles de clase discretos sobre TuNot, texto en vivo minimizable y navegable al pausar, marcador de momentos importantes, navegación lateral ocultable, subrayado contextual en apuntes y calificaciones con ponderación opcional. Mantiene además las correcciones de TuNot y la sincronización Supabase del núcleo académico."
+            --title "NotCan v0.8.13 · prueba" \
+            --notes "NotCan v0.8.13: tema claro/oscuro, No molestar de Android, Apuntes como vista principal con navegación discreta, Clases contextual, audio persistente en segundo plano, marcadores navegables, modo lectura/edición de apuntes, selección táctil restaurada y controles del cuestionario más accesibles. Incluye además las mejoras recientes del transcriptor y TuNot."
