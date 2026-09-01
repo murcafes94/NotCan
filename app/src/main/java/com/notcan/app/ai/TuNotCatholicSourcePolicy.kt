@@ -22,16 +22,12 @@ data class TuNotWebSource(
 )
 
 /**
- * Lista blanca de fuentes web para TuNot.
+ * Lista blanca de fuentes web para TuNot en consultas católicas/doctrinales.
  *
- * El objetivo es mantener una identidad doctrinal católica y evitar que resultados
- * cristianos generales o de autoridad incierta entren al contexto del tutor como si
- * fueran equivalentes a fuentes de la Iglesia.
- *
- * El ejecutor web debe aplicar [isAllowedUrl] antes de entregar contenido al modelo.
- * Aunque una fuente esté originalmente en inglés u otro idioma, TuNot debe sintetizarla
- * y responder en español. El latín solo debe mostrarse cuando el usuario lo solicite
- * explícitamente o cuando la tarea sea específicamente bilingüe/latina (p. ej. CIC latino-español).
+ * La jerarquía distingue entre fuentes universales de la Iglesia, fuentes oficiales
+ * locales, referencias católicas, instituciones académicas, formación y medios.
+ * Un sitio oficial diocesano puede ser excelente para terminología o disciplina local,
+ * pero nunca sustituye al Magisterio universal cuando la pregunta es doctrinal.
  */
 object TuNotCatholicSourcePolicy {
 
@@ -60,13 +56,20 @@ object TuNotCatholicSourcePolicy {
             preferredLanguage = "en"
         ),
         TuNotWebSource(
-            domain = "magisterium.com",
-            label = "Magisterium AI",
-            authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
-            priority = 40,
-            topics = setOf("magisterio", "catecismo", "teologia", "patristica", "doctrina"),
-            searchable = false,
-            note = "Solo referencia conceptual. No invocar su IA, API ni servicios con cobro por tokens desde TuNot."
+            domain = "archspm.org",
+            label = "Arquidiócesis de Saint Paul y Minneapolis",
+            authority = TuNotSourceAuthority.OFFICIAL_CHURCH,
+            priority = 87,
+            topics = setOf("glosario", "terminologia eclesiastica", "derecho canonico", "pastoral"),
+            note = "Fuente oficial diocesana; útil para terminología y práctica eclesial. No sustituye al Magisterio universal."
+        ),
+        TuNotWebSource(
+            domain = "diocesisdesantander.com",
+            label = "Diócesis de Santander",
+            authority = TuNotSourceAuthority.OFFICIAL_CHURCH,
+            priority = 87,
+            topics = setOf("glosario", "terminologia eclesiastica", "derecho canonico", "liturgia", "pastoral"),
+            note = "Fuente oficial diocesana; priorizar CIC, CCE y Santa Sede para doctrina o derecho universal."
         ),
         TuNotWebSource(
             domain = "newadvent.org",
@@ -83,6 +86,14 @@ object TuNotCatholicSourcePolicy {
             priority = 84,
             topics = setOf("tomas de aquino", "escolastica", "filosofia", "teologia"),
             preferredLanguage = "la"
+        ),
+        TuNotWebSource(
+            domain = "clerus.org",
+            label = "Clerus · Biblia Clerus",
+            authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
+            priority = 83,
+            topics = setOf("biblia", "vocabulario biblico", "exegesis", "escritura", "teologia biblica"),
+            note = "Referencia bíblica y léxica. Verificar doctrina o disciplina vigente con fuentes oficiales actuales."
         ),
         TuNotWebSource(
             domain = "documentacatholicaomnia.eu",
@@ -105,6 +116,14 @@ object TuNotCatholicSourcePolicy {
             authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
             priority = 80,
             topics = setOf("espiritualidad", "santidad", "catequesis", "magisterio", "vida cristiana")
+        ),
+        TuNotWebSource(
+            domain = "ec.aciprensa.com",
+            label = "Enciclopedia Católica · ACI Prensa",
+            authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
+            priority = 79,
+            topics = setOf("enciclopedia catolica", "teologia", "historia", "santos", "liturgia", "doctrina", "glosario"),
+            note = "Fuente enciclopédica secundaria. Para 'qué enseña la Iglesia', priorizar documentos oficiales enlazados o equivalentes."
         ),
         TuNotWebSource(
             domain = "comillas.edu",
@@ -214,6 +233,15 @@ object TuNotCatholicSourcePolicy {
             priority = 56,
             topics = setOf("eucaristia", "maria", "santos", "devocion", "espiritualidad"),
             preferredLanguage = "en"
+        ),
+        TuNotWebSource(
+            domain = "magisterium.com",
+            label = "Magisterium AI",
+            authority = TuNotSourceAuthority.CATHOLIC_REFERENCE,
+            priority = 40,
+            topics = setOf("magisterio", "catecismo", "teologia", "patristica", "doctrina"),
+            searchable = false,
+            note = "Solo referencia conceptual. No invocar su IA, API ni servicios con cobro por tokens desde TuNot."
         )
     ).sortedByDescending { it.priority }
 
@@ -237,22 +265,23 @@ object TuNotCatholicSourcePolicy {
     fun promptPolicy(): String = buildString {
         appendLine("POLÍTICA CATÓLICA DE FUENTES WEB DE TUNOT")
         appendLine("TuNot es un tutor académico católico. Para consultas doctrinales no debe presentar como doctrina católica una opinión cristiana general, ecuménica o de otra confesión.")
-        appendLine("Si existe búsqueda web, utiliza únicamente dominios de la lista blanca de NotCan marcados como buscables y respeta el siguiente orden de autoridad:")
-        appendLine("1. Santa Sede y documentos oficiales de la Iglesia.")
-        appendLine("2. Fuentes católicas de referencia y textos primarios.")
-        appendLine("3. Universidades e instituciones académicas católicas.")
-        appendLine("4. Recursos católicos de formación.")
-        appendLine("5. Medios católicos, solo como apoyo secundario o para actualidad; nunca como fundamento principal de una afirmación doctrinal.")
-        appendLine("En una pregunta del tipo 'qué enseña la Iglesia', una fuente académica, formativa o periodística nunca debe contradecir ni sustituir una fuente oficial.")
+        appendLine("En consultas católicas o doctrinales utiliza dominios autorizados y respeta este orden de autoridad:")
+        appendLine("1. Santa Sede y documentos oficiales universales de la Iglesia.")
+        appendLine("2. Sitios oficiales de diócesis/arquidiócesis para información de su competencia; no sustituyen al Magisterio universal.")
+        appendLine("3. Fuentes católicas de referencia y textos primarios.")
+        appendLine("4. Universidades e instituciones académicas católicas.")
+        appendLine("5. Recursos católicos de formación.")
+        appendLine("6. Medios católicos, solo como apoyo secundario o para actualidad.")
+        appendLine("En una pregunta del tipo 'qué enseña la Iglesia', una fuente diocesana, académica, formativa, enciclopédica o periodística nunca debe contradecir ni sustituir una fuente oficial universal.")
         appendLine("Distingue doctrina, disciplina vigente, opinión teológica e interpretación académica cuando corresponda.")
         appendLine("No atribuyas al Magisterio una conclusión que solo aparezca en una fuente secundaria.")
-        appendLine("No uses como fundamento doctrinal páginas protestantes, evangélicas, ortodoxas, ecuménicas generales, wikis, foros, Reddit, redes sociales, directorios de enlaces o sitios sin autoridad identificable.")
+        appendLine("No uses como fundamento doctrinal páginas protestantes, evangélicas, ortodoxas, ecuménicas generales, wikis NO autorizadas, foros, Reddit, redes sociales, directorios de enlaces o sitios sin autoridad identificable.")
+        appendLine("El formato wiki de un dominio incluido expresamente en esta lista blanca (por ejemplo ec.aciprensa.com) no lo desautoriza por sí mismo.")
         appendLine("No uses bancos de imágenes o sitios devocionales como fuente doctrinal.")
         appendLine("Magisterium AI queda SOLO COMO REFERENCIA CONCEPTUAL: TuNot no debe invocar su IA, API ni ningún servicio de Magisterium que genere cargos por tokens. Si una idea conocida por esa plataforma resulta útil, debe preferirse la fuente primaria católica equivalente disponible en la lista blanca.")
-        appendLine("IDIOMA: responde siempre en español. Si una fuente está en inglés, francés, italiano, alemán u otro idioma moderno, extrae su contenido relevante y tradúcelo o sintetízalo al español antes de presentarlo. No muestres bloques de texto en otro idioma salvo petición explícita del usuario.")
-        appendLine("LATÍN: no muestres términos, frases ni bloques en latín por defecto. Tradúcelos al español y conserva solo la referencia de la obra/documento. Muestra latín únicamente cuando el usuario lo pida explícitamente, cuando solicite formato latín-español, cuando la tarea sea específicamente lingüística, o cuando trabaje con una fuente cuyo texto latino sea parte esencial de la consulta (por ejemplo, Código de Derecho Canónico latino-español).")
-        appendLine("Si el usuario pide una frase, oración o texto en latín-español, presenta ambos de forma clara y equivalente. Si no lo pide, la respuesta visible debe quedar completamente en español.")
-        appendLine("Dominios configurados, de mayor a menor prioridad:")
+        appendLine("IDIOMA: responde siempre en español. Si una fuente está en inglés, francés, italiano, alemán u otro idioma moderno, extrae su contenido relevante y tradúcelo o sintetízalo al español antes de presentarlo.")
+        appendLine("LATÍN: no muestres términos, frases ni bloques en latín por defecto. Tradúcelos al español y conserva la referencia. Muestra latín únicamente cuando el usuario lo pida o cuando la tarea sea específicamente lingüística/bilingüe.")
+        appendLine("Dominios católicos configurados, de mayor a menor prioridad:")
         sources.forEach { source ->
             val access = if (source.searchable) "buscable" else "solo referencia"
             val note = source.note?.let { " — $it" }.orEmpty()
