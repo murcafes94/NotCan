@@ -12,10 +12,10 @@ import kotlin.math.max
  * La librería whisper-android usada por NotCan no expone initial_prompt. En vez de
  * sustituir el motor o inventar correcciones, esta capa usa el vocabulario que ya
  * guarda NotCan, conceptos detectados de forma conservadora en apuntes anteriores
- * y un léxico base curado para materias teológicas/filosóficas.
+ * y léxicos base curados según el tipo de materia.
  *
- * El léxico base contiene solo términos. No importa definiciones doctrinales de
- * glosarios externos: su función es exclusivamente ayudar al reconocimiento ASR.
+ * Los glosarios externos se usan únicamente como semilla léxica: NotCan conserva
+ * términos, nunca importa automáticamente sus definiciones ni las trata como doctrina.
  */
 data class AcademicTranscriptionTerm(
     val value: String,
@@ -36,96 +36,102 @@ object AcademicTranscriptionContext {
     )
 
     /**
-     * Términos comunes en formación teológica católica y filosofía clásica.
-     * Incluye vocablos compartidos por glosarios teológicos generales (p. ej.
-     * aseidad, antropomorfismo, visión beatífica, ser contingente y esencia),
-     * pero nunca sus definiciones.
+     * Léxico dogmático, filosófico y teológico general.
+     * Semillas contrastadas con glosarios católicos y teológicos; solo términos.
      */
     private val theologicalBaseTerms = listOf(
-        "aseidad",
-        "analogía",
-        "antropomorfismo",
-        "atributos de Dios",
-        "atributos morales",
-        "atributos metafísicos",
-        "visión beatífica",
-        "ser contingente",
-        "ser necesario",
-        "causa eficiente",
-        "causa final",
-        "causa formal",
-        "argumento cosmológico",
-        "esencia",
-        "existencia",
-        "eternidad",
-        "expiación",
-        "providencia",
-        "revelación",
-        "inspiración",
-        "Tradición",
-        "Magisterio",
-        "Encarnación",
-        "unión hipostática",
-        "Cristología",
-        "Soteriología",
-        "Eclesiología",
-        "Escatología",
-        "Pneumatología",
-        "Mariología",
-        "antropología teológica",
-        "gracia santificante",
-        "pecado original",
-        "justificación",
-        "santificación",
-        "transubstanciación",
-        "consustancial",
-        "homoousios",
-        "hipóstasis",
-        "perichóresis",
-        "Imago Dei",
-        "kénosis",
-        "Theotokos",
-        "sacramentalidad",
-        "ex opere operato",
-        "epíclesis",
-        "anámnesis",
-        "parusía",
-        "Eucaristía",
-        "Bautismo",
-        "Confirmación",
-        "Orden sacerdotal",
-        "Unción de los enfermos",
-        "Derecho canónico",
-        "dispensa",
-        "impedimento",
-        "Concilio ecuménico",
-        "Padres apostólicos",
-        "Patrística",
-        "exégesis",
-        "hermenéutica",
-        "Septuaginta",
-        "Vulgata",
-        "evangelios sinópticos",
-        "koinonía",
-        "Logos",
-        "kerigma",
-        "parénesis",
-        "escatón",
-        "ontología",
-        "metafísica",
-        "hilemorfismo",
-        "potencia y acto",
-        "ley natural",
-        "dignidad humana",
-        "bioética"
+        "aseidad", "analogía", "antropomorfismo", "atributos de Dios",
+        "atributos morales", "atributos metafísicos", "visión beatífica",
+        "ser contingente", "ser necesario", "causa eficiente", "causa final",
+        "causa formal", "argumento cosmológico", "esencia", "existencia",
+        "eternidad", "expiación", "providencia", "revelación", "inspiración",
+        "Tradición", "Magisterio", "Encarnación", "unión hipostática",
+        "Cristología", "Soteriología", "Eclesiología", "Escatología",
+        "Pneumatología", "Mariología", "antropología teológica",
+        "teología dogmática", "teología moral", "teología fundamental",
+        "gracia santificante", "gracia actual", "gracia habitual",
+        "pecado original", "justificación", "santificación", "redención",
+        "economía de la salvación", "misterio pascual", "filiación divina",
+        "creación ex nihilo", "Santísima Trinidad", "naturaleza humana",
+        "naturaleza divina", "transubstanciación", "consustancial",
+        "consubstancialidad", "homoousios", "ousía", "hipóstasis", "physis",
+        "prosopon", "perichóresis", "communicatio idiomatum", "Imago Dei",
+        "kénosis", "Theotokos", "sacramentalidad", "ex opere operato",
+        "epíclesis", "anámnesis", "parusía", "sensus fidei", "depositum fidei",
+        "lex orandi", "lex credendi", "Eucaristía", "Bautismo", "Confirmación",
+        "Orden sacerdotal", "Unción de los enfermos", "Concilio ecuménico",
+        "Padres apostólicos", "Patrística", "ontología", "metafísica",
+        "hilemorfismo", "potencia y acto", "ley natural", "dignidad humana",
+        "bioética", "adopcionismo", "apolinarismo", "arrianismo", "docetismo",
+        "gnosticismo", "monofisismo", "monotelismo", "nestorianismo",
+        "pelagianismo", "semipelagianismo", "modalismo", "monarquianismo",
+        "patripasianismo", "macedonianismo", "iconoclasia"
+    )
+
+    /**
+     * Léxico bíblico. Las semillas proceden de vocabularios bíblicos católicos,
+     * Clerus/Biblia Clerus, índices de vocabulario bíblico y glosarios generales.
+     */
+    private val biblicalBaseTerms = listOf(
+        "Abrahán", "Adonai", "Alianza", "arca de la Alianza", "anatema",
+        "anástasis", "apocalíptica", "apócrifos", "canon bíblico",
+        "protocanónicos", "deuterocanónicos", "Pentateuco", "Torá", "Decálogo",
+        "Éxodo", "Pascua", "profeta", "profecía", "mesianismo", "Mesías",
+        "Reino de Dios", "Hijo del Hombre", "Siervo de Yahvé", "Yahvé",
+        "Israel", "Judá", "Sión", "Jerusalén", "Canaán", "Efraín", "Levitas",
+        "saduceos", "fariseos", "esenios", "escribas", "sanedrín", "sinagoga",
+        "Templo de Jerusalén", "Sheol", "Gehenna", "jubileo", "goel", "hesed",
+        "ruah", "shekinah", "berit", "qahal", "ekklesía", "agápe", "koinonía",
+        "diakonía", "martyría", "parousía", "Logos", "Verbo", "kerigma",
+        "parábola", "bienaventuranzas", "Septuaginta", "Vulgata", "texto masorético",
+        "Qumrán", "Midrash", "Talmud", "Targum", "evangelios sinópticos",
+        "tradición sinóptica", "fuente Q", "exégesis", "hermenéutica",
+        "crítica textual", "crítica histórica", "crítica de las formas",
+        "crítica de la redacción", "tipología", "sensus plenior", "lectio divina"
+    )
+
+    /**
+     * Léxico eclesiástico/canónico y de organización de la Iglesia. Se alimenta
+     * de glosarios diocesanos oficiales y terminología jurídica católica.
+     */
+    private val ecclesialBaseTerms = listOf(
+        "abad", "abadesa", "nuncio apostólico", "delegado apostólico", "arzobispo",
+        "archidiócesis", "obispo auxiliar", "obispo coadjutor", "obispo diocesano",
+        "conferencia episcopal", "Colegio de Cardenales", "cónclave", "curia",
+        "Curia Romana", "curia diocesana", "diácono", "diaconado", "dicasterio",
+        "eparquía", "excomunión", "facultad", "jerarquía", "Santa Sede",
+        "vicario episcopal", "vicario general", "tribunal eclesiástico",
+        "decreto de nulidad", "matrimonio putativo", "laicización", "prelatura",
+        "presbítero", "presbiterio", "parroquia", "párroco", "canónigo",
+        "Derecho canónico", "Código de Derecho Canónico", "ordinario del lugar",
+        "potestad de régimen", "fuero interno", "fuero externo", "incardinación",
+        "letras dimisorias", "dispensa", "impedimento", "irregularidad", "censura",
+        "interdicto", "Colegio episcopal", "sínodo", "sínodo diocesano",
+        "concilio particular", "metropolitano", "provincia eclesiástica",
+        "nunciatura apostólica", "sede vacante", "sede impedida",
+        "administrador diocesano", "cabildo catedralicio", "Rota Romana",
+        "Penitenciaría Apostólica", "Signatura Apostólica"
     )
 
     private val theologicalContextMarkers = listOf(
         "teolog", "cristolog", "patrolog", "patrist", "eclesiolog", "soteriolog",
-        "escatolog", "pneumatolog", "mariolog", "sacrament", "liturg", "biblia",
-        "biblic", "exeg", "hermeneut", "dogmat", "fundamental", "magister",
-        "canon", "filosof", "metafis", "ontolog", "antropolog", "bioet", "moral",
-        "escritura", "revelacion", "revelación", "padres de la iglesia"
+        "escatolog", "pneumatolog", "mariolog", "sacrament", "dogmat", "fundamental",
+        "filosof", "metafis", "ontolog", "antropolog", "bioet", "moral",
+        "revelacion", "revelación", "padres de la iglesia"
+    )
+
+    private val biblicalContextMarkers = listOf(
+        "biblia", "biblic", "escritura", "antiguo testamento", "nuevo testamento",
+        "evangelio", "sinoptic", "exeg", "hermeneut", "hebreo", "griego",
+        "salmo", "profeta", "pentateuco", "torá", "tora", "paulino", "juanino",
+        "apocalipsis", "septuaginta", "vulgata", "qumran", "qumrán"
+    )
+
+    private val ecclesialContextMarkers = listOf(
+        "canon", "derecho", "eclesiast", "liturg", "sacrament", "pastoral",
+        "diocesis", "diócesis", "arquidiocesis", "arquidiócesis", "parroquia",
+        "curia", "ministerio", "orden sacerdotal", "obispo", "presbiter",
+        "tribunal", "matrimonio", "nulidad", "sede vacante"
     )
 
     fun buildTerms(
@@ -158,8 +164,14 @@ object AcademicTranscriptionContext {
                 add(term.term, term.weight.coerceAtLeast(1f), explicit = userConfirmed)
             }
 
-        if (isTheologicalContext(subjectName, classTitle, contextTexts)) {
+        if (matchesContext(theologicalContextMarkers, subjectName, classTitle, contextTexts)) {
             theologicalBaseTerms.forEach { add(it, 1.35f, explicit = true) }
+        }
+        if (matchesContext(biblicalContextMarkers, subjectName, classTitle, contextTexts)) {
+            biblicalBaseTerms.forEach { add(it, 1.32f, explicit = true) }
+        }
+        if (matchesContext(ecclesialContextMarkers, subjectName, classTitle, contextTexts)) {
+            ecclesialBaseTerms.forEach { add(it, 1.30f, explicit = true) }
         }
 
         inferFromContext(contextTexts).forEach { add(it, 1.6f, explicit = false) }
@@ -173,7 +185,8 @@ object AcademicTranscriptionContext {
             .take(MAX_CONTEXT_TERMS)
     }
 
-    private fun isTheologicalContext(
+    private fun matchesContext(
+        markers: List<String>,
         subjectName: String?,
         classTitle: String?,
         contextTexts: List<String>
@@ -188,7 +201,7 @@ object AcademicTranscriptionContext {
             }
         }
         val normalized = normalize(sample)
-        return theologicalContextMarkers.any { marker -> normalized.contains(normalize(marker)) }
+        return markers.any { marker -> normalized.contains(normalize(marker)) }
     }
 
     private fun inferFromContext(texts: List<String>): List<String> {
@@ -200,7 +213,6 @@ object AcademicTranscriptionContext {
                 .replace(Regex("[>#]+"), " ")
                 .take(MAX_CONTEXT_CHARS_PER_TEXT)
 
-            // Frases cortas que suelen corresponder a títulos/subtítulos de apuntes.
             text.lineSequence()
                 .map { it.trim().replace(whitespace, " ") }
                 .filter { line ->
@@ -211,12 +223,10 @@ object AcademicTranscriptionContext {
                 .take(12)
                 .forEach(found::add)
 
-            // Nombres propios y conceptos académicos escritos con mayúscula.
             capitalizedWord.findAll(text).map { it.value }.forEach { candidate ->
                 if (normalize(candidate) !in ignoredInferred) found += candidate
             }
 
-            // Términos que el estudiante haya marcado con énfasis en Markdown.
             emphasizedMarkdown.findAll(text).map { it.groupValues[1].trim() }
                 .filter { it.length in 5..60 }
                 .forEach(found::add)
@@ -362,7 +372,7 @@ object AcademicTranscriptionContext {
     }
 
     private const val MAX_STORED_TERMS = 220
-    private const val MAX_CONTEXT_TERMS = 220
+    private const val MAX_CONTEXT_TERMS = 320
     private const val MAX_INFERRED_TERMS = 80
     private const val MAX_CONTEXT_TEXTS = 12
     private const val MAX_CONTEXT_CHARS_PER_TEXT = 12_000
