@@ -25,7 +25,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -54,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,6 +70,7 @@ import com.notcan.app.data.local.TaskItemEntity
 import com.notcan.app.ui.ai.TuNotOfflineEntry
 import com.notcan.app.ui.ai.TuNotQuickAssistant
 import com.notcan.app.ui.theme.NotCanBlue
+import com.notcan.app.ui.theme.NotCanDrawableIcons
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanIcons
 import com.notcan.app.ui.theme.NotCanOffWhite
@@ -94,7 +99,12 @@ fun NotCanRootV5(
     schedules: List<SubjectScheduleEntity>,
     tasks: List<TaskItemEntity>,
     recordingActive: Boolean = false,
-    autoFocusOnRecording: () -> Boolean = { true },
+    subjectContextActive: Boolean = false,
+    subjectsTitle: String = "Materias",
+    darkTheme: Boolean = true,
+    onToggleTheme: () -> Unit = {},
+    onToggleDoNotDisturb: () -> Unit = {},
+    onOpenClasses: () -> Unit = {},
     onOpenPlannedClass: (PlannedClassOccurrence) -> Unit,
     onRecordPlannedClass: (PlannedClassOccurrence) -> Unit,
     assistantContextTitle: String = "NotCan",
@@ -113,34 +123,21 @@ fun NotCanRootV5(
     var page by rememberSaveable { mutableIntStateOf(0) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var focusMode by rememberSaveable { mutableStateOf(false) }
     var navExpanded by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         WindowInsets.ime.getBottom(density) > 0
 
-    BackHandler(enabled = focusMode || page != 0) {
-        if (focusMode) focusMode = false
-        else {
-            page = 0
-            navExpanded = false
-        }
+    BackHandler(enabled = page != 0) {
+        page = 0
+        navExpanded = false
     }
 
     LaunchedEffect(Unit) {
         while (true) {
             delay(30_000)
             now = System.currentTimeMillis()
-        }
-    }
-
-    LaunchedEffect(recordingActive) {
-        if (recordingActive && autoFocusOnRecording()) {
-            focusMode = true
-            page = 1
-        } else if (!recordingActive && focusMode) {
-            focusMode = false
         }
     }
 
@@ -152,22 +149,6 @@ fun NotCanRootV5(
     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
         val wide = maxWidth >= 840.dp
 
-        if (focusMode) {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = { focusMode = false }) {
-                        Icon(NotCanIcons.Focus, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Salir de concentración")
-                    }
-                }
-                Box(Modifier.weight(1f)) { subjectsContent() }
-            }
-            return@BoxWithConstraints
-        }
 
         if (wide) {
             Row(Modifier.fillMaxSize()) {
@@ -197,6 +178,14 @@ fun NotCanRootV5(
                                     icon = { Icon(d.icon, d.label) },
                                     label = { Text(d.label) }
                                 )
+                                if (d.page == 1 && subjectContextActive) {
+                                    NavigationRailItem(
+                                        selected = false,
+                                        onClick = { page = 1; onOpenClasses(); navExpanded = false },
+                                        icon = { Icon(painterResource(NotCanDrawableIcons.Classes), "Clases") },
+                                        label = { Text("Clases") }
+                                    )
+                                }
                             }
                             Spacer(Modifier.weight(1f))
                             NavigationRailItem(
@@ -213,14 +202,17 @@ fun NotCanRootV5(
                 Column(Modifier.weight(1f).fillMaxHeight()) {
                     if (page != 0 && !(page == 1 && landscapeIme)) {
                         NotCanTopBar(
-                            page,
-                            true,
-                            { navExpanded = !navExpanded },
-                            menuExpanded,
-                            { menuExpanded = it },
-                            { page = 4 },
-                            { page = 1; focusMode = true },
-                            { page = 6 }
+                            page = page,
+                            subjectsTitle = subjectsTitle,
+                            showNavigation = true,
+                            onNavigation = { navExpanded = !navExpanded },
+                            menuExpanded = menuExpanded,
+                            onMenuExpanded = { menuExpanded = it },
+                            subjectContextActive = subjectContextActive,
+                            onOpenClasses = { page = 1; onOpenClasses() },
+                            darkTheme = darkTheme,
+                            onToggleTheme = onToggleTheme,
+                            onToggleDoNotDisturb = onToggleDoNotDisturb
                         )
                     }
                     if (page == 0 && plannedNow != null) {
@@ -249,14 +241,17 @@ fun NotCanRootV5(
             Column(Modifier.fillMaxSize()) {
                 if (page != 0 && !(page == 1 && landscapeIme)) {
                     NotCanTopBar(
-                        page,
-                        false,
-                        {},
-                        menuExpanded,
-                        { menuExpanded = it },
-                        { page = 4 },
-                        { page = 1; focusMode = true },
-                        { page = 6 }
+                        page = page,
+                        subjectsTitle = subjectsTitle,
+                        showNavigation = false,
+                        onNavigation = {},
+                        menuExpanded = menuExpanded,
+                        onMenuExpanded = { menuExpanded = it },
+                        subjectContextActive = subjectContextActive,
+                        onOpenClasses = { page = 1; onOpenClasses() },
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        onToggleDoNotDisturb = onToggleDoNotDisturb
                     )
                 }
                 if (page == 0 && plannedNow != null) {
@@ -565,16 +560,19 @@ private fun assistantSuggestions(page: Int): List<String> = when (page) {
 @Composable
 private fun NotCanTopBar(
     page: Int,
+    subjectsTitle: String,
     showNavigation: Boolean,
     onNavigation: () -> Unit,
     menuExpanded: Boolean,
     onMenuExpanded: (Boolean) -> Unit,
-    onGrades: () -> Unit,
-    onFocus: () -> Unit,
-    onSettings: () -> Unit
+    subjectContextActive: Boolean,
+    onOpenClasses: () -> Unit,
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onToggleDoNotDisturb: () -> Unit
 ) {
     val title = when (page) {
-        1 -> "Materias"
+        1 -> subjectsTitle
         2 -> "Tareas"
         3 -> "Calendario académico"
         4 -> "Calificaciones"
@@ -583,7 +581,7 @@ private fun NotCanTopBar(
     }
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 10.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
+            Modifier.fillMaxWidth().padding(start = 10.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (showNavigation) {
@@ -592,29 +590,27 @@ private fun NotCanTopBar(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge)
+                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, maxLines = 1)
                 if (page == 5) Text("Tutor académico", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
-            Box {
-                IconButton(onClick = { onMenuExpanded(true) }) {
-                    Icon(NotCanIcons.More, "Más opciones", tint = NotCanOffWhite)
-                }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { onMenuExpanded(false) }) {
-                    DropdownMenuItem(
-                        text = { Text("Calificaciones") },
-                        leadingIcon = { Icon(NotCanIcons.Grades, null) },
-                        onClick = { onGrades(); onMenuExpanded(false) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Modo concentración") },
-                        leadingIcon = { Icon(NotCanIcons.Focus, null) },
-                        onClick = { onFocus(); onMenuExpanded(false) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Configuración") },
-                        leadingIcon = { Icon(NotCanIcons.Settings, null) },
-                        onClick = { onSettings(); onMenuExpanded(false) }
-                    )
+            IconButton(onClick = onToggleDoNotDisturb) {
+                Icon(Icons.Default.NotificationsOff, "No molestar", tint = NotCanGray)
+            }
+            IconButton(onClick = onToggleTheme) {
+                Icon(if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode, if (darkTheme) "Modo claro" else "Modo oscuro", tint = NotCanBlue)
+            }
+            if (page == 1 && subjectContextActive) {
+                Box {
+                    IconButton(onClick = { onMenuExpanded(true) }) {
+                        Icon(NotCanIcons.More, "Más opciones", tint = NotCanOffWhite)
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { onMenuExpanded(false) }) {
+                        DropdownMenuItem(
+                            text = { Text("Clases de esta materia") },
+                            leadingIcon = { Icon(painterResource(NotCanDrawableIcons.Classes), null) },
+                            onClick = { onOpenClasses(); onMenuExpanded(false) }
+                        )
+                    }
                 }
             }
         }

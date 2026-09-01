@@ -7,7 +7,6 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
-import android.view.ActionMode
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -35,6 +34,7 @@ import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -93,16 +94,22 @@ internal fun WriterNoteEditor(
     var webView by remember(note.id) { mutableStateOf<WebView?>(null) }
     var confirmDelete by remember(note.id) { mutableStateOf(false) }
     var shareMenu by remember(note.id) { mutableStateOf(false) }
+    var editing by remember(note.id) { mutableStateOf(false) }
+    val darkEditor = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     LaunchedEffect(note.id, note.body) {
         val externalHtml = normalizeStoredBody(note.body)
         if (externalHtml != html && externalHtml != lastSavedHtml) {
             html = externalHtml
             lastSavedHtml = externalHtml
-            webView?.loadDataWithBaseURL(null, writerDocument(externalHtml), "text/html", "UTF-8", null)
+            webView?.loadDataWithBaseURL(null, writerDocument(externalHtml, darkEditor), "text/html", "UTF-8", null)
         } else if (externalHtml == html) {
             lastSavedHtml = externalHtml
         }
+    }
+
+    LaunchedEffect(note.id, editing) {
+        webView?.evaluateJavascript("window.notcanSetEditing(${if (editing) "true" else "false"});", null)
     }
 
     LaunchedEffect(note.id, html) {
@@ -132,6 +139,9 @@ internal fun WriterNoteEditor(
             if (!landscapeIme) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                    IconButton(onClick = { editing = !editing }) {
+                        Icon(Icons.Default.Edit, if (editing) "Terminar edición" else "Editar", tint = if (editing) NotCanBlue else NotCanGray)
+                    }
                     Box {
                         IconButton(onClick = { shareMenu = true }) { Icon(Icons.Default.Share, "Compartir apunte", tint = NotCanBlue) }
                         DropdownMenu(expanded = shareMenu, onDismissRequest = { shareMenu = false }) {
@@ -158,6 +168,11 @@ internal fun WriterNoteEditor(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(0.dp)
             ) {
+                if (!editing) {
+                    IconButton(onClick = { command("underline") }) { Icon(Icons.Default.FormatUnderlined, "Subrayar selección") }
+                    WriterColorButton(Color(0xFFFFE066)) { command("hiliteColor", "#FFE066") }
+                    Text("  Selecciona texto para anotar", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
+                } else {
                 WriterStructureButton("T1") { command("formatBlock", "H1") }
                 WriterStructureButton("T2") { command("formatBlock", "H2") }
                 WriterStructureButton("P") { command("formatBlock", "P") }
@@ -174,6 +189,7 @@ internal fun WriterNoteEditor(
                 WriterColorButton(Color(0xFF8EE39A)) { command("hiliteColor", "#8EE39A") }
                 WriterColorButton(Color(0xFF7EC8FF)) { command("hiliteColor", "#7EC8FF") }
                 WriterColorButton(Color(0xFFFF9BB8)) { command("hiliteColor", "#FF9BB8") }
+                }
             }
             Divider(color = NotCanGray.copy(alpha = 0.20f))
 
@@ -190,7 +206,7 @@ internal fun WriterNoteEditor(
                         isVerticalScrollBarEnabled = true
                         webViewClient = WebViewClient()
                         addJavascriptInterface(NoteBridge { newHtml -> html = newHtml }, "NotCanBridge")
-                        loadDataWithBaseURL(null, writerDocument(html), "text/html", "UTF-8", null)
+                        loadDataWithBaseURL(null, writerDocument(html, darkEditor), "text/html", "UTF-8", null)
                         webView = this
                     }
                 },
@@ -209,10 +225,7 @@ internal fun WriterNoteEditor(
     )
 }
 
-private class NotCanWriterWebView(context: Context) : WebView(context) {
-    override fun startActionMode(callback: ActionMode.Callback?): ActionMode? = null
-    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? = null
-}
+private class NotCanWriterWebView(context: Context) : WebView(context)
 
 @Composable
 private fun WriterStructureButton(label: String, onClick: () -> Unit) {
@@ -248,8 +261,12 @@ private fun sanitizeHtml(value: String): String = value
     .replace(Regex("(?is)<iframe.*?>.*?</iframe>"), "")
     .replace(Regex("(?i)\\son[a-z]+\\s*=\\s*(['\"]).*?\\1"), "")
 
-private fun writerDocument(initialBody: String): String = """
+private fun writerDocument(initialBody: String, darkTheme: Boolean): String {
+    val textColor = if (darkTheme) "#F3F4F6" else "#20252C"
+    val selectionText = if (darkTheme) "white" else "#172033"
+    return """
 <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<style>html,body{margin:0;padding:0;background:transparent;color:#F3F4F6;font-family:sans-serif;font-size:17px;height:100%}#editor{box-sizing:border-box;min-height:100%;padding:12px 8px 120px;outline:none;line-height:1.55;caret-color:#7EA2FF}#editor p{margin:0 0 .55em}#editor h1{font-size:1.55em;margin:.5em 0 .35em}#editor h2{font-size:1.3em;margin:.45em 0 .3em}#editor ul,#editor ol{padding-left:1.6em}::selection{background:#3159A7;color:white}#selbar{position:fixed;display:none;z-index:50;background:#242830;border:1px solid #444b57;border-radius:14px;padding:3px;box-shadow:0 4px 16px rgba(0,0,0,.3)}#selbar button{width:34px;height:30px;border:0;border-radius:10px;background:#343a46;color:#FFE066;font-size:18px;line-height:1}</style></head>
-<body><div id="selbar"><button id="markBtn" aria-label="Subrayar" title="Subrayar">▰</button></div><div id="editor" contenteditable="true" spellcheck="true">$initialBody</div><script>(function(){const editor=document.getElementById('editor');let savedRange=null;function inside(){const s=window.getSelection();if(!s||s.rangeCount===0)return false;const n=s.getRangeAt(0).commonAncestorContainer;return n===editor||editor.contains(n.nodeType===3?n.parentNode:n)}function save(){const s=window.getSelection();if(s&&s.rangeCount>0&&inside())savedRange=s.getRangeAt(0).cloneRange()}function restore(){if(!savedRange)return;const s=window.getSelection();s.removeAllRanges();s.addRange(savedRange)}function notify(){if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML)}window.notcanCommand=function(c,v){editor.focus();restore();document.execCommand(c,false,v||null);save();notify()};document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()})})();</script><script>(function(){const editor=document.getElementById('editor'),bar=document.getElementById('selbar'),btn=document.getElementById('markBtn');function selected(){const s=window.getSelection();if(!s||s.rangeCount===0||s.isCollapsed)return null;const r=s.getRangeAt(0),n=r.commonAncestorContainer,p=n.nodeType===3?n.parentNode:n;if(!(p===editor||editor.contains(p)))return null;return r}function place(){const r=selected();if(!r){bar.style.display='none';return}const rect=r.getBoundingClientRect();bar.style.display='block';const left=Math.max(8,Math.min(window.innerWidth-46,rect.left+rect.width/2-20));const top=Math.max(8,rect.top-42);bar.style.left=left+'px';bar.style.top=top+'px'}document.addEventListener('selectionchange',function(){setTimeout(place,0)});editor.addEventListener('mouseup',place);editor.addEventListener('touchend',function(){setTimeout(place,30)});btn.addEventListener('pointerdown',function(e){e.preventDefault();if(!selected())return;document.execCommand('hiliteColor',false,'#FFE066');if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML);bar.style.display='none'})})();</script></body></html>
+<style>html,body{margin:0;padding:0;background:transparent;color:$textColor;font-family:sans-serif;font-size:17px;height:100%}#editor{box-sizing:border-box;min-height:100%;padding:12px 8px 120px;outline:none;line-height:1.55;caret-color:#7EA2FF}#editor p{margin:0 0 .55em}#editor h1{font-size:1.55em;margin:.5em 0 .35em}#editor h2{font-size:1.3em;margin:.45em 0 .3em}#editor ul,#editor ol{padding-left:1.6em}::selection{background:#B9D0FF;color:$selectionText}#selbar{position:fixed;display:none;z-index:50;background:#242830;border:1px solid #444b57;border-radius:14px;padding:3px;box-shadow:0 4px 16px rgba(0,0,0,.3)}#selbar button{width:34px;height:30px;border:0;border-radius:10px;background:#343a46;color:#FFE066;font-size:18px;line-height:1}</style></head>
+<body><div id="selbar"><button id="markBtn" aria-label="Subrayar" title="Subrayar">▰</button></div><div id="editor" contenteditable="false" spellcheck="true">$initialBody</div><script>(function(){const editor=document.getElementById('editor');let savedRange=null;function inside(){const s=window.getSelection();if(!s||s.rangeCount===0)return false;const n=s.getRangeAt(0).commonAncestorContainer;return n===editor||editor.contains(n.nodeType===3?n.parentNode:n)}function save(){const s=window.getSelection();if(s&&s.rangeCount>0&&inside())savedRange=s.getRangeAt(0).cloneRange()}function restore(){if(!savedRange)return;const s=window.getSelection();s.removeAllRanges();s.addRange(savedRange)}function notify(){if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML)}window.notcanSetEditing=function(v){editor.contentEditable=v?'true':'false';if(v)editor.focus()};window.notcanCommand=function(c,v){restore();document.execCommand(c,false,v||null);save();notify()};document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()})})();</script><script>(function(){const editor=document.getElementById('editor'),bar=document.getElementById('selbar'),btn=document.getElementById('markBtn');function selected(){const s=window.getSelection();if(!s||s.rangeCount===0||s.isCollapsed)return null;const r=s.getRangeAt(0),n=r.commonAncestorContainer,p=n.nodeType===3?n.parentNode:n;if(!(p===editor||editor.contains(p)))return null;return r}function place(){const r=selected();if(!r){bar.style.display='none';return}const rect=r.getBoundingClientRect();bar.style.display='block';const left=Math.max(8,Math.min(window.innerWidth-46,rect.left+rect.width/2-20));const top=Math.max(8,rect.top-42);bar.style.left=left+'px';bar.style.top=top+'px'}document.addEventListener('selectionchange',function(){setTimeout(place,0)});editor.addEventListener('mouseup',place);editor.addEventListener('touchend',function(){setTimeout(place,30)});btn.addEventListener('pointerdown',function(e){e.preventDefault();if(!selected())return;document.execCommand('hiliteColor',false,'#FFE066');if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML);bar.style.display='none'})})();</script></body></html>
 """.trimIndent()
+}

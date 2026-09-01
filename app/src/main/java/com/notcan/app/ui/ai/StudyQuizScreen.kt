@@ -284,7 +284,7 @@ internal fun StudyQuizScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 28.dp, end = 28.dp, top = 8.dp, bottom = 64.dp),
+                                .padding(start = 28.dp, end = 28.dp, top = 8.dp, bottom = 104.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {

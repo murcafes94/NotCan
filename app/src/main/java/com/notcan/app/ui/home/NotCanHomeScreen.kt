@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,6 +89,7 @@ fun NotCanHomeScreen(
     selectedSubjectId: String?,
     selectedClassId: String?,
     selectedNoteId: String?,
+    classNavigationRequest: Int = 0,
     onSelectCycle: (String) -> Unit,
     onSelectSubject: (String) -> Unit,
     onSelectClass: (String) -> Unit,
@@ -130,6 +132,10 @@ fun NotCanHomeScreen(
     val density = LocalDensity.current
     val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         WindowInsets.ime.getBottom(density) > 0
+
+    LaunchedEffect(classNavigationRequest, selectedSubjectId) {
+        if (classNavigationRequest > 0 && selectedSubjectId != null) level = HomeLevel.CLASSES
+    }
 
     val selectedCycle = cycles.firstOrNull { it.id == selectedCycleId }
     val selectedSubject = subjects.firstOrNull { it.id == selectedSubjectId }
@@ -178,14 +184,6 @@ fun NotCanHomeScreen(
                 }
 
                 else -> {
-                    if (!landscapeIme) {
-                        CompactWorkspaceHeader(
-                            classTitle = selectedClass.title,
-                            onBackToClasses = { level = HomeLevel.CLASSES },
-                            onAddClass = { createDialog = CreateDialog.Class }
-                        )
-                    }
-
                     NotCanClassWorkspaceV4(
                         modifier = Modifier.weight(1f),
                         cycleName = selectedCycle?.name,

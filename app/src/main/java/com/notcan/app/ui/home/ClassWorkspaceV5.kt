@@ -3,10 +3,10 @@ package com.notcan.app.ui.home
 import android.content.res.Configuration
 
 import android.content.Intent
-import android.media.MediaPlayer
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,6 +85,7 @@ import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.WhisperModelState
+import com.notcan.app.recording.AudioPlaybackService
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
 import com.notcan.app.ui.ai.ParsedFlashcardArtifact
@@ -103,6 +105,7 @@ import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
 import com.notcan.app.ui.theme.NotCanRed
 import com.notcan.app.ui.theme.NotCanSurface
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -354,24 +357,52 @@ private fun NormalClassTabs(
     modifier: Modifier = Modifier
 ) {
     var selected by rememberSaveable(classSessionId) { mutableIntStateOf(0) }
-    val tabs = listOf("Audio", "Transcripción", "Apuntes", "Estudio")
+    val views = listOf("Apuntes", "Audio", "Transcripción", "Estudio")
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
-        WindowInsets.ime.getBottom(density) > 0 && selected == 2
+        WindowInsets.ime.getBottom(density) > 0 && selected == 0
+    var dragDistance = 0f
 
     Column(modifier.fillMaxSize()) {
         if (!landscapeIme) {
-            TabRow(selectedTabIndex = selected, containerColor = Color.Transparent, contentColor = NotCanBlue, divider = { }) {
-                tabs.forEachIndexed { index, title -> Tab(selected = selected == index, onClick = { selected = index }, text = { Text(title) }) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(26.dp)
+                    .pointerInput(classSessionId, selected) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragDistance = 0f },
+                            onHorizontalDrag = { change, amount -> dragDistance += amount; change.consume() },
+                            onDragEnd = {
+                                when {
+                                    dragDistance <= -55f && selected < views.lastIndex -> selected++
+                                    dragDistance >= 55f && selected > 0 -> selected--
+                                }
+                                dragDistance = 0f
+                            },
+                            onDragCancel = { dragDistance = 0f }
+                        )
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(if (selected > 0) "‹" else "", color = NotCanGray, modifier = Modifier.width(22.dp).clickable(enabled = selected > 0) { selected-- })
+                Spacer(Modifier.weight(1f))
+                Text(views[selected], color = NotCanGray.copy(alpha = 0.72f), style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.width(7.dp))
+                views.indices.forEach { index ->
+                    Text("•", color = if (index == selected) NotCanBlue else NotCanGray.copy(alpha = 0.28f), style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(Modifier.weight(1f))
+                Text(if (selected < views.lastIndex) "›" else "", color = NotCanGray, modifier = Modifier.width(22.dp).clickable(enabled = selected < views.lastIndex) { selected++ })
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(2.dp))
         }
         Box(Modifier.fillMaxSize()) {
             when (selected) {
-                0 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
-                1 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal, onDeleteTranscript)
-                2 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)
+                0 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)
+                1 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
+                2 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal, onDeleteTranscript)
                 else -> StudyContentV5(subjectName, classTitle, transcripts, notePages, detectedCues)
             }
         }
@@ -488,21 +519,25 @@ private fun AudioContentV5(
     onShareAudio: (AudioRecordingEntity) -> Unit,
     onDeleteAudio: (String) -> Unit
 ) {
-    val player = remember(classSessionId) { MediaPlayer() }
-    var playingId by remember(classSessionId) { mutableStateOf<String?>(null) }
-    var isPlaying by remember(classSessionId) { mutableStateOf(false) }
-    DisposableEffect(player) { onDispose { runCatching { player.release() } } }
+    val context = LocalContext.current
+    val playback by AudioPlaybackService.state.collectAsState()
 
     fun toggleAudio(audio: AudioRecordingEntity) {
-        try {
-            if (playingId == audio.id) {
-                if (player.isPlaying) { player.pause(); isPlaying = false } else { player.start(); isPlaying = true }
-            } else {
-                player.reset(); player.setDataSource(audio.localPath); player.prepare(); player.start()
-                playingId = audio.id; isPlaying = true
-                player.setOnCompletionListener { playingId = null; isPlaying = false }
-            }
-        } catch (_: Throwable) { playingId = null; isPlaying = false }
+        val intent = Intent(context, AudioPlaybackService::class.java).apply {
+            action = AudioPlaybackService.ACTION_TOGGLE
+            putExtra(AudioPlaybackService.EXTRA_AUDIO_ID, audio.id)
+            putExtra(AudioPlaybackService.EXTRA_AUDIO_PATH, audio.localPath)
+        }
+        ContextCompat.startForegroundService(context, intent)
+    }
+
+    fun jumpToMoment(moment: ImportantMomentEntity) {
+        val audio = audioRecordings.firstOrNull { it.id == moment.audioId } ?: return
+        if (playback.audioId != audio.id) toggleAudio(audio)
+        context.startService(Intent(context, AudioPlaybackService::class.java).apply {
+            action = AudioPlaybackService.ACTION_SEEK
+            putExtra(AudioPlaybackService.EXTRA_OFFSET_MS, moment.offsetMs)
+        })
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -510,11 +545,11 @@ private fun AudioContentV5(
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Grabaciones de la clase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                    Text("Reproduce, comparte o elimina cada audio.", color = NotCanGray)
+                    Text("El audio continúa al cambiar de vista o dejar NotCan en segundo plano.", color = NotCanGray)
                     Spacer(Modifier.height(9.dp))
                     if (audioRecordings.isEmpty()) Text("Todavía no hay grabaciones.", color = NotCanGray)
                     else audioRecordings.forEach { audio ->
-                        AudioRowV5(audio, playingId == audio.id && isPlaying, { toggleAudio(audio) }, { onShareAudio(audio) }, { onDeleteAudio(audio.id) })
+                        AudioRowV5(audio, playback.audioId == audio.id && playback.isPlaying, { toggleAudio(audio) }, { onShareAudio(audio) }, { onDeleteAudio(audio.id) })
                         Spacer(Modifier.height(6.dp))
                     }
                 }
@@ -527,9 +562,21 @@ private fun AudioContentV5(
                     Spacer(Modifier.height(6.dp))
                     if (importantMoments.isEmpty()) Text("Pulsa ✴ durante la clase para guardar un instante importante.", color = NotCanGray)
                     else importantMoments.take(30).forEach { moment ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Star, null, tint = NotCanBlue, modifier = Modifier.size(17.dp))
-                            Spacer(Modifier.width(8.dp)); Text(formatDurationV5(moment.offsetMs), color = NotCanOffWhite)
+                        Surface(
+                            color = Color.Transparent,
+                            shape = RoundedCornerShape(9.dp),
+                            modifier = Modifier.fillMaxWidth().clickable { jumpToMoment(moment) }
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp, horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Star, null, tint = NotCanBlue, modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(formatDurationV5(moment.offsetMs), color = NotCanOffWhite)
+                                    moment.note?.takeIf { it.isNotBlank() }?.let {
+                                        Text(it, color = NotCanGray, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
                         }
                     }
                 }

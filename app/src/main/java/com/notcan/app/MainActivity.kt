@@ -1,17 +1,24 @@
 package com.notcan.app
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
@@ -54,6 +61,8 @@ class MainActivity : ComponentActivity() {
     private var pendingDocumentClassId: String? = null
     private var pendingNoteClassId: String? = null
     private var pendingCalendarScheduleId: String? = null
+    private var previousInterruptionFilter = NotificationManager.INTERRUPTION_FILTER_ALL
+    private var notCanDndEnabled = false
 
     private val microphonePermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
@@ -91,7 +100,9 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
         setContent {
-            NotCanTheme {
+            var darkTheme by remember { mutableStateOf(preferences.darkTheme) }
+            var classNavigationRequest by remember { mutableIntStateOf(0) }
+            NotCanTheme(darkTheme = darkTheme) {
                 val recordingState = RecordingService.state.collectAsStateWithLifecycle().value
                 val cycles = studyViewModel.cycles.collectAsStateWithLifecycle().value
                 val subjects = studyViewModel.subjects.collectAsStateWithLifecycle().value
@@ -174,7 +185,12 @@ class MainActivity : ComponentActivity() {
                     schedules = schedules,
                     tasks = taskItems,
                     recordingActive = recordingActive,
-                    autoFocusOnRecording = { preferences.autoFocusOnRecording },
+                    subjectContextActive = selectedSubject != null,
+                    subjectsTitle = selectedClass?.title ?: selectedSubject?.name ?: "Materias",
+                    darkTheme = darkTheme,
+                    onToggleTheme = { darkTheme = !darkTheme; preferences.darkTheme = darkTheme },
+                    onToggleDoNotDisturb = ::toggleDoNotDisturb,
+                    onOpenClasses = { classNavigationRequest++ },
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                     onRecordPlannedClass = { occurrence ->
                         studyViewModel.materializeOccurrence(occurrence) { session ->
@@ -207,6 +223,7 @@ class MainActivity : ComponentActivity() {
                             selectedSubjectId = selectedSubjectId,
                             selectedClassId = selectedClassId,
                             selectedNoteId = selectedNoteId,
+                            classNavigationRequest = classNavigationRequest,
                             onSelectCycle = studyViewModel::selectCycle,
                             onSelectSubject = studyViewModel::selectSubject,
                             onSelectClass = studyViewModel::selectClass,
@@ -321,6 +338,25 @@ class MainActivity : ComponentActivity() {
                     settingsContent = { SettingsScreen(preferences) }
                 )
             }
+        }
+    }
+
+    private fun toggleDoNotDisturb() {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (!manager.isNotificationPolicyAccessGranted) {
+            runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+            Toast.makeText(this, "Permite a NotCan controlar No molestar una sola vez", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!notCanDndEnabled) {
+            previousInterruptionFilter = manager.currentInterruptionFilter
+            manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE)
+            notCanDndEnabled = true
+            Toast.makeText(this, "No molestar activado 🤫", Toast.LENGTH_SHORT).show()
+        } else {
+            manager.setInterruptionFilter(previousInterruptionFilter)
+            notCanDndEnabled = false
+            Toast.makeText(this, "No molestar desactivado", Toast.LENGTH_SHORT).show()
         }
     }
 
