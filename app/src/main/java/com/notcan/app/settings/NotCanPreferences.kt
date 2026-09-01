@@ -28,7 +28,11 @@ class NotCanPreferences(context: Context) {
         get() = prefs.getString(KEY_MISTRAL_CONVERSATION_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_MISTRAL_CONVERSATION_ID, value.trim()).apply()
 
-    /** El modo concentración automático se retiró en v0.7.6. */
+    var darkTheme: Boolean
+        get() = prefs.getBoolean(KEY_DARK_THEME, true)
+        set(value) = prefs.edit().putBoolean(KEY_DARK_THEME, value).apply()
+
+    /** El antiguo modo concentración visual se retiró; la concentración usa No molestar de Android. */
     var autoFocusOnRecording: Boolean
         get() = false
         set(_) = prefs.edit().putBoolean(KEY_AUTO_FOCUS, false).apply()
@@ -48,6 +52,7 @@ class NotCanPreferences(context: Context) {
         private const val KEY_AI_DETAIL = "ai_detail"
         private const val KEY_MISTRAL_AGENT_ID = "mistral_agent_id"
         private const val KEY_MISTRAL_CONVERSATION_ID = "mistral_conversation_id"
+        private const val KEY_DARK_THEME = "dark_theme"
         private const val KEY_AUTO_FOCUS = "auto_focus_recording"
         private const val KEY_AUTO_TRANSCRIBE = "auto_transcribe_recording"
         private const val KEY_AUTO_CUES = "auto_detect_academic_cues"
