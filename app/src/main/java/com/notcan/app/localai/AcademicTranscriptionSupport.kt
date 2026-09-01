@@ -4,7 +4,6 @@ import com.notcan.app.data.local.AcademicVocabularyTermEntity
 import com.notcan.app.data.local.DetectedCueEntity
 import java.text.Normalizer
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -12,7 +11,8 @@ import kotlin.math.max
  *
  * La librería whisper-android usada por NotCan no expone initial_prompt. En vez de
  * sustituir el motor o inventar correcciones, esta capa usa el vocabulario que ya
- * guarda NotCan y corrige únicamente coincidencias ortográficas muy cercanas.
+ * guarda NotCan y conceptos detectados de forma conservadora en apuntes anteriores.
+ * Solo corrige coincidencias ortográficas muy cercanas.
  */
 data class AcademicTranscriptionTerm(
     val value: String,
@@ -23,19 +23,29 @@ data class AcademicTranscriptionTerm(
 
 object AcademicTranscriptionContext {
     private val whitespace = Regex("\\s+")
+    private val capitalizedWord = Regex("\\b\\p{Lu}[\\p{L}\\p{M}'’\\-]{4,}\\b")
+    private val emphasizedMarkdown = Regex("(?:\\*\\*|__|\\*|_)([^*_{}`\\n]{5,60})(?:\\*\\*|__|\\*|_)")
+    private val ignoredInferred = setOf(
+        "importante", "entonces", "tambien", "aunque", "cuando", "donde", "porque",
+        "primero", "segundo", "tercero", "finalmente", "pregunta", "respuesta",
+        "profesor", "profesora", "documento", "apuntes", "clase", "materia",
+        "ejemplo", "explicacion", "conclusion", "introduccion", "recordar"
+    )
 
     fun buildTerms(
         subjectName: String?,
         classTitle: String?,
-        stored: List<AcademicVocabularyTermEntity>
+        stored: List<AcademicVocabularyTermEntity>,
+        contextTexts: List<String> = emptyList()
     ): List<AcademicTranscriptionTerm> {
         val terms = linkedMapOf<String, AcademicTranscriptionTerm>()
 
         fun add(raw: String, weight: Float, explicit: Boolean) {
-            val value = raw.trim().replace(whitespace, " ").trim(' ', ',', '.', ';', ':')
+            val value = raw.trim().replace(whitespace, " ").trim(' ', ',', '.', ';', ':', '-', '—')
             val normalized = normalize(value)
             if (value.length < 4 || normalized.length < 4) return
             if (!explicit && value.length < 9 && !value.contains(' ')) return
+            if (!explicit && normalized in ignoredInferred) return
             val candidate = AcademicTranscriptionTerm(value, normalized, weight, explicit)
             val current = terms[normalized]
             if (current == null || candidate.weight > current.weight || (candidate.explicit && !current.explicit)) {
@@ -47,8 +57,12 @@ object AcademicTranscriptionContext {
             .filter { it.language.equals("es", ignoreCase = true) || it.language.isBlank() }
             .sortedByDescending { it.weight }
             .take(MAX_STORED_TERMS)
-            .forEach { add(it.term, it.weight.coerceAtLeast(1f), explicit = true) }
+            .forEach { term ->
+                val userConfirmed = !term.source.startsWith("auto", ignoreCase = true)
+                add(term.term, term.weight.coerceAtLeast(1f), explicit = userConfirmed)
+            }
 
+        inferFromContext(contextTexts).forEach { add(it, 1.6f, explicit = false) }
         subjectName?.let { add(it, 3.5f, explicit = false) }
         classTitle
             ?.takeUnless { title -> subjectName != null && title.startsWith(subjectName, ignoreCase = true) && '#' in title }
@@ -57,6 +71,39 @@ object AcademicTranscriptionContext {
         return terms.values
             .sortedWith(compareByDescending<AcademicTranscriptionTerm> { it.explicit }.thenByDescending { it.weight })
             .take(MAX_CONTEXT_TERMS)
+    }
+
+    private fun inferFromContext(texts: List<String>): List<String> {
+        if (texts.isEmpty()) return emptyList()
+        val found = linkedSetOf<String>()
+        texts.asSequence().take(MAX_CONTEXT_TEXTS).forEach { source ->
+            val text = source
+                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("[>#]+"), " ")
+                .take(MAX_CONTEXT_CHARS_PER_TEXT)
+
+            // Frases cortas que suelen corresponder a títulos/subtítulos de apuntes.
+            text.lineSequence()
+                .map { it.trim().replace(whitespace, " ") }
+                .filter { line ->
+                    line.length in 9..64 &&
+                        line.split(whitespace).size in 2..7 &&
+                        !line.endsWith('.') && !line.endsWith('?') && !line.endsWith('!')
+                }
+                .take(12)
+                .forEach(found::add)
+
+            // Nombres propios y conceptos teológicos/filosóficos escritos con mayúscula.
+            capitalizedWord.findAll(text).map { it.value }.forEach { candidate ->
+                if (normalize(candidate) !in ignoredInferred) found += candidate
+            }
+
+            // Términos que el estudiante haya marcado con énfasis en Markdown.
+            emphasizedMarkdown.findAll(text).map { it.groupValues[1].trim() }
+                .filter { it.length in 5..60 }
+                .forEach(found::add)
+        }
+        return found.take(MAX_INFERRED_TERMS)
     }
 
     fun correct(
@@ -83,7 +130,7 @@ object AcademicTranscriptionContext {
         val candidates = terms
             .filter { it.value.length >= 5 }
             .sortedWith(
-                compareByDescending<AcademicTranscriptionTerm> { it.value.count(Char::isWhitespace) }
+                compareByDescending<AcademicTranscriptionTerm> { it.value.count { char -> char.isWhitespace() } }
                     .thenByDescending { it.explicit }
                     .thenByDescending { it.weight }
                     .thenByDescending { it.value.length }
@@ -198,10 +245,13 @@ object AcademicTranscriptionContext {
 
     private const val MAX_STORED_TERMS = 220
     private const val MAX_CONTEXT_TERMS = 180
+    private const val MAX_INFERRED_TERMS = 80
+    private const val MAX_CONTEXT_TEXTS = 12
+    private const val MAX_CONTEXT_CHARS_PER_TEXT = 12_000
 }
 
 /**
- * Capítulos navegables generados localmente a partir de pausas, transiciones y
+ * Capítulos temporales generados localmente a partir de pausas, transiciones y
  * duración. El título prioriza vocabulario académico realmente presente en el
  * bloque; no modifica la transcripción ni requiere Internet.
  */

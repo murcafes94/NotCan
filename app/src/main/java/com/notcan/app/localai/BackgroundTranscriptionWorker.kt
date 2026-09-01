@@ -49,10 +49,13 @@ class BackgroundTranscriptionWorker(
                     .first()
                     .filter { term -> term.subjectId == null || term.subjectId == selectedSubject.id }
             }.orEmpty()
+            val noteContext = dao.getNotesForClass(classSessionId)
+                .flatMap { note -> listOf(note.title, note.body) }
             val academicTerms = AcademicTranscriptionContext.buildTerms(
                 subjectName = subject?.name,
                 classTitle = displayName,
-                stored = storedVocabulary
+                stored = storedVocabulary,
+                contextTexts = noteContext
             )
 
             setForeground(
