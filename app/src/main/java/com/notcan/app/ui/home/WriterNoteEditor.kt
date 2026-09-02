@@ -301,7 +301,7 @@ private class NoteBridge(
 }
 
 private fun isEffectivelyEmptyHtml(value: String): Boolean = value
-    .replace(Regex("(?is)<br\s*/?>"), "")
+    .replace(Regex("(?is)<br\\s*/?>"), "")
     .replace(Regex("(?is)<[^>]+>"), "")
     .replace("&nbsp;", "")
     .replace("&#160;", "")
