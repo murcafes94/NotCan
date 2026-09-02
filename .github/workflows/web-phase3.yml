@@ -1,0 +1,56 @@
+name: Web Phase 3
+
+on:
+  push:
+    branches: [web-phase2-live]
+    paths:
+      - 'ci/apply_web_phase3.py'
+      - 'web/src/TuNotChat.tsx'
+      - 'web/src/UnifiedSettings.tsx'
+      - 'web/src/web-phase3.css'
+      - '.github/workflows/web-phase3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-phase2-live
+          fetch-depth: 0
+      - name: Apply phase 3
+        run: python ci/apply_web_phase3.py
+      - name: Commit generated web source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/App.tsx web/src/main.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(web): TuNot chat editor and unified settings"
+            git push origin HEAD:web-phase2-live
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build web
+        working-directory: web
+        run: npm run build
+      - name: Upload web preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-web-phase3
+          path: web/dist
+          retention-days: 5
