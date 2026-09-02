@@ -97,6 +97,10 @@ fun TuNotQuickAssistant(contextTitle: String, offlineEntries: List<TuNotOfflineE
                 Text(if (online && onlineConfigured) "Pregunta, resume o crea mapas. Si pierdes conexión, TuNot cambia al material local." else "Modo local: busca en tu material y genera mapas mentales o conceptuales sin Internet.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) { suggestions.take(4).forEach { suggestion -> OutlinedButton(onClick = { question = suggestion }) { Text(suggestion) } } }
                 OutlinedTextField(value = question, onValueChange = { question = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Pregunta o pide un mapa…") }, minLines = 1, maxLines = 4, trailingIcon = { IconButton(enabled = question.isNotBlank() && !onlineBusy, onClick = ::submit) { Icon(NotCanIcons.Next, "Enviar", tint = NotCanBlue) } })
+                // Acción persistente: una respuesta larga nunca puede empujarla fuera del panel.
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onOpenFullChat) { Text("Abrir TuNot completo") }
+                }
 
                 when {
                     onlineBusy && lastOnlinePrompt != null -> Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp); Text("  TuNot está pensando…", color = NotCanGray, style = MaterialTheme.typography.bodySmall) }
@@ -106,7 +110,6 @@ fun TuNotQuickAssistant(contextTitle: String, offlineEntries: List<TuNotOfflineE
                     localMatches.isNotEmpty() -> { HorizontalDivider(); Text("Encontré esto en tu material", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold); Column(Modifier.fillMaxWidth().heightIn(max = 245.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { localMatches.take(5).forEach { match -> Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), shape = RoundedCornerShape(13.dp)) { Column(Modifier.fillMaxWidth().padding(10.dp)) { Text(match.entry.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium); Text(match.entry.subtitle, color = NotCanBlue, style = MaterialTheme.typography.labelSmall); Text(match.snippet, color = NotCanGray, style = MaterialTheme.typography.bodySmall) } } } } }
                     localAnswer.isNotBlank() -> { HorizontalDivider(); Column(Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState())) { TuNotRichText(localAnswer, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium) } }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = onOpenFullChat) { Text("Abrir TuNot completo") } }
             }
         }
         FilledIconButton(onClick = { expanded = !expanded }, modifier = Modifier.align(Alignment.BottomEnd).size(54.dp), shape = CircleShape) { Icon(NotCanIcons.TuNot, contentDescription = if (expanded) "Cerrar TuNot" else "Abrir TuNot", modifier = Modifier.size(25.dp)) }
