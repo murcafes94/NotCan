@@ -96,3 +96,5 @@ export default function TuNotChat({ connected, contextCount, useContext, initial
     </footer>
   </main>
 }
+
+// Fase 3: interfaz de chat compartida con el flujo académico web.
