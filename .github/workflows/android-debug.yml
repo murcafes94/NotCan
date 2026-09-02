@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.18.1-lfm25-chat-fix-apk
+          name: notcan-v0.8.18.2-lfm25-runtime-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.18.1-lfm-test"
+          TAG="v0.8.18.2-lfm-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.18.1-LFM2.5-chat-fix.apk" \
+            "$APK#NotCan-v0.8.18.2-LFM2.5-runtime.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.18.1 · LFM2.5 chat fix" \
-            --notes "Corrección de la prueba LFM2.5: aplica la plantilla Jinja/ChatML del modelo, ajusta la temperatura local y bloquea tokens internos de control. Si LFM2.5 no produce texto útil, TuNot cae al motor offline seguro en vez de mostrar tokens reservados. El modelo descargado se conserva al actualizar la APK."
+            --title "NotCan v0.8.18.2 · LFM2.5 runtime" \
+            --notes "Prueba LFM2.5 local endurecida. Añade selección de motor TuNot (Automático, Mistral, LFM2.5 local, Local básico), etiqueta el motor que realmente respondió, registra el último fallo de LFM en Ajustes y amplía el margen de arranque en frío. Si LFM falla, NotCan conserva el motor básico como respaldo. El modelo LFM2.5 ya descargado se conserva al actualizar."
