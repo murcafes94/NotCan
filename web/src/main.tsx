@@ -12,6 +12,7 @@ import './web-phase1.css'
 import './academic-workspace.css'
 import './web-phase3.css'
 import './web-phase4.css'
+import './web-phase5.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
