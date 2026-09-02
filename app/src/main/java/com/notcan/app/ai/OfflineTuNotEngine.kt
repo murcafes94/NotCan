@@ -6,8 +6,9 @@ import org.json.JSONObject
 import java.text.Normalizer
 
 /**
- * Fallback local de TuNot. No pretende sustituir al modelo online: usa únicamente
- * material guardado para recuperar fragmentos y construir mapas estructurados sin red.
+ * Motor local determinista de TuNot. Trabaja únicamente con material guardado en NotCan:
+ * no necesita Mistral, Internet ni un modelo generativo. Las respuestas son extractivas y
+ * los artefactos se construyen a partir de frases realmente presentes en las fuentes.
  */
 object OfflineTuNotEngine {
     fun isMapRequest(value: String): Boolean {
@@ -20,6 +21,16 @@ object OfflineTuNotEngine {
         ).any(normalized::contains)
     }
 
+    fun isFlashcardRequest(value: String): Boolean {
+        val normalized = normalize(value)
+        return listOf("tarjetas", "flashcards", "flash cards", "fichas de estudio", "tarjetas didacticas").any(normalized::contains)
+    }
+
+    fun isQuizRequest(value: String): Boolean {
+        val normalized = normalize(value)
+        return listOf("cuestionario", "quiz", "preguntas de estudio", "preguntas para estudiar", "examen de practica").any(normalized::contains)
+    }
+
     fun answer(
         subjectName: String?,
         notes: String,
@@ -30,16 +41,27 @@ object OfflineTuNotEngine {
             if (notes.isNotBlank()) add(TuNotOfflineEntry("Apuntes", subjectName ?: "Material local", notes))
             if (transcript.isNotBlank()) add(TuNotOfflineEntry("Transcripción", subjectName ?: "Material local", transcript))
         }
-        return answerEntries(subjectName ?: "Mapa de estudio", entries, question)
+        return answerEntries(subjectName ?: "Material de estudio", entries, question)
     }
 
     fun answerEntries(contextTitle: String, entries: List<TuNotOfflineEntry>, question: String): String {
-        if (entries.isEmpty()) {
-            return "Modo local: todavía no hay apuntes, transcripciones o documentos guardados para trabajar sin conexión."
+        val usable = entries.filter { cleanText(it.text).isNotBlank() }
+        if (usable.isEmpty()) {
+            return "Modo local: todavía no hay apuntes, transcripciones o documentos indexados con contenido para trabajar sin conexión."
         }
-        return if (isMapRequest(question)) buildMapArtifact(contextTitle, entries, question)
-        else buildExtractiveAnswer(entries, question)
+        return when {
+            isFlashcardRequest(question) -> buildFlashcardsArtifact(contextTitle, usable, question)
+            isQuizRequest(question) -> buildQuizArtifact(contextTitle, usable, question)
+            isMapRequest(question) -> buildMapArtifact(contextTitle, usable, question)
+            else -> buildExtractiveAnswer(usable, question)
+        }
     }
+
+    private data class Candidate(
+        val entry: TuNotOfflineEntry,
+        val sentence: String,
+        val score: Int
+    )
 
     private fun buildMapArtifact(contextTitle: String, entries: List<TuNotOfflineEntry>, question: String): String {
         val normalizedQuestion = normalize(question)
@@ -50,62 +72,50 @@ object OfflineTuNotEngine {
             type == "concept_map" -> "tree"
             else -> "horizontal"
         }
-        val tokens = queryTokens(question)
-        val ranked = entries
-            .map { it to score(it, tokens) }
-            .sortedByDescending { it.second }
-            .filter { it.second > 0 || tokens.isEmpty() }
-            .take(6)
-            .ifEmpty { entries.take(6).map { it to 1 } }
-
         val title = inferMapTitle(question, contextTitle)
+        val tokens = queryTokens(question)
+        val ranked = rankedSentences(entries, tokens)
+
+        val selected = mutableListOf<Candidate>()
+        val labels = mutableSetOf<String>()
+        for (candidate in ranked) {
+            val label = conceptLabel(candidate.sentence)
+            val normalizedLabel = normalize(label)
+            if (label.length !in 3..64 || normalizedLabel in labels) continue
+            labels += normalizedLabel
+            selected += candidate
+            if (selected.size >= 10) break
+        }
+        if (selected.isEmpty()) selected += ranked.take(8)
+
         val nodes = JSONArray()
         val edges = JSONArray()
         nodes.put(
             JSONObject()
                 .put("id", "root")
                 .put("title", title)
-                .put("description", "Generado localmente con material guardado en NotCan")
+                .put("description", "Mapa local construido únicamente con material guardado en NotCan")
                 .put("level", 0)
-                .put("source_refs", JSONArray(ranked.map { it.first.title }.distinct()))
+                .put("source_refs", JSONArray(selected.map { it.entry.title }.distinct()))
         )
 
-        ranked.forEachIndexed { index, pair ->
-            val entry = pair.first
-            val branchId = "n${index + 1}"
-            val branchTitle = compactTitle(entry.title.ifBlank { entry.subtitle }, 46)
+        selected.forEachIndexed { index, candidate ->
+            val id = "n${index + 1}"
+            val label = conceptLabel(candidate.sentence).ifBlank { "Concepto ${index + 1}" }
             nodes.put(
                 JSONObject()
-                    .put("id", branchId)
-                    .put("title", branchTitle.ifBlank { "Fuente ${index + 1}" })
-                    .put("description", entry.subtitle.take(120))
+                    .put("id", id)
+                    .put("title", compactTitle(label, 48))
+                    .put("description", compactTitle(candidate.sentence, 180))
                     .put("level", 1)
-                    .put("source_refs", JSONArray(listOf(entry.title)))
+                    .put("source_refs", JSONArray(listOf(candidate.entry.title)))
             )
             edges.put(
                 JSONObject()
                     .put("from", "root")
-                    .put("to", branchId)
-                    .put("label", if (type == "concept_map") "incluye" else "")
+                    .put("to", id)
+                    .put("label", if (type == "concept_map") relationLabel(candidate.sentence) else "")
             )
-
-            keySentences(entry.text, tokens).take(3).forEachIndexed { detailIndex, sentence ->
-                val detailId = "n${index + 1}_${detailIndex + 1}"
-                nodes.put(
-                    JSONObject()
-                        .put("id", detailId)
-                        .put("title", compactTitle(sentence, 52))
-                        .put("description", sentence.take(180))
-                        .put("level", 2)
-                        .put("source_refs", JSONArray(listOf(entry.title)))
-                )
-                edges.put(
-                    JSONObject()
-                        .put("from", branchId)
-                        .put("to", detailId)
-                        .put("label", if (type == "concept_map") "se relaciona con" else "")
-                )
-            }
         }
 
         val root = JSONObject()
@@ -115,36 +125,134 @@ object OfflineTuNotEngine {
             .put("root_node_id", "root")
             .put("nodes", nodes)
             .put("edges", edges)
-
         return "<<<NOTCAN_MAP>>>\n${root}\n<<<END_NOTCAN_MAP>>>"
+    }
+
+    private fun buildFlashcardsArtifact(contextTitle: String, entries: List<TuNotOfflineEntry>, question: String): String {
+        val tokens = queryTokens(question)
+        val candidates = rankedSentences(entries, tokens).take(18)
+        val cards = JSONArray()
+        val usedQuestions = mutableSetOf<String>()
+        for (candidate in candidates) {
+            val qa = sentenceToQuestion(candidate.sentence)
+            val normalizedQuestion = normalize(qa.first)
+            if (normalizedQuestion in usedQuestions) continue
+            usedQuestions += normalizedQuestion
+            cards.put(
+                JSONObject()
+                    .put("question", compactTitle(qa.first, 210))
+                    .put("answer", compactTitle(candidate.sentence, 500))
+                    .put("source_ref", candidate.entry.title)
+            )
+            if (cards.length() >= 16) break
+        }
+        if (cards.length() == 0) return "Modo local: no encontré suficiente contenido legible para generar tarjetas."
+        val root = JSONObject()
+            .put("title", "Tarjetas · ${compactTitle(contextTitle, 58)}")
+            .put("cards", cards)
+        return "<<<NOTCAN_FLASHCARDS>>>\n${root}\n<<<END_NOTCAN_FLASHCARDS>>>"
+    }
+
+    private fun buildQuizArtifact(contextTitle: String, entries: List<TuNotOfflineEntry>, question: String): String {
+        val tokens = queryTokens(question)
+        val candidates = rankedSentences(entries, tokens).take(20)
+        val questions = JSONArray()
+        val used = mutableSetOf<String>()
+        candidates.forEachIndexed { index, candidate ->
+            val qa = sentenceToQuestion(candidate.sentence)
+            val prompt = if (index % 3 == 0) {
+                "Verdadero o falso: ${compactTitle(candidate.sentence, 250)}"
+            } else qa.first
+            if (!used.add(normalize(prompt))) return@forEachIndexed
+            val type = if (index % 3 == 0) "true_false" else "short_answer"
+            val correct = if (type == "true_false") "Verdadero" else compactTitle(candidate.sentence, 480)
+            val item = JSONObject()
+                .put("id", "q${questions.length() + 1}")
+                .put("type", type)
+                .put("question", compactTitle(prompt, 310))
+                .put("options", JSONArray())
+                .put("correct_answer", correct)
+                .put("explanation", "Según ${candidate.entry.title}: ${compactTitle(candidate.sentence, 430)}")
+                .put("source_ref", candidate.entry.title)
+            questions.put(item)
+        }
+        if (questions.length() == 0) return "Modo local: no encontré suficiente contenido legible para generar un cuestionario."
+        val root = JSONObject()
+            .put("title", "Cuestionario · ${compactTitle(contextTitle, 55)}")
+            .put("questions", questions)
+        return "<<<NOTCAN_QUIZ>>>\n${root}\n<<<END_NOTCAN_QUIZ>>>"
     }
 
     private fun buildExtractiveAnswer(entries: List<TuNotOfflineEntry>, question: String): String {
         val tokens = queryTokens(question)
-        val candidates = entries.flatMap { entry ->
-            splitSentences(entry.text).map { sentence ->
-                Triple(entry, sentence, sentenceScore(sentence, tokens) + score(entry, tokens))
-            }
-        }.sortedByDescending { it.third }
-
-        val selected = candidates
-            .filter { it.third > 0 || tokens.isEmpty() }
-            .distinctBy { normalize(it.second).take(100) }
-            .take(5)
-
+        val selected = rankedSentences(entries, tokens)
+            .filter { it.score > 0 || tokens.isEmpty() }
+            .distinctBy { normalize(it.sentence).take(120) }
+            .take(6)
         if (selected.isEmpty()) {
             return "Modo local: no encontré esa información en el material guardado. Prueba con una palabra, concepto o título que aparezca en tus apuntes o transcripciones."
         }
-
         return buildString {
             appendLine("Modo local · basado únicamente en tu material guardado")
-            selected.forEach { (entry, sentence, _) ->
+            selected.forEach { candidate ->
                 append("• ")
-                append(sentence.take(260))
-                append("  [${entry.title}]")
+                append(compactTitle(candidate.sentence, 310))
+                append("  [${candidate.entry.title}]")
                 appendLine()
             }
         }.trim()
+    }
+
+    private fun rankedSentences(entries: List<TuNotOfflineEntry>, tokens: List<String>): List<Candidate> = entries
+        .flatMap { entry ->
+            splitSentences(entry.text).map { sentence ->
+                Candidate(entry, sentence, sentenceScore(sentence, tokens) + score(entry, tokens))
+            }
+        }
+        .sortedWith(compareByDescending<Candidate> { it.score }.thenByDescending { informationScore(it.sentence) })
+        .distinctBy { normalize(it.sentence).take(140) }
+
+    private fun sentenceToQuestion(sentence: String): Pair<String, String> {
+        val clean = sentence.trim().trimEnd('.', ';', ':')
+        val pattern = Regex("^(.{2,80}?)\\s+(es|son|consiste en|se define como|implica|incluye|comprende)\\s+(.+)$", RegexOption.IGNORE_CASE)
+        val match = pattern.find(clean)
+        if (match != null) {
+            val subject = compactTitle(match.groupValues[1].trim(), 74)
+            val relation = normalize(match.groupValues[2])
+            val question = when {
+                relation == "son" -> "¿Qué son $subject?"
+                relation.contains("implica") -> "¿Qué implica $subject?"
+                relation.contains("incluye") || relation.contains("comprende") -> "¿Qué incluye $subject?"
+                else -> "¿Qué es $subject?"
+            }
+            return question to clean
+        }
+        val label = conceptLabel(clean)
+        return "¿Qué indica el material sobre $label?" to clean
+    }
+
+    private fun conceptLabel(sentence: String): String {
+        val clean = compactTitle(cleanText(sentence), 180).trimEnd('.', ';', ':')
+        val prefix = clean.substringBefore(':', "").trim()
+        if (prefix.length in 3..46 && ':' in clean) return prefix
+        val definition = Regex("^(.{3,58}?)\\s+(es|son|consiste en|se define como|implica|incluye|comprende)\\b", RegexOption.IGNORE_CASE).find(clean)
+        if (definition != null) return definition.groupValues[1].trim()
+        val words = clean.split(Regex("\\s+"))
+            .map { it.trim(' ', ',', '.', ';', ':', '¿', '?', '¡', '!') }
+            .filter { it.length >= 3 && normalize(it) !in stopWords }
+            .take(5)
+        return words.joinToString(" ").ifBlank { clean.take(46) }
+    }
+
+    private fun relationLabel(sentence: String): String {
+        val n = normalize(sentence)
+        return when {
+            " implica " in " $n " -> "implica"
+            " incluye " in " $n " || " comprende " in " $n " -> "incluye"
+            Regex("\\b(es|son|se define)\\b").containsMatchIn(n) -> "define"
+            " causa " in " $n " || " consecuencia " in " $n " -> "relaciona"
+            else -> "explica"
+        }
     }
 
     private fun score(entry: TuNotOfflineEntry, tokens: List<String>): Int {
@@ -163,41 +271,49 @@ object OfflineTuNotEngine {
     }
 
     private fun sentenceScore(sentence: String, tokens: List<String>): Int {
-        if (tokens.isEmpty()) return 1
+        if (tokens.isEmpty()) return informationScore(sentence)
         val normalized = normalize(sentence)
-        val hits = tokens.count(normalized::contains) * 4
-        val definition = if (Regex("(?i)\\b(es|son|significa|consiste|se define|implica|incluye|comprende)\\b").containsMatchIn(sentence)) 2 else 0
-        return hits + definition
+        val hits = tokens.count(normalized::contains) * 5
+        return hits + informationScore(sentence)
     }
 
-    private fun keySentences(text: String, tokens: List<String>): List<String> = splitSentences(text)
-        .map { it to sentenceScore(it, tokens) }
-        .sortedByDescending { it.second }
-        .distinctBy { normalize(it.first).take(90) }
-        .map { it.first }
-        .take(6)
+    private fun informationScore(sentence: String): Int {
+        var score = 0
+        if (Regex("(?i)\\b(es|son|significa|consiste|se define|implica|incluye|comprende|causa|consecuencia)\\b").containsMatchIn(sentence)) score += 4
+        if (sentence.length in 35..240) score += 2
+        if (sentence.count { it == ',' } in 1..4) score += 1
+        return score
+    }
 
-    private fun splitSentences(text: String): List<String> = text
+    private fun splitSentences(text: String): List<String> = cleanText(text)
+        .split(Regex("(?<=[.!?;:])\\s+|[•\\n]+"))
+        .map { it.trim(' ', '-', '•') }
+        .filter { it.length in 20..520 }
+
+    private fun cleanText(text: String): String = text
+        .replace(Regex("(?is)<script.*?>.*?</script>"), " ")
+        .replace(Regex("(?is)<style.*?>.*?</style>"), " ")
         .replace(Regex("<[^>]+>"), " ")
         .replace("&nbsp;", " ")
-        .replace(Regex("\\s+"), " ")
+        .replace(Regex("[ \\t\\r]+"), " ")
+        .replace(Regex("\\n{3,}"), "\\n\\n")
         .trim()
-        .split(Regex("(?<=[.!?;:])\\s+|[•\\n]+"))
-        .map { it.trim(' ', '-', '•', '\t') }
-        .filter { it.length in 20..420 }
 
     private fun inferMapTitle(question: String, fallback: String): String {
         val cleaned = question
-            .replace(Regex("(?i)hazme|haz|hacer|genera|generar|crea|crear|mapa|mental|conceptual|de ideas|de|del|sobre|con|esta|esa|informacion|información"), " ")
+            .replace(Regex("(?i)hazme|haz|hacer|genera|generar|crea|crear|mapa|mental|conceptual|de ideas|organiza|organizar|muestralo|muéstralo|esta clase|la clase|de la clase|sobre|con"), " ")
             .replace(Regex("\\s+"), " ")
             .trim(' ', ':', ',', '.', '?', '¿')
-        return compactTitle(cleaned.ifBlank { fallback }, 64).ifBlank { "Mapa de estudio" }
+        val normalized = normalize(cleaned)
+        val generic = cleaned.isBlank() || normalized in setOf("clase", "ideas", "estudio", "tema") || cleaned.length < 4
+        return compactTitle(if (generic) fallback else cleaned, 64).ifBlank { "Mapa de estudio" }
     }
 
     private fun compactTitle(value: String, maxChars: Int): String {
         val cleaned = value.replace(Regex("\\s+"), " ").trim()
         if (cleaned.length <= maxChars) return cleaned
-        val shortened = cleaned.take(maxChars).substringBeforeLast(' ', cleaned.take(maxChars))
+        val raw = cleaned.take(maxChars)
+        val shortened = raw.substringBeforeLast(' ', raw)
         return shortened.trimEnd() + "…"
     }
 
@@ -208,9 +324,13 @@ object OfflineTuNotEngine {
 
     private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .trim()
+        .replace(Regex("\\s+"), " ")
 
     private val stopWords = setOf(
         "para", "como", "una", "uno", "unos", "unas", "que", "con", "por", "del", "las", "los",
-        "esta", "este", "esa", "ese", "sobre", "mapa", "mental", "conceptual", "hazme", "crea", "genera"
+        "esta", "este", "esa", "ese", "sobre", "mapa", "mental", "conceptual", "hazme", "crea", "genera",
+        "clase", "material", "fuente", "fuentes", "estudio", "segun", "desde", "entre", "tambien", "donde"
     )
 }

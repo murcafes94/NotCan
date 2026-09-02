@@ -112,12 +112,21 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             subjects.collect { list ->
-                if (_selectedSubjectId.value == null || list.none { it.id == _selectedSubjectId.value }) _selectedSubjectId.value = list.firstOrNull()?.id
+                val selected = _selectedSubjectId.value
+                if (selected != null && list.none { it.id == selected }) {
+                    _selectedSubjectId.value = null
+                    _selectedClassId.value = null
+                    _selectedNoteId.value = null
+                }
             }
         }
         viewModelScope.launch {
             classes.collect { list ->
-                if (_selectedClassId.value == null || list.none { it.id == _selectedClassId.value }) _selectedClassId.value = list.firstOrNull()?.id
+                val selected = _selectedClassId.value
+                if (selected != null && list.none { it.id == selected }) {
+                    _selectedClassId.value = null
+                    _selectedNoteId.value = null
+                }
             }
         }
         viewModelScope.launch {
@@ -154,6 +163,12 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { repository.setActiveCycle(id) }
     }
 
+    fun openSubjects() {
+        _selectedSubjectId.value = null
+        _selectedClassId.value = null
+        _selectedNoteId.value = null
+    }
+
     fun selectSubject(id: String) { _selectedSubjectId.value = id; _selectedClassId.value = null; _selectedNoteId.value = null }
     fun selectClass(id: String) { _selectedClassId.value = id; _selectedNoteId.value = null }
     fun selectNote(id: String) { _selectedNoteId.value = id }
@@ -177,11 +192,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     fun createSubject(name: String) {
         val parent = _selectedCycleId.value ?: return
         if (name.isBlank()) return
-        viewModelScope.launch {
-            val item = repository.createSubject(parent, name)
-            _selectedSubjectId.value = item.id
-            _selectedClassId.value = null
-        }
+        viewModelScope.launch { repository.createSubject(parent, name) }
     }
 
     fun createClass(title: String) {
@@ -189,7 +200,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val number = classes.value.size + 1
             val resolvedTitle = title.trim().ifBlank { "Clase $number" }
-            _selectedClassId.value = repository.createClassSession(parent, resolvedTitle).id
+            repository.createClassSession(parent, resolvedTitle)
         }
     }
 

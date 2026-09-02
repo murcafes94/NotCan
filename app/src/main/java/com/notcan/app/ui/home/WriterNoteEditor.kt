@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -89,9 +90,22 @@ internal fun WriterNoteEditor(
     val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         WindowInsets.ime.getBottom(density) > 0
     val title = note.title.ifBlank { "Apuntes" }
-    var html by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
+    val draftPreferences = remember(context) {
+        context.applicationContext.getSharedPreferences("notcan_note_drafts", Context.MODE_PRIVATE)
+    }
+    val draftKey = "body_${note.id}"
+    val draftTimeKey = "time_${note.id}"
+    val initialHtml = remember(note.id) {
+        val stored = normalizeStoredBody(note.body)
+        val draft = draftPreferences.getString(draftKey, null)
+        val draftTime = draftPreferences.getLong(draftTimeKey, 0L)
+        if (!draft.isNullOrBlank() && draftTime > note.updatedAtEpochMs && !isEffectivelyEmptyHtml(draft)) draft else stored
+    }
+    var html by remember(note.id) { mutableStateOf(initialHtml) }
     var lastSavedHtml by remember(note.id) { mutableStateOf(normalizeStoredBody(note.body)) }
     var webView by remember(note.id) { mutableStateOf<WebView?>(null) }
+    var bridge by remember(note.id) { mutableStateOf<NoteBridge?>(null) }
+    var userEdited by remember(note.id) { mutableStateOf(false) }
     var confirmDelete by remember(note.id) { mutableStateOf(false) }
     var shareMenu by remember(note.id) { mutableStateOf(false) }
     var editing by remember(note.id) { mutableStateOf(false) }
@@ -99,12 +113,16 @@ internal fun WriterNoteEditor(
 
     LaunchedEffect(note.id, note.body) {
         val externalHtml = normalizeStoredBody(note.body)
-        if (externalHtml != html && externalHtml != lastSavedHtml) {
-            html = externalHtml
-            lastSavedHtml = externalHtml
-            webView?.loadDataWithBaseURL(null, writerDocument(externalHtml, darkEditor), "text/html", "UTF-8", null)
-        } else if (externalHtml == html) {
-            lastSavedHtml = externalHtml
+        val localDirty = html != lastSavedHtml
+        when {
+            externalHtml == html -> lastSavedHtml = externalHtml
+            !localDirty -> {
+                html = externalHtml
+                lastSavedHtml = externalHtml
+                webView?.loadDataWithBaseURL(null, writerDocument(externalHtml, darkEditor), "text/html", "UTF-8", null)
+            }
+            externalHtml == lastSavedHtml -> Unit
+            else -> Unit // Preserve the newer local draft until it is saved.
         }
     }
 
@@ -113,17 +131,26 @@ internal fun WriterNoteEditor(
     }
 
     LaunchedEffect(note.id, html) {
-        delay(500)
-        if (html != lastSavedHtml) {
-            onUpdateNote(note.id, title, html)
-            lastSavedHtml = html
+        val pending = html
+        draftPreferences.edit().putString(draftKey, pending).putLong(draftTimeKey, System.currentTimeMillis()).apply()
+        delay(350)
+        val safeToPersist = userEdited || !isEffectivelyEmptyHtml(pending) || isEffectivelyEmptyHtml(lastSavedHtml)
+        if (pending != lastSavedHtml && safeToPersist) {
+            onUpdateNote(note.id, title, pending)
+            lastSavedHtml = pending
         }
     }
 
     DisposableEffect(note.id) {
         onDispose {
+            val pending = html
+            draftPreferences.edit().putString(draftKey, pending).putLong(draftTimeKey, System.currentTimeMillis()).apply()
+            val safeToPersist = userEdited || !isEffectivelyEmptyHtml(pending) || isEffectivelyEmptyHtml(lastSavedHtml)
+            if (pending != lastSavedHtml && safeToPersist) onUpdateNote(note.id, title, pending)
+            bridge?.deactivate()
             webView?.removeJavascriptInterface("NotCanBridge")
             webView?.destroy()
+            bridge = null
             webView = null
         }
     }
@@ -193,25 +220,38 @@ internal fun WriterNoteEditor(
             }
             Divider(color = NotCanGray.copy(alpha = 0.20f))
 
-            AndroidView(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                factory = {
-                    NotCanWriterWebView(context).apply {
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = false
-                        settings.allowContentAccess = false
-                        settings.allowFileAccess = false
-                        settings.setSupportZoom(false)
-                        isVerticalScrollBarEnabled = true
-                        webViewClient = WebViewClient()
-                        addJavascriptInterface(NoteBridge { newHtml -> html = newHtml }, "NotCanBridge")
-                        loadDataWithBaseURL(null, writerDocument(html, darkEditor), "text/html", "UTF-8", null)
-                        webView = this
-                    }
-                },
-                update = { view -> if (webView !== view) webView = view }
-            )
+            key(note.id) {
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    factory = {
+                        NotCanWriterWebView(context).apply {
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = false
+                            settings.allowContentAccess = false
+                            settings.allowFileAccess = false
+                            settings.setSupportZoom(false)
+                            isVerticalScrollBarEnabled = true
+                            webViewClient = WebViewClient()
+                            val activeBridge = NoteBridge(note.id) { bridgeNoteId, newHtml ->
+                                if (bridgeNoteId == note.id) {
+                                    userEdited = true
+                                    html = newHtml
+                                    draftPreferences.edit()
+                                        .putString(draftKey, newHtml)
+                                        .putLong(draftTimeKey, System.currentTimeMillis())
+                                        .apply()
+                                }
+                            }
+                            bridge = activeBridge
+                            addJavascriptInterface(activeBridge, "NotCanBridge")
+                            loadDataWithBaseURL(null, writerDocument(html, darkEditor), "text/html", "UTF-8", null)
+                            webView = this
+                        }
+                    },
+                    update = { view -> if (webView !== view) webView = view }
+                )
+            }
             if (!landscapeIme) Text("Guardado automático", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
         }
     }
@@ -245,10 +285,28 @@ private fun WriterColorButton(color: Color, onClick: () -> Unit) {
     Surface(modifier = Modifier.padding(horizontal = 4.dp).size(24.dp).clickable(onClick = onClick), color = color, shape = RoundedCornerShape(5.dp)) { }
 }
 
-private class NoteBridge(private val onChanged: (String) -> Unit) {
+private class NoteBridge(
+    private val noteId: String,
+    private val onChanged: (String, String) -> Unit
+) {
     private val main = Handler(Looper.getMainLooper())
-    @JavascriptInterface fun onContentChanged(value: String) { main.post { onChanged(value) } }
+    @Volatile private var active = true
+
+    @JavascriptInterface
+    fun onContentChanged(value: String) {
+        main.post { if (active) onChanged(noteId, value) }
+    }
+
+    fun deactivate() { active = false }
 }
+
+private fun isEffectivelyEmptyHtml(value: String): Boolean = value
+    .replace(Regex("(?is)<br\s*/?>"), "")
+    .replace(Regex("(?is)<[^>]+>"), "")
+    .replace("&nbsp;", "")
+    .replace("&#160;", "")
+    .trim()
+    .isEmpty()
 
 private fun normalizeStoredBody(value: String): String {
     val trimmed = value.trim()

@@ -166,9 +166,10 @@ class GroqTranscriptionService(private val context: Context) {
         previousTail: String
     ): String {
         val parts = mutableListOf<String>()
-        parts += "Transcribe literalmente en español. Conserva palabras y frases inusuales tal como se oyen; no reformules."
+        parts += "Transcribe literalmente en español. No añadas introducciones ni palabras no pronunciadas. Conserva frases inusuales, números y años tal como se oyen; no reformules."
         subjectName?.trim()?.takeIf { it.isNotBlank() }?.let { parts += "Materia: ${it.take(90)}." }
         classTitle?.trim()?.takeIf { it.isNotBlank() }?.let { parts += "Clase: ${it.take(90)}." }
+        parts += "Año académico de referencia: ${java.time.Year.now().value}."
 
         val base = parts.joinToString(" ")
         var remaining = MAX_PROMPT_CHARS - base.length - 1

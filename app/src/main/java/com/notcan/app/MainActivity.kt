@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var darkTheme by remember { mutableStateOf(preferences.darkTheme) }
+            var subjectNavigationRequest by remember { mutableIntStateOf(0) }
             var classNavigationRequest by remember { mutableIntStateOf(0) }
             NotCanTheme(darkTheme = darkTheme) {
                 val recordingState = RecordingService.state.collectAsStateWithLifecycle().value
@@ -190,6 +191,7 @@ class MainActivity : ComponentActivity() {
                     darkTheme = darkTheme,
                     onToggleTheme = { darkTheme = !darkTheme; preferences.darkTheme = darkTheme },
                     onToggleDoNotDisturb = ::toggleDoNotDisturb,
+                    onOpenSubjects = { studyViewModel.openSubjects(); subjectNavigationRequest++ },
                     onOpenClasses = { classNavigationRequest++ },
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                     onRecordPlannedClass = { occurrence ->
@@ -223,6 +225,7 @@ class MainActivity : ComponentActivity() {
                             selectedSubjectId = selectedSubjectId,
                             selectedClassId = selectedClassId,
                             selectedNoteId = selectedNoteId,
+                            subjectNavigationRequest = subjectNavigationRequest,
                             classNavigationRequest = classNavigationRequest,
                             onSelectCycle = studyViewModel::selectCycle,
                             onSelectSubject = studyViewModel::selectSubject,

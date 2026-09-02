@@ -61,6 +61,7 @@ object AcademicTranscriptionContext {
         "lex orandi", "lex credendi", "Eucaristía", "Bautismo", "Confirmación",
         "Orden sacerdotal", "Unción de los enfermos", "Concilio ecuménico",
         "Padres apostólicos", "Patrística", "Cristología bíblica", "Cristología patrística",
+        "Iglesia prenicena", "respuesta de la Iglesia", "para la salvación",
         "Nicea", "Constantinopla", "Éfeso", "Calcedonia", "Concilio de Nicea",
         "Concilio de Constantinopla", "Concilio de Éfeso", "Concilio de Calcedonia",
         "símbolo niceno", "Credo niceno-constantinopolitano", "naturaleza y persona",

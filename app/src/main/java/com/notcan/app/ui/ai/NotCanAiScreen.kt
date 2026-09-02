@@ -1,5 +1,9 @@
 package com.notcan.app.ui.ai
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -396,7 +401,7 @@ private fun AiChat(
 
     fun submit() {
         val cleanQuestion = question.trim()
-        if (cleanQuestion.isBlank() || busy || !configured) return
+        if (cleanQuestion.isBlank() || busy) return
         messages.add(ChatMessage(ChatRole.USER, cleanQuestion))
         persist()
         val previousAssistant = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty()
@@ -527,13 +532,14 @@ private fun CompactAiTools(
 @Composable
 private fun CompactChatHeader(subjectName: String?, classTitle: String?, configured: Boolean, toolsOpen: Boolean, onToggleTools: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(shape = RoundedCornerShape(13.dp), color = NotCanBlue.copy(alpha = 0.13f)) {
-            Icon(Icons.Default.AutoAwesome, null, tint = NotCanBlue, modifier = Modifier.padding(9.dp))
-        }
-        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("TuNot", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Asistente académico" }, color = NotCanGray, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            Text(
+                listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Asistente académico" },
+                color = NotCanOffWhite,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
         }
         ConnectionBadge(configured)
         IconButton(onClick = onToggleTools) { Icon(Icons.Default.Menu, if (toolsOpen) "Ocultar opciones" else "Opciones de TuNot", tint = NotCanBlue) }
@@ -542,10 +548,10 @@ private fun CompactChatHeader(subjectName: String?, classTitle: String?, configu
 
 @Composable
 private fun ConnectionBadge(configured: Boolean) {
-    Surface(color = if (configured) NotCanBlue.copy(alpha = 0.13f) else MaterialTheme.colorScheme.error.copy(alpha = 0.12f), shape = RoundedCornerShape(50)) {
+    Surface(color = NotCanBlue.copy(alpha = if (configured) 0.13f else 0.09f), shape = RoundedCornerShape(50)) {
         Text(
-            if (configured) "Mistral" else "Sin configurar",
-            color = if (configured) NotCanBlue else MaterialTheme.colorScheme.error,
+            if (configured) "Mistral" else "Local",
+            color = if (configured) NotCanBlue else NotCanGray,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -599,15 +605,15 @@ private fun ConversationPanel(
                 OutlinedTextField(
                     value = question,
                     onValueChange = onQuestionChange,
-                    placeholder = { Text(if (configured) "Pregunta a TuNot…" else "Configura Mistral para comenzar") },
+                    placeholder = { Text(if (configured) "Pregunta a TuNot…" else "Pregunta a TuNot… · modo local") },
                     modifier = Modifier.weight(1f),
                     minLines = 1,
                     maxLines = 5,
                     shape = RoundedCornerShape(18.dp)
                 )
                 Surface(
-                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable(enabled = configured && question.isNotBlank() && !busy, onClick = onSubmit),
-                    color = if (configured && question.isNotBlank() && !busy) NotCanBlue else NotCanGray.copy(alpha = 0.16f),
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable(enabled = question.isNotBlank() && !busy, onClick = onSubmit),
+                    color = if (question.isNotBlank() && !busy) NotCanBlue else NotCanGray.copy(alpha = 0.16f),
                     shape = RoundedCornerShape(18.dp)
                 ) {
                     Icon(Icons.Default.Send, "Enviar", tint = if (configured && question.isNotBlank() && !busy) Color.White else NotCanGray, modifier = Modifier.padding(15.dp))
@@ -624,7 +630,7 @@ private fun EmptyConversation(configured: Boolean) {
             Icon(Icons.Default.MenuBook, null, tint = NotCanBlue, modifier = Modifier.padding(14.dp))
         }
         Text("¿Qué estudiamos hoy?", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(if (configured) "Pregunta, resume o pídele a TuNot un mapa, tarjetas o cuestionario." else "Configura tu API key y Agent ID de Mistral desde Configuración.", color = NotCanGray)
+        Text(if (configured) "Pregunta, resume o pídele a TuNot un mapa, tarjetas o cuestionario." else "Modo local: usa tus apuntes y transcripciones para responder, crear mapas, tarjetas y cuestionarios sin Internet.", color = NotCanGray)
     }
 }
 
@@ -637,6 +643,7 @@ private fun ChatBubble(
     onSaveArtifact: (String) -> Unit
 ) {
     val user = message.role == ChatRole.USER
+    val context = LocalContext.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Surface(
             color = if (user) NotCanBlue.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -647,6 +654,19 @@ private fun ChatBubble(
                 Text(if (user) "Tú" else "TuNot", color = if (user) NotCanBlue else NotCanGray, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                 val safeVisibleContent = if (user) message.content else sanitizeUnparsedArtifact(message.content)
                 if (safeVisibleContent.isNotBlank()) TuNotRichText(safeVisibleContent, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
+                if (!user && safeVisibleContent.isNotBlank()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Respuesta de TuNot", safeVisibleContent))
+                            Toast.makeText(context, "Respuesta copiada", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Copiar")
+                        }
+                    }
+                }
                 message.mapArtifact?.let { artifact ->
                     ArtifactCard(
                         icon = Icons.Default.AutoAwesome,
@@ -747,7 +767,7 @@ private fun AiStudio(
         items(options) { tool ->
             val expectsArtifact = tool.marker != null || tool.title.startsWith("Mapa")
             Card(
-                modifier = Modifier.fillMaxWidth().clickable(enabled = configured && !busy) {
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) {
                     onAsk(
                         buildString {
                             appendLine(NotCanAiService.SOURCE_ONLY_MARKER)
@@ -766,13 +786,13 @@ private fun AiStudio(
                     }
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text(tool.title, color = if (configured) NotCanOffWhite else NotCanGray, fontWeight = FontWeight.Medium)
+                        Text(tool.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
                         Text(tool.subtitle, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
-        if (!configured) item { Text("Configura Mistral desde Configuración para activar estas herramientas.", color = NotCanGray) }
+        if (!configured) item { Text("Modo local activo: estos recursos se generan con el material guardado. Mistral mejora la elaboración cuando hay Internet, pero ya no es obligatorio.", color = NotCanGray) }
 
         item {
             Spacer(Modifier.padding(top = 4.dp))

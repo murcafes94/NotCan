@@ -89,6 +89,7 @@ fun NotCanHomeScreen(
     selectedSubjectId: String?,
     selectedClassId: String?,
     selectedNoteId: String?,
+    subjectNavigationRequest: Int = 0,
     classNavigationRequest: Int = 0,
     onSelectCycle: (String) -> Unit,
     onSelectSubject: (String) -> Unit,
@@ -132,6 +133,10 @@ fun NotCanHomeScreen(
     val density = LocalDensity.current
     val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         WindowInsets.ime.getBottom(density) > 0
+
+    LaunchedEffect(subjectNavigationRequest) {
+        if (subjectNavigationRequest > 0) level = HomeLevel.SUBJECTS
+    }
 
     LaunchedEffect(classNavigationRequest, selectedSubjectId) {
         if (classNavigationRequest > 0 && selectedSubjectId != null) level = HomeLevel.CLASSES

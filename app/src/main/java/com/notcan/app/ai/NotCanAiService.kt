@@ -30,10 +30,6 @@ class NotCanAiService(private val context: Context) {
         transcript: String,
         question: String
     ): String {
-        require(isConfigured()) {
-            "Configura tu API key y Agent ID de Mistral en Configuración → Asistente NotCan."
-        }
-
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
         val forcedWeb = question.contains(WEB_SEARCH_MARKER)
         val autoWeb = question.contains(AUTO_WEB_MARKER)
@@ -48,6 +44,11 @@ class NotCanAiService(private val context: Context) {
             .replace(FLASHCARDS_MARKER, "")
             .replace(QUIZ_MARKER, "")
             .trim()
+        val localQuestion = buildString {
+            append(cleanQuestion)
+            if (flashcardRequest) append(" · tarjetas didácticas")
+            if (quizRequest) append(" · cuestionario")
+        }
         val mapRequest = OfflineTuNotEngine.isMapRequest(cleanQuestion) && !flashcardRequest && !quizRequest
         val lowerQuestion = cleanQuestion.lowercase()
         val conceptualMapRequest = mapRequest && ("conceptual" in lowerQuestion || "concept map" in lowerQuestion)
@@ -55,15 +56,23 @@ class NotCanAiService(private val context: Context) {
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
+        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank()) {
+            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
+        }
+        if (!isConfigured()) {
+            return OfflineTuNotEngine.answer(
+                subjectName = subjectName,
+                notes = plainNotes,
+                transcript = plainTranscript,
+                question = localQuestion
+            )
+        }
+
         val wantsWeb = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
         val webResults = if (wantsWeb) {
             runCatching { webResearch.research(cleanQuestion, limit = 5, readTop = 3) }.getOrDefault(emptyList())
         } else emptyList()
         val webContext = webResearch.formatForPrompt(webResults)
-
-        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank()) {
-            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
-        }
 
         val sourceText = buildString {
             subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("MATERIA: $it") }
@@ -217,7 +226,7 @@ class NotCanAiService(private val context: Context) {
                     subjectName = subjectName,
                     notes = plainNotes,
                     transcript = plainTranscript,
-                    question = cleanQuestion
+                    question = localQuestion
                 )
             }
     }

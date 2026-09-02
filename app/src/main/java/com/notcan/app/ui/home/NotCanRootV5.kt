@@ -104,6 +104,7 @@ fun NotCanRootV5(
     darkTheme: Boolean = true,
     onToggleTheme: () -> Unit = {},
     onToggleDoNotDisturb: () -> Unit = {},
+    onOpenSubjects: () -> Unit = {},
     onOpenClasses: () -> Unit = {},
     onOpenPlannedClass: (PlannedClassOccurrence) -> Unit,
     onRecordPlannedClass: (PlannedClassOccurrence) -> Unit,
@@ -174,7 +175,7 @@ fun NotCanRootV5(
                             railDestinations.forEach { d ->
                                 NavigationRailItem(
                                     selected = page == d.page,
-                                    onClick = { page = d.page; navExpanded = false },
+                                    onClick = { page = d.page; if (d.page == 1) onOpenSubjects(); navExpanded = false },
                                     icon = { Icon(d.icon, d.label) },
                                     label = { Text(d.label) }
                                 )
@@ -232,7 +233,7 @@ fun NotCanRootV5(
                         schedules,
                         recordingActive,
                         now,
-                        { page = it },
+                        { target -> page = target; if (target == 1) onOpenSubjects() },
                         Modifier.weight(1f)
                     )
                 }
@@ -271,14 +272,14 @@ fun NotCanRootV5(
                         schedules,
                         recordingActive,
                         now,
-                        { page = it },
+                        { target -> page = target; if (target == 1) onOpenSubjects() },
                     Modifier.weight(1f)
                 )
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     phoneDestinations.forEach { d ->
                         NavigationBarItem(
                             selected = page == d.page,
-                            onClick = { page = d.page },
+                            onClick = { page = d.page; if (d.page == 1) onOpenSubjects() },
                             icon = { Icon(d.icon, d.label) },
                             label = { Text(d.label) }
                         )
