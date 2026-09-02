@@ -219,7 +219,7 @@ class RecordingService : Service() {
                 }
 
                 val preferences = NotCanPreferences(this@RecordingService)
-                if (preferences.autoTranscribeAfterRecording && WhisperModelManager(this@RecordingService).state() == WhisperModelState.INSTALLED) {
+                if (preferences.autoTranscribeAfterRecording) {
                     BackgroundTranscriptionManager.enqueue(this@RecordingService, audioId, classSessionId, path, classTitle)
                 }
             }

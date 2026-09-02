@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.notcan.app.ai.GroqCredentialsStore
 import com.notcan.app.ai.MistralCredentialsStore
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.StudyCycleEntity
@@ -85,6 +86,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
     val legacyStudyManager = remember(context) { StudyModelManager(context.applicationContext) }
     val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
+    val groqCredentials = remember(context) { GroqCredentialsStore(context.applicationContext) }
     val cycleDao = remember(context) { NotCanDatabase.getInstance(context.applicationContext).dao() }
     val cycles by cycleDao.observeCycles().collectAsState(initial = emptyList())
     val activeCycle = cycles.firstOrNull { it.isActive } ?: cycles.firstOrNull()
@@ -93,10 +95,13 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
     var detail by remember { mutableStateOf(preferences.aiDetail) }
     var autoTranscribe by remember { mutableStateOf(preferences.autoTranscribeAfterRecording) }
+    var preferOnlineTranscription by remember { mutableStateOf(preferences.preferOnlineTranscription) }
     var autoCues by remember { mutableStateOf(preferences.autoDetectAcademicCues) }
     var apiKeyInput by remember { mutableStateOf("") }
+    var groqApiKeyInput by remember { mutableStateOf("") }
     var agentId by remember { mutableStateOf(preferences.mistralAgentId) }
     var hasSavedKey by remember { mutableStateOf(runCatching { credentials.hasApiKey() }.getOrDefault(false)) }
+    var hasGroqKey by remember { mutableStateOf(runCatching { groqCredentials.hasApiKey() }.getOrDefault(false)) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var refreshTick by remember { mutableIntStateOf(0) }
 
@@ -227,6 +232,80 @@ fun SettingsScreen(preferences: NotCanPreferences) {
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Key, contentDescription = null, tint = NotCanBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Transcripción online · Groq", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (hasGroqKey) "Whisper Large V3 listo" else "Añade una API key gratuita de Groq",
+                            color = if (hasGroqKey) NotCanBlue else NotCanGray,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(
+                        checked = preferOnlineTranscription,
+                        onCheckedChange = {
+                            preferOnlineTranscription = it
+                            preferences.preferOnlineTranscription = it
+                        }
+                    )
+                }
+
+                Text(
+                    "Cuando está activado y hay Internet, la transcripción final envía el audio a Groq y usa Whisper Large V3. Si no hay conexión, NotCan usa Whisper local cuando está instalado. El plan gratuito y sus límites dependen de Groq.",
+                    color = NotCanGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                OutlinedTextField(
+                    value = groqApiKeyInput,
+                    onValueChange = { groqApiKeyInput = it; saveMessage = null },
+                    label = { Text(if (hasGroqKey) "Nueva API key de Groq (opcional)" else "API key de Groq") },
+                    supportingText = {
+                        Text(if (hasGroqKey) "Ya hay una clave cifrada. Déjalo vacío para conservarla." else "La clave se guarda cifrada en este dispositivo.")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = hasGroqKey || groqApiKeyInput.isNotBlank(),
+                        onClick = {
+                            if (groqApiKeyInput.isNotBlank()) {
+                                runCatching { groqCredentials.saveApiKey(groqApiKeyInput) }
+                                    .onSuccess {
+                                        hasGroqKey = true
+                                        groqApiKeyInput = ""
+                                        preferOnlineTranscription = true
+                                        preferences.preferOnlineTranscription = true
+                                        saveMessage = "Groq guardado. La transcripción online está activada."
+                                    }
+                                    .onFailure { saveMessage = it.message ?: "No se pudo guardar la clave de Groq" }
+                            } else {
+                                preferOnlineTranscription = true
+                                preferences.preferOnlineTranscription = true
+                                saveMessage = "Transcripción online activada."
+                            }
+                        }
+                    ) { Text("Guardar y activar") }
+                    if (hasGroqKey) {
+                        OutlinedButton(onClick = {
+                            runCatching { groqCredentials.clearApiKey() }
+                            hasGroqKey = false
+                            groqApiKeyInput = ""
+                            saveMessage = "API key de Groq eliminada."
+                        }) { Text("Eliminar clave") }
+                    }
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CloudDownload, contentDescription = null, tint = NotCanBlue)
                     Spacer(Modifier.width(8.dp))
                     Column {
@@ -255,8 +334,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 )
 
                 DownloadComponentCard(
-                    title = "Transcripción final",
-                    subtitle = WhisperModelSpec.DISPLAY_NAME,
+                    title = "Transcripción final · respaldo offline",
+                    subtitle = "${WhisperModelSpec.DISPLAY_NAME} · se usa sin Internet o si Groq está desactivado",
                     stateText = when (whisperState) {
                         WhisperModelState.INSTALLED -> "Instalado"
                         WhisperModelState.DOWNLOADING -> "Descargando"
@@ -324,7 +403,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
 
         SettingsSwitch(
             title = "Transcribir al terminar",
-            subtitle = "Si Whisper está instalado, prepara automáticamente la transcripción final.",
+            subtitle = "Al detener la grabación, usa Groq online si está configurado; sin Internet intenta Whisper local.",
             checked = autoTranscribe,
             onCheckedChange = { autoTranscribe = it; preferences.autoTranscribeAfterRecording = it }
         )

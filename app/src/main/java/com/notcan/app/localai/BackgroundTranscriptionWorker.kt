@@ -3,6 +3,8 @@ package com.notcan.app.localai
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -15,6 +17,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.notcan.app.ai.GroqCredentialsStore
 import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.TranscriptEntity
@@ -68,8 +71,42 @@ class BackgroundTranscriptionWorker(
                 )
             )
 
-            val rawTranscription = LocalWhisperEngine(applicationContext).transcribeM4aDetailed(audio)
-            val transcription = AcademicTranscriptionContext.correct(rawTranscription, academicTerms)
+            val preferences = NotCanPreferences(applicationContext)
+            val groqConfigured = preferences.preferOnlineTranscription &&
+                GroqCredentialsStore(applicationContext).hasApiKey()
+            val networkAvailable = isNetworkAvailable()
+
+            val provider: String
+            val modelName: String
+            val transcriptStatus: String
+            val transcription: WhisperTranscriptionResult
+
+            if (groqConfigured && networkAvailable) {
+                setForeground(foregroundInfo("Transcribiendo $displayName con Whisper Large V3 online…", online = true))
+                transcription = GroqTranscriptionService(applicationContext).transcribeM4aDetailed(
+                    audio = audio,
+                    terms = academicTerms,
+                    subjectName = subject?.name,
+                    classTitle = displayName
+                )
+                provider = "Groq online"
+                modelName = "${GroqTranscriptionService.DISPLAY_NAME} · español · literal"
+                transcriptStatus = "FINAL_GROQ_TIMED"
+            } else {
+                if (groqConfigured && !networkAvailable && WhisperModelManager(applicationContext).state() != WhisperModelState.INSTALLED) {
+                    notifyFailed(displayName, "Sin Internet y sin Whisper local instalado. Se reintentará después.")
+                    return Result.retry()
+                }
+                val rawLocal = LocalWhisperEngine(applicationContext).transcribeM4aDetailed(audio)
+                transcription = AcademicTranscriptionContext.correct(rawLocal, academicTerms)
+                provider = if (groqConfigured) "Whisper local · respaldo sin Internet" else "Whisper local"
+                modelName = if (academicTerms.isNotEmpty()) {
+                    "${WhisperModelSpec.DISPLAY_NAME} · contexto académico"
+                } else {
+                    WhisperModelSpec.DISPLAY_NAME
+                }
+                transcriptStatus = "FINAL_LOCAL_TIMED"
+            }
             val plainText = transcription.text.trim()
             val timedText = transcription.segments
                 .joinToString(separator = "\n\n") { segment ->
@@ -85,12 +122,8 @@ class BackgroundTranscriptionWorker(
                     classSessionId = classSessionId,
                     audioId = audioId,
                     body = timedText,
-                    status = "FINAL_LOCAL_TIMED",
-                    modelName = if (academicTerms.isNotEmpty()) {
-                        "${WhisperModelSpec.DISPLAY_NAME} · contexto académico"
-                    } else {
-                        WhisperModelSpec.DISPLAY_NAME
-                    },
+                    status = transcriptStatus,
+                    modelName = modelName,
                     createdAtEpochMs = now,
                     updatedAtEpochMs = now
                 )
@@ -149,7 +182,7 @@ class BackgroundTranscriptionWorker(
                     .forEach { dao.insertDetectedCue(it) }
             }
 
-            notifyFinished(displayName, academicTerms.isNotEmpty())
+            notifyFinished(displayName, academicTerms.isNotEmpty(), provider)
             Result.success(
                 workDataOf(
                     KEY_TRANSCRIPT_ID to transcriptId,
@@ -157,7 +190,9 @@ class BackgroundTranscriptionWorker(
                 )
             )
         } catch (t: Throwable) {
-            Result.failure(workDataOf(KEY_ERROR to (t.message ?: "No se pudo transcribir el audio")))
+            val message = t.message ?: "No se pudo transcribir el audio"
+            notifyFailed(displayName, message)
+            Result.failure(workDataOf(KEY_ERROR to message))
         }
     }
 
@@ -181,14 +216,18 @@ class BackgroundTranscriptionWorker(
         }
     }
 
-    private fun foregroundInfo(message: String): ForegroundInfo {
+    private fun foregroundInfo(message: String, online: Boolean = false): ForegroundInfo {
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("NotCan · Transcripción local")
+            .setContentTitle(if (online) "NotCan · Transcripción online" else "NotCan · Transcripción final")
             .setContentText(message)
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "${WhisperModelSpec.DISPLAY_NAME} está transcribiendo en segundo plano. Puedes cerrar NotCan."
+                    if (online) {
+                        "Whisper Large V3 de Groq está procesando el audio. El archivo original permanece guardado en NotCan."
+                    } else {
+                        "${WhisperModelSpec.DISPLAY_NAME} está transcribiendo en segundo plano. Puedes cerrar NotCan."
+                    }
                 )
             )
             .setOngoing(true)
@@ -214,7 +253,7 @@ class BackgroundTranscriptionWorker(
         )
     }
 
-    private fun notifyFinished(displayName: String, usedAcademicContext: Boolean) {
+    private fun notifyFinished(displayName: String, usedAcademicContext: Boolean, provider: String) {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(
             COMPLETED_NOTIFICATION_ID,
@@ -223,11 +262,34 @@ class BackgroundTranscriptionWorker(
                 .setContentTitle("Transcripción terminada")
                 .setContentText(
                     if (usedAcademicContext) {
-                        "$displayName · apunte editable y capítulos creados"
+                        "$displayName · $provider · apunte y capítulos creados"
                     } else {
-                        "$displayName · apunte editable creado"
+                        "$displayName · $provider · apunte editable creado"
                     }
                 )
+                .setAutoCancel(true)
+                .build()
+        )
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val manager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    private fun notifyFailed(displayName: String, message: String) {
+        createChannel()
+        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(
+            FAILED_NOTIFICATION_ID,
+            NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("No se pudo terminar la transcripción")
+                .setContentText("$displayName · ${message.take(120)}")
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
                 .setAutoCancel(true)
                 .build()
         )
@@ -238,6 +300,7 @@ class BackgroundTranscriptionWorker(
         private const val CHANNEL_ID = "notcan_background_processing"
         private const val NOTIFICATION_ID = 2401
         private const val COMPLETED_NOTIFICATION_ID = 2402
+        private const val FAILED_NOTIFICATION_ID = 2403
         const val KEY_AUDIO_ID = "audio_id"
         const val KEY_CLASS_ID = "class_id"
         const val KEY_AUDIO_PATH = "audio_path"

@@ -41,6 +41,10 @@ class NotCanPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_TRANSCRIBE, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_TRANSCRIBE, value).apply()
 
+    var preferOnlineTranscription: Boolean
+        get() = prefs.getBoolean(KEY_PREFER_ONLINE_TRANSCRIPTION, true)
+        set(value) = prefs.edit().putBoolean(KEY_PREFER_ONLINE_TRANSCRIPTION, value).apply()
+
     var autoDetectAcademicCues: Boolean
         get() = prefs.getBoolean(KEY_AUTO_CUES, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_CUES, value).apply()
@@ -55,6 +59,7 @@ class NotCanPreferences(context: Context) {
         private const val KEY_DARK_THEME = "dark_theme"
         private const val KEY_AUTO_FOCUS = "auto_focus_recording"
         private const val KEY_AUTO_TRANSCRIBE = "auto_transcribe_recording"
+        private const val KEY_PREFER_ONLINE_TRANSCRIPTION = "prefer_online_transcription"
         private const val KEY_AUTO_CUES = "auto_detect_academic_cues"
     }
 }

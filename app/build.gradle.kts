@@ -59,8 +59,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.8.13"
+        versionCode = 31
+        versionName = "0.8.14"
         buildConfigField("String", "SUPABASE_URL", "\"https://xpkxvhnttquvnbcfnbck.supabase.co\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_wTChkG7BwOd00sz67lOWDQ_dZ8XdYpV\"")
     }
