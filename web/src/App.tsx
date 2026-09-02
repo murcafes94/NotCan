@@ -1031,6 +1031,8 @@ export default function App() {
       connected={Boolean(session)}
       contextCount={activeNotes.length}
       useContext={aiUseNotes}
+      initialPrompt={aiPrompt}
+      onInitialPromptConsumed={() => setAiPrompt('')}
       onUseContextChange={setAiUseNotes}
       onAsk={askTuNot}
       onOpenAccount={() => setAccountOpen(true)}
