@@ -63,7 +63,17 @@ class LocalLfmTuNotEngine(context: Context) {
         withTimeout(GENERATION_TIMEOUT_MS) {
             engine.sendUserPrompt(prompt, PREDICT_TOKENS).collect { token -> output.append(token) }
         }
-        output.toString().trim().ifBlank { error("LFM2.5 no produjo una respuesta") }
+        sanitizeModelOutput(output.toString())
+            .ifBlank { error("LFM2.5 produjo únicamente tokens de control") }
+    }
+
+    private fun sanitizeModelOutput(raw: String): String {
+        return raw
+            .replace(SPECIAL_TOKEN_REGEX, "")
+            .replace("</pad/>", "")
+            .replace("</pad>", "")
+            .replace("<pad>", "")
+            .trim()
     }
 
     private suspend fun ensureModelReady(engine: InferenceEngine) {
@@ -92,6 +102,7 @@ class LocalLfmTuNotEngine(context: Context) {
         private const val PREDICT_TOKENS = 768
         private const val INIT_TIMEOUT_MS = 45_000L
         private const val GENERATION_TIMEOUT_MS = 120_000L
+        private val SPECIAL_TOKEN_REGEX = Regex("""<\|[^>]+\|>""")
         private val SYSTEM_PROMPT = """
             Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.
             Responde en español claro, preciso y útil para estudiar. Prioriza fidelidad a los apuntes y transcripciones proporcionados.

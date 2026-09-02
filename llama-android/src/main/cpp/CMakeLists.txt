@@ -36,6 +36,8 @@ file(READ ${UPSTREAM_AI_CHAT} AI_CHAT_SOURCE)
 string(REPLACE "#include \"logging.h\"" "#include \"logging_compat.h\"" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
 string(REPLACE "constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;" "constexpr int   DEFAULT_CONTEXT_SIZE    = 4096;" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
 string(REPLACE "constexpr int   BATCH_SIZE              = 512;" "constexpr int   BATCH_SIZE              = 256;" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
+string(REPLACE "/* use_jinja */ false" "/* use_jinja */ true" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
+string(REPLACE "constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;" "constexpr float DEFAULT_SAMPLER_TEMP    = 0.1f;" AI_CHAT_SOURCE "${AI_CHAT_SOURCE}")
 set(PATCHED_AI_CHAT ${CMAKE_CURRENT_BINARY_DIR}/ai_chat_compat.cpp)
 file(WRITE ${PATCHED_AI_CHAT} "${AI_CHAT_SOURCE}")
 
