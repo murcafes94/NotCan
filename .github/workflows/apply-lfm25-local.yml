@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write
 
-# Rerun marker: llama.cpp vendor headers + common target enabled.
+# Rerun marker: preserve android-debug.yml so the bot push only contains app/runtime changes.
 jobs:
   patch-build:
     runs-on: ubuntu-latest
@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/NotCanAiService.kt app/src/main/java/com/notcan/app/ai/LocalLfmTuNotEngine.kt app/src/main/java/com/notcan/app/localai/StudyModelManager.kt app/src/main/java/com/notcan/app/ui/settings/SettingsScreen.kt .github/workflows/android-debug.yml third_party/llama.cpp
+          git checkout -- .github/workflows/android-debug.yml
+          git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/NotCanAiService.kt app/src/main/java/com/notcan/app/ai/LocalLfmTuNotEngine.kt app/src/main/java/com/notcan/app/localai/StudyModelManager.kt app/src/main/java/com/notcan/app/ui/settings/SettingsScreen.kt third_party/llama.cpp
           git commit -m 'feat(android): test LFM2.5 as optional offline TuNot'
           git push origin HEAD:main
