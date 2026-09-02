@@ -48,15 +48,15 @@ internal fun applyNotCanPalette(darkTheme: Boolean) {
         NotCanGray = Color(0xFFA7B2C3)
         NotCanGrayMuted = Color(0xFF738096)
     } else {
-        NotCanBlack = Color(0xFFFFFCF7)
-        NotCanGraphite = Color(0xFFF6EFE6)
+        NotCanBlack = Color(0xFFFFFDF9)
+        NotCanGraphite = Color(0xFFF5F2EE)
         NotCanSurface = Color(0xFFFFFFFF)
-        NotCanSurfaceHigh = Color(0xFFF0E7DC)
-        NotCanSurfaceSoft = Color(0xFFFAF5EF)
-        NotCanBorder = Color(0xFFD8C9B9)
-        NotCanOffWhite = Color(0xFF20252C)
-        NotCanGray = Color(0xFF5D6672)
-        NotCanGrayMuted = Color(0xFF7A746D)
+        NotCanSurfaceHigh = Color(0xFFF7F3ED)
+        NotCanSurfaceSoft = Color(0xFFFBF9F6)
+        NotCanBorder = Color(0xFFD8D3CC)
+        NotCanOffWhite = Color(0xFF1F252C)
+        NotCanGray = Color(0xFF626B76)
+        NotCanGrayMuted = Color(0xFF7A838D)
     }
 }
 

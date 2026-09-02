@@ -4,6 +4,7 @@ import android.content.res.Configuration
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -147,7 +148,7 @@ fun NotCanRootV5(
     val plannedNow = AcademicSchedule.occurrencesForDate(today, cycle, subjects, schedules, zone)
         .firstOrNull { it.isPreviewVisible(now) }
 
-    BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
         val wide = maxWidth >= 840.dp
 
 

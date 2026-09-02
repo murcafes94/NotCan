@@ -109,6 +109,7 @@ internal fun WriterNoteEditor(
     var confirmDelete by remember(note.id) { mutableStateOf(false) }
     var shareMenu by remember(note.id) { mutableStateOf(false) }
     var editing by remember(note.id) { mutableStateOf(false) }
+    var annotationPickerOpen by remember(note.id) { mutableStateOf(false) }
     val darkEditor = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     LaunchedEffect(note.id, note.body) {
@@ -130,6 +131,10 @@ internal fun WriterNoteEditor(
         webView?.evaluateJavascript("window.notcanSetEditing(${if (editing) "true" else "false"});", null)
     }
 
+    LaunchedEffect(note.id, darkEditor) {
+        webView?.evaluateJavascript("window.notcanSetTheme(${if (darkEditor) "true" else "false"});", null)
+    }
+
     LaunchedEffect(note.id, html) {
         val pending = html
         draftPreferences.edit().putString(draftKey, pending).putLong(draftTimeKey, System.currentTimeMillis()).apply()
@@ -148,6 +153,7 @@ internal fun WriterNoteEditor(
             val safeToPersist = userEdited || !isEffectivelyEmptyHtml(pending) || isEffectivelyEmptyHtml(lastSavedHtml)
             if (pending != lastSavedHtml && safeToPersist) onUpdateNote(note.id, title, pending)
             bridge?.deactivate()
+            (webView as? NativeSelectionWebView)?.setOnHighlightRequested(null)
             webView?.removeJavascriptInterface("NotCanBridge")
             webView?.destroy()
             bridge = null
@@ -196,9 +202,12 @@ internal fun WriterNoteEditor(
                 horizontalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 if (!editing) {
-                    IconButton(onClick = { command("underline") }) { Icon(Icons.Default.FormatUnderlined, "Subrayar selección") }
-                    WriterColorButton(Color(0xFFFFE066)) { command("hiliteColor", "#FFE066") }
-                    Text("  Selecciona texto para anotar", color = NotCanGray, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "Mantén pulsado para seleccionar · Subrayar funciona sin editar",
+                        color = NotCanGray,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)
+                    )
                 } else {
                 WriterStructureButton("T1") { command("formatBlock", "H1") }
                 WriterStructureButton("T2") { command("formatBlock", "H2") }
@@ -224,7 +233,7 @@ internal fun WriterNoteEditor(
                 AndroidView(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     factory = {
-                        NotCanWriterWebView(context).apply {
+                        NativeSelectionWebView(context).apply {
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = false
@@ -233,6 +242,7 @@ internal fun WriterNoteEditor(
                             settings.setSupportZoom(false)
                             isVerticalScrollBarEnabled = true
                             webViewClient = WebViewClient()
+                            setOnHighlightRequested { annotationPickerOpen = true }
                             val activeBridge = NoteBridge(note.id) { bridgeNoteId, newHtml ->
                                 if (bridgeNoteId == note.id) {
                                     userEdited = true
@@ -256,6 +266,16 @@ internal fun WriterNoteEditor(
         }
     }
 
+    if (annotationPickerOpen) HighlightPickerDialog(
+        onDismiss = { annotationPickerOpen = false },
+        onApply = { style, color ->
+            val safeStyle = style.replace("'", "")
+            val safeColor = color.replace("'", "")
+            webView?.evaluateJavascript("window.notcanApplyAnnotation('$safeStyle','$safeColor');", null)
+            annotationPickerOpen = false
+        }
+    )
+
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Eliminar apunte") },
@@ -265,7 +285,59 @@ internal fun WriterNoteEditor(
     )
 }
 
-private class NotCanWriterWebView(context: Context) : WebView(context)
+@Composable
+private fun HighlightPickerDialog(
+    onDismiss: () -> Unit,
+    onApply: (style: String, color: String) -> Unit
+) {
+    data class Choice(val label: String, val style: String, val color: String, val preview: Color?)
+    val choices = listOf(
+        Choice("Resaltado amarillo", "highlight", "#FFE066", Color(0xFFFFE066)),
+        Choice("Resaltado verde", "highlight", "#8EE39A", Color(0xFF8EE39A)),
+        Choice("Resaltado azul", "highlight", "#7EC8FF", Color(0xFF7EC8FF)),
+        Choice("Resaltado rosado", "highlight", "#FF9BB8", Color(0xFFFF9BB8)),
+        Choice("Subrayado azul", "underline", "#3478F6", Color(0xFF3478F6)),
+        Choice("Subrayado rojo", "underline", "#D55460", Color(0xFFD55460)),
+        Choice("Quitar formato", "clear", "", null)
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Subrayar o resaltar") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                choices.forEach { choice ->
+                    TextButton(
+                        onClick = { onApply(choice.style, choice.color) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (choice.preview != null) {
+                                Surface(
+                                    color = choice.preview,
+                                    shape = RoundedCornerShape(5.dp),
+                                    modifier = Modifier.size(width = 30.dp, height = 18.dp)
+                                ) {}
+                            } else {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(5.dp),
+                                    modifier = Modifier.size(width = 30.dp, height = 18.dp)
+                                ) {}
+                            }
+                            Text(choice.label, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
 
 @Composable
 private fun WriterStructureButton(label: String, onClick: () -> Unit) {
@@ -321,10 +393,31 @@ private fun sanitizeHtml(value: String): String = value
 
 private fun writerDocument(initialBody: String, darkTheme: Boolean): String {
     val textColor = if (darkTheme) "#F3F4F6" else "#20252C"
-    val selectionText = if (darkTheme) "white" else "#172033"
+    val selectionText = if (darkTheme) "#FFFFFF" else "#172033"
+    val selectionBg = if (darkTheme) "#355A8F" else "#B9D0FF"
     return """
 <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<style>html,body{margin:0;padding:0;background:transparent;color:$textColor;font-family:sans-serif;font-size:17px;height:100%}#editor{box-sizing:border-box;min-height:100%;padding:12px 8px 120px;outline:none;line-height:1.55;caret-color:#7EA2FF}#editor p{margin:0 0 .55em}#editor h1{font-size:1.55em;margin:.5em 0 .35em}#editor h2{font-size:1.3em;margin:.45em 0 .3em}#editor ul,#editor ol{padding-left:1.6em}::selection{background:#B9D0FF;color:$selectionText}#selbar{position:fixed;display:none;z-index:50;background:#242830;border:1px solid #444b57;border-radius:14px;padding:3px;box-shadow:0 4px 16px rgba(0,0,0,.3)}#selbar button{width:34px;height:30px;border:0;border-radius:10px;background:#343a46;color:#FFE066;font-size:18px;line-height:1}</style></head>
-<body><div id="selbar"><button id="markBtn" aria-label="Subrayar" title="Subrayar">▰</button></div><div id="editor" contenteditable="false" spellcheck="true">$initialBody</div><script>(function(){const editor=document.getElementById('editor');let savedRange=null;function inside(){const s=window.getSelection();if(!s||s.rangeCount===0)return false;const n=s.getRangeAt(0).commonAncestorContainer;return n===editor||editor.contains(n.nodeType===3?n.parentNode:n)}function save(){const s=window.getSelection();if(s&&s.rangeCount>0&&inside())savedRange=s.getRangeAt(0).cloneRange()}function restore(){if(!savedRange)return;const s=window.getSelection();s.removeAllRanges();s.addRange(savedRange)}function notify(){if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML)}window.notcanSetEditing=function(v){editor.contentEditable=v?'true':'false';if(v)editor.focus()};window.notcanCommand=function(c,v){restore();document.execCommand(c,false,v||null);save();notify()};document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()})})();</script><script>(function(){const editor=document.getElementById('editor'),bar=document.getElementById('selbar'),btn=document.getElementById('markBtn');function selected(){const s=window.getSelection();if(!s||s.rangeCount===0||s.isCollapsed)return null;const r=s.getRangeAt(0),n=r.commonAncestorContainer,p=n.nodeType===3?n.parentNode:n;if(!(p===editor||editor.contains(p)))return null;return r}function place(){const r=selected();if(!r){bar.style.display='none';return}const rect=r.getBoundingClientRect();bar.style.display='block';const left=Math.max(8,Math.min(window.innerWidth-46,rect.left+rect.width/2-20));const top=Math.max(8,rect.top-42);bar.style.left=left+'px';bar.style.top=top+'px'}document.addEventListener('selectionchange',function(){setTimeout(place,0)});editor.addEventListener('mouseup',place);editor.addEventListener('touchend',function(){setTimeout(place,30)});btn.addEventListener('pointerdown',function(e){e.preventDefault();if(!selected())return;document.execCommand('hiliteColor',false,'#FFE066');if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML);bar.style.display='none'})})();</script></body></html>
+<style>
+:root{--notcan-text:$textColor;--notcan-selection:$selectionBg;--notcan-selection-text:$selectionText}
+html,body{margin:0;padding:0;background:transparent;color:var(--notcan-text);font-family:sans-serif;font-size:17px;height:100%}
+#editor{box-sizing:border-box;min-height:100%;padding:12px 8px 120px;outline:none;line-height:1.55;caret-color:#3478F6;color:var(--notcan-text)}
+#editor p{margin:0 0 .55em}#editor h1{font-size:1.55em;margin:.5em 0 .35em}#editor h2{font-size:1.3em;margin:.45em 0 .3em}#editor ul,#editor ol{padding-left:1.6em}
+::selection{background:var(--notcan-selection);color:var(--notcan-selection-text)}
+</style></head>
+<body><div id="editor" contenteditable="false" spellcheck="true">$initialBody</div>
+<script>(function(){
+const editor=document.getElementById('editor');let savedRange=null;
+function inside(){const s=window.getSelection();if(!s||s.rangeCount===0)return false;const n=s.getRangeAt(0).commonAncestorContainer;return n===editor||editor.contains(n.nodeType===3?n.parentNode:n)}
+function save(){const s=window.getSelection();if(s&&s.rangeCount>0&&!s.isCollapsed&&inside())savedRange=s.getRangeAt(0).cloneRange()}
+function restore(){if(!savedRange)return false;const s=window.getSelection();s.removeAllRanges();s.addRange(savedRange.cloneRange());return true}
+function notify(){if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML)}
+function withEditable(command,value){if(!restore())return;const old=editor.contentEditable;editor.contentEditable='true';restore();try{document.execCommand(command,false,value||null)}finally{editor.contentEditable=old==='true'?'true':'false'}save();notify()}
+function wrapUnderline(color){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.style.textDecoration='underline 2px '+(color||'#3478F6');span.style.textUnderlineOffset='3px';span.setAttribute('data-notcan-annotation','underline');try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){withEditable('underline',null)}}
+window.notcanSetEditing=function(v){editor.contentEditable=v?'true':'false';if(v)editor.focus()};
+window.notcanSetTheme=function(dark){document.documentElement.style.setProperty('--notcan-text',dark?'#F3F4F6':'#20252C');document.documentElement.style.setProperty('--notcan-selection',dark?'#355A8F':'#B9D0FF');document.documentElement.style.setProperty('--notcan-selection-text',dark?'#FFFFFF':'#172033')};
+window.notcanCommand=function(c,v){withEditable(c,v)};
+window.notcanApplyAnnotation=function(style,color){if(style==='highlight')withEditable('hiliteColor',color||'#FFE066');else if(style==='underline')wrapUnderline(color);else if(style==='clear')withEditable('removeFormat',null)};
+document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()});
+})();</script></body></html>
 """.trimIndent()
 }
