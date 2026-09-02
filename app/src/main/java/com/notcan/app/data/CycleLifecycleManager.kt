@@ -40,7 +40,6 @@ class CycleLifecycleManager(context: Context) {
     )
 
     suspend fun previewCycle(cycleId: String): CyclePreview = withContext(Dispatchers.IO) {
-        val deletingActiveCycle = repository.observeCycles().first().firstOrNull { it.id == cycleId }?.isActive == true
         val subjects = repository.cycleSubjects(cycleId)
         val classes = repository.cycleClasses(cycleId)
         val paths = repository.cycleFilePaths(cycleId)
@@ -63,6 +62,7 @@ class CycleLifecycleManager(context: Context) {
     }
 
     suspend fun deleteCycleCompletely(cycleId: String): CleanupResult = withContext(Dispatchers.IO) {
+        val deletingActiveCycle = repository.observeCycles().first().firstOrNull { it.id == cycleId }?.isActive == true
         val subjects = repository.cycleSubjects(cycleId)
         val classes = repository.cycleClasses(cycleId)
         val subjectsById = subjects.associateBy { it.id }
