@@ -11,6 +11,7 @@ import './tablet-responsive.css'
 import './rich-editor-ai.css'
 import './ai-provider-ui.css'
 import './web-phase1.css'
+import './academic-workspace.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

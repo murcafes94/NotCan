@@ -15,6 +15,7 @@ import { db, getDeviceId, queueDelete, queueUpsert, seedDemoIfEmpty } from './li
 import { syncNow } from './lib/sync'
 import { supabase } from './lib/supabase'
 import CycleManagementPanel from './CycleManagementPanel'
+import AcademicWorkspace, { type AcademicLevel } from './AcademicWorkspace'
 import type {
   ClassSessionRecord,
   GradeItemRecord,
@@ -122,6 +123,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null)
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null)
+  const [academicLevel, setAcademicLevel] = useState<AcademicLevel>('subjects')
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('notcan-theme') === 'light' ? 'light' : 'dark'))
 
   const [session, setSession] = useState<Session | null>(null)
@@ -187,7 +190,6 @@ export default function App() {
     setNotes(noteRows)
     setGrades(gradeRows)
     setPending(outboxCount)
-    if (!editorClassId && classRows[0]) setEditorClassId(classRows[0].id)
   }
 
   useEffect(() => {
@@ -221,32 +223,59 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
 
-  const recentNotes = notes.slice(0, 4)
-  const latestNote = notes[0] ?? null
-  const latestClass = latestNote
-    ? classes.find((item) => item.id === latestNote.classSessionId) ?? classes[0] ?? null
-    : classes[0] ?? null
-  const featuredSubject = latestClass
-    ? subjects.find((item) => item.id === latestClass.subjectId) ?? subjects[0] ?? null
-    : subjects[0] ?? null
-
   const activeCycle = cycles.find((cycle) => cycle.isActive) ?? cycles[0] ?? null
-  const activeSubjects = useMemo(() => activeCycle ? subjects.filter((subject) => subject.cycleId === activeCycle.id) : subjects, [subjects, activeCycle?.id])
+  const activeSubjects = useMemo(
+    () => activeCycle ? subjects.filter((subject) => subject.cycleId === activeCycle.id) : [],
+    [subjects, activeCycle?.id],
+  )
+  const activeSubjectIds = useMemo(() => new Set(activeSubjects.map((subject) => subject.id)), [activeSubjects])
+  const activeClasses = useMemo(
+    () => classes.filter((classSession) => activeSubjectIds.has(classSession.subjectId)),
+    [classes, activeSubjectIds],
+  )
+  const activeClassIds = useMemo(() => new Set(activeClasses.map((classSession) => classSession.id)), [activeClasses])
+  const activeNotes = useMemo(
+    () => notes.filter((note) => activeClassIds.has(note.classSessionId)),
+    [notes, activeClassIds],
+  )
+
+  const recentNotes = activeNotes.slice(0, 4)
+  const latestNote = activeNotes[0] ?? null
+  const latestClass = latestNote
+    ? activeClasses.find((item) => item.id === latestNote.classSessionId) ?? activeClasses[0] ?? null
+    : activeClasses[0] ?? null
+  const featuredSubject = latestClass
+    ? activeSubjects.find((item) => item.id === latestClass.subjectId) ?? activeSubjects[0] ?? null
+    : activeSubjects[0] ?? null
+
   const subjectCards = useMemo(() => activeSubjects.slice(0, 4).map((subject, index) => ({
     subject,
     index,
-    classCount: classes.filter((item) => item.subjectId === subject.id).length,
-    noteCount: notes.filter((note) => classes.find((c) => c.id === note.classSessionId)?.subjectId === subject.id).length,
-  })), [activeSubjects, classes, notes])
+    classCount: activeClasses.filter((item) => item.subjectId === subject.id).length,
+    noteCount: activeNotes.filter((note) => activeClasses.find((c) => c.id === note.classSessionId)?.subjectId === subject.id).length,
+  })), [activeSubjects, activeClasses, activeNotes])
 
   const selectedSubject = activeSubjects.find((s) => s.id === selectedSubjectId) ?? null
-  const selectedSubjectClasses = classes.filter((c) => c.subjectId === selectedSubject?.id)
+  const selectedSubjectClasses = activeClasses.filter((c) => c.subjectId === selectedSubject?.id)
   const selectedGrades = grades.filter((grade) => grade.subjectId === selectedSubject?.id)
   const todayKey = new Date().toDateString()
-  const todayClasses = classes.filter((classSession) => new Date(classSession.startedAtEpochMs).toDateString() === todayKey)
-  const upcomingClasses = classes
+  const todayClasses = activeClasses.filter((classSession) => new Date(classSession.startedAtEpochMs).toDateString() === todayKey)
+  const upcomingClasses = activeClasses
     .filter((classSession) => classSession.startedAtEpochMs >= Date.now())
     .sort((a, b) => a.startedAtEpochMs - b.startedAtEpochMs)
+
+  useEffect(() => {
+    if (selectedSubjectId && !activeSubjectIds.has(selectedSubjectId)) {
+      setSelectedSubjectId(null)
+      setSelectedClassId(null)
+      setAcademicLevel('subjects')
+      return
+    }
+    if (selectedClassId && !activeClassIds.has(selectedClassId)) {
+      setSelectedClassId(null)
+      setAcademicLevel(selectedSubjectId ? 'classes' : 'subjects')
+    }
+  }, [activeCycle?.id, selectedSubjectId, selectedClassId, activeSubjectIds, activeClassIds])
 
   const gradeStats = useMemo(() => {
     const evaluatedWeight = selectedGrades.reduce((sum, grade) => sum + Math.max(0, grade.weightPercent), 0)
@@ -265,28 +294,110 @@ export default function App() {
   }, [selectedGrades, gradeTarget])
 
   const searchResults = search.trim() ? [
-    ...subjects
+    ...activeSubjects
       .filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
-      .map((s) => ({ type: 'Materia', title: s.name, action: () => { setSelectedSubjectId(s.id); navigate('subjects') } })),
-    ...notes
+      .map((s) => ({ type: 'Materia', title: s.name, action: () => openSubject(s.id) })),
+    ...activeNotes
       .filter((n) => `${n.title} ${stripHtml(n.body)}`.toLowerCase().includes(search.toLowerCase()))
       .slice(0, 6)
       .map((n) => ({ type: 'Apunte', title: n.title, action: () => openExistingNote(n) })),
   ] : []
 
+  function resetAcademicNavigation() {
+    setSelectedSubjectId(null)
+    setSelectedClassId(null)
+    setAcademicLevel('subjects')
+  }
+
   function navigate(next: Page) {
     setEditorOpen(false)
+    if (next === 'subjects') resetAcademicNavigation()
     setPage(next)
     setSidebarOpen(false)
     setSearch('')
   }
 
+  function openSubjects() {
+    resetAcademicNavigation()
+    setEditorOpen(false)
+    setPage('subjects')
+    setSidebarOpen(false)
+    setSearch('')
+  }
+
+  function openSubject(subjectId: string) {
+    if (!activeSubjectIds.has(subjectId)) return
+    setSelectedSubjectId(subjectId)
+    setSelectedClassId(null)
+    setAcademicLevel('classes')
+    setEditorOpen(false)
+    setPage('subjects')
+    setSidebarOpen(false)
+    setSearch('')
+  }
+
+  function openClass(classId: string) {
+    const classSession = activeClasses.find((item) => item.id === classId)
+    if (!classSession) return
+    setSelectedSubjectId(classSession.subjectId)
+    setSelectedClassId(classId)
+    setAcademicLevel('class')
+    setEditorOpen(false)
+    setPage('subjects')
+    setSidebarOpen(false)
+    setSearch('')
+  }
+
+  async function createSubjectFromWeb(name: string): Promise<string | null> {
+    if (!activeCycle) return null
+    const now = Date.now()
+    const palette = ['#5b82d8', '#7c6ccf', '#4f9a82', '#a77b45', '#b86771', '#6d79a8']
+    const subject: SubjectRecord = {
+      id: crypto.randomUUID(),
+      cycleId: activeCycle.id,
+      name: name.trim(),
+      colorHex: palette[activeSubjects.length % palette.length],
+      createdAtEpochMs: now,
+      updatedAtEpochMs: now,
+      revision: 1,
+      deviceId: getDeviceId(),
+    }
+    await db.subjects.add(subject)
+    await queueUpsert('subjects', subject.id, subject)
+    await refresh()
+    return subject.id
+  }
+
+  async function createClassFromWeb(subjectId: string, title: string): Promise<string | null> {
+    if (!activeSubjectIds.has(subjectId)) return null
+    const now = Date.now()
+    const classSession: ClassSessionRecord = {
+      id: crypto.randomUUID(),
+      subjectId,
+      title: title.trim(),
+      startedAtEpochMs: now,
+      createdAtEpochMs: now,
+      updatedAtEpochMs: now,
+      revision: 1,
+      deviceId: getDeviceId(),
+    }
+    await db.classSessions.add(classSession)
+    await queueUpsert('class_sessions', classSession.id, classSession)
+    await refresh()
+    return classSession.id
+  }
+
   function openNewNote(classId?: string) {
+    const targetClassId = classId ?? selectedClassId ?? activeClasses[0]?.id ?? null
+    if (!targetClassId) {
+      openSubjects()
+      return
+    }
     const now = Date.now()
     const id = crypto.randomUUID()
     loadedEditorIdRef.current = null
     setEditorNoteId(id)
-    setEditorClassId(classId ?? classes[0]?.id ?? null)
+    setEditorClassId(targetClassId)
     setEditorTitle('')
     setEditorBody('')
     setEditorCreatedAt(now)
@@ -546,9 +657,9 @@ export default function App() {
   }
 
   function noteContext(limit = 8): AiContextItem[] {
-    return notes.slice(0, limit).map((note) => {
-      const classSession = classes.find((item) => item.id === note.classSessionId)
-      const subject = subjects.find((item) => item.id === classSession?.subjectId)
+    return activeNotes.slice(0, limit).map((note) => {
+      const classSession = activeClasses.find((item) => item.id === note.classSessionId)
+      const subject = activeSubjects.find((item) => item.id === classSession?.subjectId)
       return {
         title: note.title,
         body: stripHtml(note.body),
@@ -707,7 +818,7 @@ export default function App() {
               {subjectCards.map(({ subject, index, classCount, noteCount }) => <button
                 className="course-card clickable-card"
                 key={subject.id}
-                onClick={() => { setSelectedSubjectId(subject.id); navigate('subjects') }}
+                onClick={() => openSubject(subject.id)}
               >
                 <div className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>{subjectIcons[index % subjectIcons.length]}</div>
                 <div className="course-copy"><strong>{subject.name}</strong><small>{classCount} clases · {noteCount} apuntes</small></div>
@@ -768,7 +879,7 @@ export default function App() {
           </article>
         </aside>
       </div>
-      <footer className="data-footnote">{cycles.length} ciclo · {subjects.length} materias · {classes.length} clases · almacenamiento local-first</footer>
+      <footer className="data-footnote">{activeCycle?.name ?? 'Sin ciclo'} · {activeSubjects.length} materias · {activeClasses.length} clases · almacenamiento local-first</footer>
     </main>
   }
 
@@ -850,29 +961,26 @@ export default function App() {
         }}>＋ Nuevo</button>}
       </div>
 
-      {page === 'subjects' && <div className="feature-grid subjects-view">
-        <aside className="section-card list-panel">
-          {activeSubjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => setSelectedSubjectId(subject.id)}>
-            <span className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>{subjectIcons[index % subjectIcons.length]}</span>
-            <span><strong>{subject.name}</strong><small>{classes.filter((c) => c.subjectId === subject.id).length} clases</small></span>
-          </button>)}
-        </aside>
-        <section className="section-card detail-panel">
-          <div className="detail-heading"><div><p className="eyebrow">MATERIA</p><h2>{selectedSubject?.name ?? 'Selecciona una materia'}</h2></div><button className="primary" disabled={!selectedSubjectClasses[0]} onClick={() => selectedSubjectClasses[0] && openNewNote(selectedSubjectClasses[0].id)}>＋ Apunte</button></div>
-          <div className="class-note-list">
-            {selectedSubjectClasses.map((classSession) => <article key={classSession.id}>
-              <div><strong>{classSession.title}</strong><small>{fullDate(classSession.startedAtEpochMs)}</small></div>
-              <div>{notes.filter((n) => n.classSessionId === classSession.id).map((note) => <div className="class-note-row" key={note.id}>
-                <button onClick={() => openExistingNote(note)}>✎ {note.title}</button>
-                <button className="danger-text" onClick={() => void deleteNote(note)}>Eliminar</button>
-              </div>)}<button onClick={() => openNewNote(classSession.id)}>＋ Nuevo apunte</button></div>
-            </article>)}
-          </div>
-        </section>
-      </div>}
+      {page === 'subjects' && <AcademicWorkspace
+        cycleName={activeCycle?.name}
+        subjects={activeSubjects}
+        classes={activeClasses}
+        notes={activeNotes}
+        level={academicLevel}
+        selectedSubjectId={selectedSubjectId}
+        selectedClassId={selectedClassId}
+        onOpenSubjects={openSubjects}
+        onOpenSubject={openSubject}
+        onOpenClass={openClass}
+        onOpenNote={openExistingNote}
+        onNewNote={openNewNote}
+        onDeleteNote={deleteNote}
+        onCreateSubject={createSubjectFromWeb}
+        onCreateClass={createClassFromWeb}
+      />}
 
       {page === 'notes' && <section className="section-card collection-list note-collection">
-        {notes.map((note) => <article className="note-list-row" key={note.id}>
+        {activeNotes.map((note) => <article className="note-list-row" key={note.id}>
           <button className="note-list-open" onClick={() => openExistingNote(note)}>
             <span className="file-icon blue">≡</span>
             <span><strong>{note.title}</strong><small>{stripHtml(note.body).slice(0, 100) || 'Sin contenido'}</small></span>
@@ -880,7 +988,7 @@ export default function App() {
           </button>
           <button className="note-list-delete" onClick={() => void deleteNote(note)} title="Eliminar apunte">⌫</button>
         </article>)}
-        {notes.length === 0 && <p className="empty-state">Todavía no hay apuntes.</p>}
+        {activeNotes.length === 0 && <p className="empty-state">Todavía no hay apuntes en el ciclo activo.</p>}
       </section>}
 
       {page === 'library' && <>
@@ -925,7 +1033,7 @@ export default function App() {
       </section>}
 
       {page === 'grades' && <div className="feature-grid grades-workspace">
-        <aside className="section-card list-panel grade-subjects">{subjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => { setSelectedSubjectId(subject.id); setGradeMessage('') }}><span className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>☆</span><span><strong>{subject.name}</strong><small>{grades.filter((grade) => grade.subjectId === subject.id).length} notas</small></span></button>)}</aside>
+        <aside className="section-card list-panel grade-subjects">{activeSubjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => { setSelectedSubjectId(subject.id); setGradeMessage('') }}><span className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>☆</span><span><strong>{subject.name}</strong><small>{grades.filter((grade) => grade.subjectId === subject.id).length} notas</small></span></button>)}</aside>
 
         <div className="grades-dashboard">
           <section className="section-card grade-summary-card">
@@ -1085,7 +1193,7 @@ export default function App() {
 
         <div className="editor-sheet">
           <div className="editor-meta-row">
-            <select value={editorClassId ?? ''} onChange={(event) => setEditorClassId(event.target.value)}>{classes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
+            <select value={editorClassId ?? ''} onChange={(event) => setEditorClassId(event.target.value)}>{activeClasses.map((item) => <option key={item.id} value={item.id}>{activeSubjects.find((subject) => subject.id === item.subjectId)?.name ?? 'Materia'} · {item.title}</option>)}</select>
             <span>{editorCreatedAt ? fullDate(editorCreatedAt) : ''}</span>
           </div>
           <input className="editor-title-input" value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="Título del apunte" />
