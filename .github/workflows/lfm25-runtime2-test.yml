@@ -1,0 +1,48 @@
+name: Test LFM2.5 Runtime v2
+
+on:
+  push:
+    branches:
+      - lfm25-runtime-2
+    paths:
+      - .github/workflows/lfm25-runtime2-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Apply runtime patch
+        run: python3 ci/apply_lfm25_runtime2.py
+
+      - name: Build ARM64
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+
+      - name: Commit tested changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts app/src/main/java/com/notcan/app/settings/NotCanPreferences.kt app/src/main/java/com/notcan/app/ai/LocalLfmTuNotEngine.kt app/src/main/java/com/notcan/app/ai/NotCanAiService.kt app/src/main/java/com/notcan/app/ui/ai/NotCanAiScreen.kt app/src/main/java/com/notcan/app/ui/settings/SettingsScreen.kt llama-android/src/main/cpp/CMakeLists.txt .github/workflows/android-debug.yml
+          git commit -m 'fix(android): make LFM2.5 runtime deterministic' || true
+          git push origin HEAD:lfm25-runtime-2
