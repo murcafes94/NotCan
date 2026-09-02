@@ -806,9 +806,9 @@ export default function App() {
     })
   }
 
-  async function askTuNot(prompt: string, mode: AiMode): Promise<{ answer: string; model?: string }> {
+  async function askTuNot(prompt: string, mode: AiMode, useContextOverride = aiUseNotes): Promise<{ answer: string; model?: string }> {
     if (!session) throw new Error('Inicia sesión para usar TuNot en la web.')
-    const response = await askNotCanAi({ prompt, mode, context: aiUseNotes ? noteContext() : [] })
+    const response = await askNotCanAi({ prompt, mode, context: useContextOverride ? noteContext() : [] })
     return { answer: response.answer, model: response.model ?? undefined }
   }
 
