@@ -22,6 +22,11 @@ endif()
 
 set(LLAMA_SRC ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/llama.cpp)
 add_subdirectory(${LLAMA_SRC} build-llama)
+# Newer llama.cpp keeps the reusable chat/template helpers in common/ as target `common`.
+# The root library does not add it automatically when embedded as an Android subproject.
+if(NOT TARGET common)
+    add_subdirectory(${LLAMA_SRC}/common build-common)
+endif()
 
 # Keep the pinned official JNI bridge, but replace its API-30 logger and tune context/batch sizes
 # for a tablet-class Android device. 4k context + 256 batch substantially lowers transient RAM
@@ -54,6 +59,6 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
         llama
-        llama-common
+        common
         android
         log)
