@@ -60,8 +60,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 38
-        versionName = "0.8.17.2"
+        versionCode = 39
+        versionName = "0.8.18"
         if (notcanArm64Only) {
             ndk { abiFilters += listOf("arm64-v8a") }
         }
@@ -141,6 +141,7 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation(project(":llama-android"))
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

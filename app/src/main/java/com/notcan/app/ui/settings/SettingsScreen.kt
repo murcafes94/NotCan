@@ -57,6 +57,7 @@ import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.StudyModelManager
+import com.notcan.app.localai.StudyModelSpec
 import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
@@ -84,7 +85,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val scope = rememberCoroutineScope()
     val whisperManager = remember(context) { WhisperModelManager(context.applicationContext) }
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
-    val legacyStudyManager = remember(context) { StudyModelManager(context.applicationContext) }
+    val studyManager = remember(context) { StudyModelManager(context.applicationContext) }
     val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
     val groqCredentials = remember(context) { GroqCredentialsStore(context.applicationContext) }
     val cycleDao = remember(context) { NotCanDatabase.getInstance(context.applicationContext).dao() }
@@ -124,8 +125,11 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val liveProgress = remember(refreshTick) {
         runCatching { liveManager.progressPercent() }.getOrNull()
     }
-    val legacyStudyState = remember(refreshTick) {
-        runCatching { legacyStudyManager.state() }.getOrDefault(StudyModelState.NOT_INSTALLED)
+    val studyState = remember(refreshTick) {
+        runCatching { studyManager.state() }.getOrDefault(StudyModelState.NOT_INSTALLED)
+    }
+    val studyProgress = remember(refreshTick) {
+        runCatching { studyManager.progressPercent() }.getOrNull()
     }
     val mistralConfigured = hasSavedKey && agentId.trim().isNotBlank()
 
@@ -352,19 +356,24 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     onRemove = { runCatching { whisperManager.removeModel() }; refreshTick++ }
                 )
 
-                if (legacyStudyState != StudyModelState.NOT_INSTALLED) {
-                    DownloadComponentCard(
-                        title = "Modelo IA local anterior",
-                        subtitle = "Qwen ya no es el asistente principal; puedes liberar ese espacio.",
-                        stateText = if (legacyStudyState == StudyModelState.DOWNLOADING) "Descargando" else "Instalado",
-                        progress = null,
-                        installed = legacyStudyState == StudyModelState.INSTALLED,
-                        downloading = legacyStudyState == StudyModelState.DOWNLOADING,
-                        onDownload = {},
-                        onRemove = { runCatching { legacyStudyManager.removeModel() }; refreshTick++ },
-                        allowDownload = false
-                    )
-                }
+                DownloadComponentCard(
+                    title = StudyModelSpec.DISPLAY_NAME,
+                    subtitle = "${StudyModelSpec.MODEL_NAME} · ~731 MB · ${StudyModelSpec.LICENSE} · sin costo por tokens",
+                    stateText = when (studyState) {
+                        StudyModelState.INSTALLED -> "Instalado · listo para TuNot"
+                        StudyModelState.DOWNLOADING -> "Descargando"
+                        StudyModelState.NOT_INSTALLED -> "No instalado"
+                    },
+                    progress = studyProgress,
+                    installed = studyState == StudyModelState.INSTALLED,
+                    downloading = studyState == StudyModelState.DOWNLOADING,
+                    onDownload = {
+                        runCatching { studyManager.enqueueDownload() }
+                            .onFailure { saveMessage = "LFM2.5: ${it.message ?: "no se pudo iniciar la descarga"}" }
+                        refreshTick++
+                    },
+                    onRemove = { runCatching { studyManager.removeModel() }; refreshTick++ }
+                )
             }
         }
 

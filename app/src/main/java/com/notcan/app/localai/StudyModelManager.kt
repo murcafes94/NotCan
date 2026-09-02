@@ -6,15 +6,17 @@ import android.net.Uri
 import java.io.File
 
 object StudyModelSpec {
-    const val DISPLAY_NAME = "NotCan AI · Qwen3 0.6B"
-    const val MODEL_NAME = "Qwen3 0.6B Q8_0"
-    const val FILE_NAME = "Qwen3-0.6B-Q8_0.gguf"
-    const val DOWNLOAD_URL = "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf?download=true"
-    const val APPROX_BYTES = 639_000_000L
-    const val MIN_VALID_BYTES = 600_000_000L
-    const val LICENSE = "Apache-2.0"
+    const val DISPLAY_NAME = "TuNot offline · LFM2.5"
+    const val MODEL_NAME = "LFM2.5 1.2B Instruct Q4_K_M"
+    const val FILE_NAME = "LFM2.5-1.2B-Instruct-Q4_K_M.gguf"
+    const val DOWNLOAD_URL = "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_K_M.gguf?download=true"
+    const val APPROX_BYTES = 731_000_000L
+    const val MIN_VALID_BYTES = 700_000_000L
+    const val LICENSE = "LFM Open License 1.0"
+    const val SHA256 = "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5"
 
-    const val LEGACY_FILE_NAME = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
+    const val LEGACY_QWEN_FILE_NAME = "Qwen3-0.6B-Q8_0.gguf"
+    const val LEGACY_DEEPSEEK_FILE_NAME = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
 }
 
 enum class StudyModelState {
@@ -32,14 +34,16 @@ class StudyModelManager(private val context: Context) {
         return File(dir, StudyModelSpec.FILE_NAME)
     }
 
-    private fun legacyModelFile(): File = File(modelFile().parentFile, StudyModelSpec.LEGACY_FILE_NAME)
+    private fun legacyModelFiles(): List<File> {
+        val parent = modelFile().parentFile
+        return listOf(
+            File(parent, StudyModelSpec.LEGACY_QWEN_FILE_NAME),
+            File(parent, StudyModelSpec.LEGACY_DEEPSEEK_FILE_NAME)
+        )
+    }
 
     fun state(): StudyModelState {
-        val file = modelFile()
-        if (isValidModel(file)) {
-            runCatching { legacyModelFile().delete() }
-            return StudyModelState.INSTALLED
-        }
+        if (isValidModel(modelFile())) return StudyModelState.INSTALLED
 
         val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (id > 0L) {
@@ -59,7 +63,6 @@ class StudyModelManager(private val context: Context) {
 
     fun enqueueDownload(): Long {
         if (state() == StudyModelState.INSTALLED) return -1L
-
         val existingId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (existingId > 0L && state() == StudyModelState.DOWNLOADING) return existingId
 
@@ -68,8 +71,8 @@ class StudyModelManager(private val context: Context) {
 
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(StudyModelSpec.DOWNLOAD_URL))
-            .setTitle("NotCan · IA local")
-            .setDescription("Qwen3 0.6B Q8_0 · aprox. 639 MB · funciona sin internet")
+            .setTitle("NotCan · TuNot offline")
+            .setDescription("LFM2.5 1.2B Instruct Q4_K_M · aprox. 731 MB · funciona sin internet")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverRoaming(false)
             .setAllowedOverMetered(true)
@@ -81,7 +84,6 @@ class StudyModelManager(private val context: Context) {
         val destination = modelFile()
         val staging = File(destination.parentFile, "${destination.name}.importing")
         staging.delete()
-
         val input = context.contentResolver.openInputStream(uri)
             ?: throw IllegalArgumentException("No se pudo abrir el archivo seleccionado")
 
@@ -89,13 +91,9 @@ class StudyModelManager(private val context: Context) {
             input.buffered().use { source ->
                 staging.outputStream().buffered().use { output -> source.copyTo(output) }
             }
-
             if (!isValidModel(staging)) {
-                throw IllegalArgumentException(
-                    "El archivo no parece ser Qwen3 0.6B Q8_0 en formato GGUF o está incompleto"
-                )
+                throw IllegalArgumentException("El archivo no parece ser LFM2.5 1.2B Instruct Q4_K_M en formato GGUF o está incompleto")
             }
-
             if (destination.exists() && !destination.delete()) {
                 throw IllegalStateException("No se pudo reemplazar el modelo local anterior")
             }
@@ -107,16 +105,11 @@ class StudyModelManager(private val context: Context) {
                 destination.delete()
                 throw IllegalStateException("El modelo importado no pudo validarse")
             }
-
             val downloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
-            if (downloadId > 0L) {
-                runCatching {
-                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                    manager.remove(downloadId)
-                }
+            if (downloadId > 0L) runCatching {
+                (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(downloadId)
             }
             prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
-            runCatching { legacyModelFile().delete() }
             return true
         } catch (t: Throwable) {
             staging.delete()
@@ -140,15 +133,12 @@ class StudyModelManager(private val context: Context) {
 
     fun removeModel(): Boolean {
         val id = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
-        if (id > 0L) {
-            runCatching {
-                val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                manager.remove(id)
-            }
+        if (id > 0L) runCatching {
+            (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(id)
         }
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
         val currentDeleted = !modelFile().exists() || modelFile().delete()
-        val legacyDeleted = !legacyModelFile().exists() || legacyModelFile().delete()
+        val legacyDeleted = legacyModelFiles().all { !it.exists() || it.delete() }
         return currentDeleted && legacyDeleted
     }
 
@@ -164,7 +154,5 @@ class StudyModelManager(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    companion object {
-        private const val KEY_DOWNLOAD_ID = "download_id"
-    }
+    companion object { private const val KEY_DOWNLOAD_ID = "download_id" }
 }

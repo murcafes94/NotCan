@@ -17,6 +17,7 @@ class NotCanAiService(private val context: Context) {
     private val preferences = NotCanPreferences(appContext)
     private val credentials = MistralCredentialsStore(appContext)
     private val webResearch = WebResearchService(appContext)
+    private val localLfm = LocalLfmTuNotEngine(appContext)
 
     fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
 
@@ -59,7 +60,22 @@ class NotCanAiService(private val context: Context) {
         if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank()) {
             return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
         }
-        if (!isConfigured()) {
+
+        suspend fun localFallback(): String {
+            val lfmEligible = !mapRequest && !flashcardRequest && !quizRequest
+            if (lfmEligible && localLfm.isAvailable()) {
+                try {
+                    return localLfm.answer(
+                        subjectName = subjectName,
+                        notes = plainNotes,
+                        transcript = plainTranscript,
+                        question = localQuestion,
+                        strictSources = strictSources
+                    )
+                } catch (_: Throwable) {
+                    // El motor extractivo permanece como red de seguridad si llama.cpp falla.
+                }
+            }
             return OfflineTuNotEngine.answer(
                 subjectName = subjectName,
                 notes = plainNotes,
@@ -67,6 +83,8 @@ class NotCanAiService(private val context: Context) {
                 question = localQuestion
             )
         }
+
+        if (!isConfigured()) return localFallback()
 
         val wantsWeb = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
         val webResults = if (wantsWeb) {
@@ -220,15 +238,11 @@ class NotCanAiService(private val context: Context) {
             append(cleanQuestion)
         }
 
-        return runCatching { sendToMistral(prompt) }
-            .getOrElse {
-                OfflineTuNotEngine.answer(
-                    subjectName = subjectName,
-                    notes = plainNotes,
-                    transcript = plainTranscript,
-                    question = localQuestion
-                )
-            }
+        return try {
+            sendToMistral(prompt)
+        } catch (_: Throwable) {
+            localFallback()
+        }
     }
 
     private fun sendToMistral(prompt: String): String {
