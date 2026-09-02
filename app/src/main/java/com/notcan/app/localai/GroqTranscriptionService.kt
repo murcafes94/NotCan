@@ -55,7 +55,7 @@ class GroqTranscriptionService(private val context: Context) {
                 val text = result.text.trim()
                 if (text.isNotBlank()) {
                     mergedText += text
-                    previousTail = text.takeLast(420)
+                    previousTail = text.takeLast(PREVIOUS_TAIL_MAX_CHARS)
                 }
                 result.segments.forEach { segment ->
                     mergedSegments += segment.copy(
@@ -153,24 +153,63 @@ class GroqTranscriptionService(private val context: Context) {
         return WhisperTranscriptionResult(text = text, segments = segments)
     }
 
+    /**
+     * Groq currently rejects transcription prompts above 896 characters. Keep a safety margin
+     * and spend the budget in this order: literal-transcription instruction, subject/class,
+     * highest-priority academic terms and finally a short tail from the previous chunk.
+     * This makes the limit deterministic instead of blindly truncating a long vocabulary block.
+     */
     private fun buildPrompt(
         subjectName: String?,
         classTitle: String?,
         terms: List<AcademicTranscriptionTerm>,
         previousTail: String
-    ): String = buildString {
-        append("Transcribe literalmente en español. Conserva frases inusuales tal como se oyen; no las reformules ni las hagas más lógicas. ")
-        subjectName?.takeIf { it.isNotBlank() }?.let { append("Materia: $it. ") }
-        classTitle?.takeIf { it.isNotBlank() }?.let { append("Clase: $it. ") }
-        val vocabulary = terms
+    ): String {
+        val parts = mutableListOf<String>()
+        parts += "Transcribe literalmente en español. Conserva palabras y frases inusuales tal como se oyen; no reformules."
+        subjectName?.trim()?.takeIf { it.isNotBlank() }?.let { parts += "Materia: ${it.take(90)}." }
+        classTitle?.trim()?.takeIf { it.isNotBlank() }?.let { parts += "Clase: ${it.take(90)}." }
+
+        val base = parts.joinToString(" ")
+        var remaining = MAX_PROMPT_CHARS - base.length - 1
+        if (remaining <= 0) return base.take(MAX_PROMPT_CHARS)
+
+        val vocabularyTerms = terms
             .sortedByDescending { it.weight }
-            .map { it.value }
+            .map { it.value.trim() }
+            .filter { it.isNotBlank() }
             .distinctBy { it.lowercase() }
-            .take(60)
-            .joinToString(", ")
-        if (vocabulary.isNotBlank()) append("Términos que pueden aparecer: $vocabulary. ")
-        if (previousTail.isNotBlank()) append("Final del segmento anterior, solo como contexto: ${previousTail.takeLast(420)}")
-    }.take(MAX_PROMPT_CHARS)
+
+        val selectedTerms = mutableListOf<String>()
+        var vocabularyLength = 0
+        val vocabularyPrefix = "Términos posibles: "
+        val vocabularyBudget = minOf(MAX_VOCABULARY_CHARS, remaining)
+        for (term in vocabularyTerms) {
+            val candidate = if (selectedTerms.isEmpty()) term else ", $term"
+            if (vocabularyPrefix.length + vocabularyLength + candidate.length + 1 > vocabularyBudget) break
+            selectedTerms += term
+            vocabularyLength += candidate.length
+        }
+        if (selectedTerms.isNotEmpty()) {
+            parts += "$vocabularyPrefix${selectedTerms.joinToString(", ")}."
+        }
+
+        var prompt = parts.joinToString(" ")
+        remaining = MAX_PROMPT_CHARS - prompt.length - 1
+        if (previousTail.isNotBlank() && remaining > PREVIOUS_TAIL_MIN_ROOM) {
+            val prefix = "Contexto anterior: "
+            val allowedTail = (remaining - prefix.length).coerceAtLeast(0)
+            if (allowedTail > 0) {
+                parts += prefix + previousTail
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                    .takeLast(minOf(PREVIOUS_TAIL_MAX_CHARS, allowedTail))
+            }
+        }
+
+        prompt = parts.joinToString(" ")
+        return prompt.take(MAX_PROMPT_CHARS)
+    }
 
     private fun splitForUpload(source: File): List<AudioChunk> {
         val durationMs = mediaDurationMs(source)
@@ -304,6 +343,10 @@ class GroqTranscriptionService(private val context: Context) {
         private const val MODEL = "whisper-large-v3"
         private const val SAFE_FREE_TIER_BYTES = 23L * 1024L * 1024L
         private const val CHUNK_DURATION_MS = 20L * 60L * 1_000L
-        private const val MAX_PROMPT_CHARS = 1_800
+        private const val GROQ_PROMPT_LIMIT_CHARS = 896
+        private const val MAX_PROMPT_CHARS = 840
+        private const val MAX_VOCABULARY_CHARS = 520
+        private const val PREVIOUS_TAIL_MAX_CHARS = 180
+        private const val PREVIOUS_TAIL_MIN_ROOM = 40
     }
 }
