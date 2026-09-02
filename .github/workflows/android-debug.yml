@@ -62,7 +62,7 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
 
       - name: Verify persistent test signature
         shell: bash
@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-debug-apk
+          name: notcan-v0.8.18-lfm25-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.13-test"
+          TAG="v0.8.18-lfm-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.13-test.apk" \
+            "$APK#NotCan-v0.8.18-LFM2.5-test.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.13 · prueba" \
-            --notes "NotCan v0.8.13: tema claro/oscuro, No molestar de Android, Apuntes como vista principal con navegación discreta, Clases contextual, audio persistente en segundo plano, marcadores navegables, modo lectura/edición de apuntes, selección táctil restaurada y controles del cuestionario más accesibles. Incluye además las mejoras recientes del transcriptor y TuNot."
+            --title "NotCan v0.8.18 · TuNot LFM2.5 local" \
+            --notes "Prueba experimental ARM64 de TuNot offline con LiquidAI LFM2.5 1.2B Instruct Q4_K_M mediante llama.cpp. El modelo (~731 MB) se descarga aparte desde Ajustes y no aumenta el APK en esa cantidad. TuNot conserva Mistral online como vía principal, LFM2.5 como cerebro generativo local cuando está instalado y el motor extractivo como red de seguridad."
