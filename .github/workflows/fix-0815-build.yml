@@ -1,0 +1,80 @@
+name: Finalize 0.8.15 quality build
+
+on:
+  push:
+    paths:
+      - 'ci/notcan-0815-final-trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  fix-build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Apply compile fixes
+        run: python3 ci/fix_0815_compile.py
+
+      - name: Commit compile fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(android): finalize 0.8.15 compile fixes'
+            git push
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-0.8.15-quality-final
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 5
+
+      - name: Publish 0.8.15 test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG='v0.8.15-test'
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
+          gh release create "$TAG" \
+            "$APK#NotCan-v0.8.15-test.apk" \
+            --target "$(git rev-parse HEAD)" \
+            --prerelease \
+            --title 'NotCan v0.8.15 · calidad y TuNot offline' \
+            --notes 'Ronda consolidada: navegación Materias→Clases→Apuntes corregida; editor aislado por nota con borrador de recuperación y guardado al salir; Groq con reconocimiento literal reforzado; TuNot usable sin Mistral con respuestas extractivas, mapas, tarjetas y cuestionarios offline; copia de respuestas y cabecera compacta.'
