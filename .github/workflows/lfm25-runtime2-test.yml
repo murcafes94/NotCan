@@ -32,7 +32,9 @@ jobs:
           gradle-version: '8.9'
 
       - name: Apply runtime patch
-        run: python3 ci/apply_lfm25_runtime2.py
+        run: |
+          python3 ci/apply_lfm25_runtime2.py
+          python3 ci/fix_lfm25_runtime2_constants.py
 
       - name: Build ARM64
         run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
