@@ -1257,15 +1257,6 @@ export default function App() {
 
       {page === 'sync' && <section className="section-card settings-list"><article><div><strong>{session ? 'Cuenta conectada' : 'Modo local'}</strong><p>{session ? session.user.email : 'Puedes trabajar sin cuenta. Para sincronizar entre dispositivos necesitas iniciar sesión.'}</p></div><button className="primary" onClick={session ? handleSync : () => setAccountOpen(true)}>{session ? 'Sincronizar ahora' : 'Iniciar sesión'}</button></article><article><div><strong>Cambios pendientes</strong><p>{pending} operaciones esperan sincronización.</p></div><span className="big-number">{pending}</span></article></section>}
 
-      {page === 'settings' && <div className="settings-phase1-stack">
-        <section className="section-card settings-list">
-          <article><div><strong>Apariencia</strong><p>Usa la misma idea visual de NotCan Android.</p></div><button className="settings-action" onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Cambiar a claro' : 'Cambiar a oscuro'}</button></article>
-          <article><div><strong>Modo offline</strong><p>NotCan guarda primero en este dispositivo.</p></div><span className="status-pill">Activo</span></article>
-          <article><div><strong>Autoguardado</strong><p>Los apuntes se guardan mientras escribes.</p></div><span className="status-pill">Activo</span></article>
-          <article><div><strong>Formato por selección</strong><p>El editor web seguirá alineándose con el editor de Android durante esta fase.</p></div><span className="status-pill">Activo</span></article>
-        </section>
-        <CycleManagementPanel cycles={cycles} onChanged={refresh} />
-      </div>}
 
       {page === 'account' && <section className="section-card account-page"><div className="account-avatar">{session?.user.email?.[0]?.toUpperCase() ?? 'N'}</div><h2>{session ? 'Cuenta de NotCan' : 'Usando NotCan localmente'}</h2><p>{session?.user.email ?? 'No necesitas cuenta para estudiar. Inicia sesión si quieres sincronizar y usar NotCan AI.'}</p><button className="primary" onClick={() => setAccountOpen(true)}>{session ? 'Gestionar cuenta' : 'Iniciar sesión / Crear cuenta'}</button></section>}
     </main>
