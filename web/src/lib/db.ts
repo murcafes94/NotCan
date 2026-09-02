@@ -102,7 +102,7 @@ export async function deleteCycleTree(cycleId: string) {
   const notes = (await db.notePages.toArray()).filter((item) => classIds.has(item.classSessionId))
   const grades = (await db.gradeItems.toArray()).filter((item) => subjectIds.has(item.subjectId))
 
-  await db.transaction('rw', db.studyCycles, db.subjects, db.classSessions, db.notePages, db.gradeItems, db.outbox, async () => {
+  await db.transaction('rw', [db.studyCycles, db.subjects, db.classSessions, db.notePages, db.gradeItems, db.outbox], async () => {
     // Supabase usa soft-delete. Encolamos cada descendiente para que Android y web
     // reciban exactamente el mismo árbol eliminado, no solo el registro padre.
     for (const note of notes) { await queueDelete('note_pages', note.id); await db.notePages.delete(note.id) }
