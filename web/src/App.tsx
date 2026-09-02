@@ -16,6 +16,8 @@ import { syncNow } from './lib/sync'
 import { supabase } from './lib/supabase'
 import CycleManagementPanel from './CycleManagementPanel'
 import AcademicWorkspace, { type AcademicLevel } from './AcademicWorkspace'
+import TuNotChat from './TuNotChat'
+import UnifiedSettings from './UnifiedSettings'
 import type {
   ClassSessionRecord,
   GradeItemRecord,
@@ -77,7 +79,7 @@ function stripHtml(html: string) {
 function sanitizeEditorHtml(html: string) {
   const template = document.createElement('template')
   template.innerHTML = html
-  const allowed = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'H1', 'H2', 'UL', 'OL', 'LI', 'A', 'BLOCKQUOTE'])
+  const allowed = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'H1', 'H2', 'UL', 'OL', 'LI', 'A', 'BLOCKQUOTE', 'MARK', 'SPAN'])
 
   function clean(node: Node) {
     for (const child of Array.from(node.childNodes)) {
@@ -92,8 +94,12 @@ function sanitizeEditorHtml(html: string) {
         }
 
         for (const attribute of Array.from(element.attributes)) {
-          const keepHref = element.tagName === 'A' && attribute.name.toLowerCase() === 'href'
-          if (!keepHref) element.removeAttribute(attribute.name)
+          const name = attribute.name.toLowerCase()
+          const keepHref = element.tagName === 'A' && name === 'href'
+          const keepHighlight = element.tagName === 'MARK' && name === 'data-notcan-highlight'
+          const keepSize = element.tagName === 'SPAN' && name === 'data-notcan-size'
+          const keepAlign = ['P', 'DIV', 'H1', 'H2', 'LI', 'BLOCKQUOTE'].includes(element.tagName) && name === 'data-notcan-align'
+          if (!keepHref && !keepHighlight && !keepSize && !keepAlign) element.removeAttribute(attribute.name)
         }
 
         if (element.tagName === 'A') {
@@ -144,8 +150,12 @@ export default function App() {
   const [editorRevision, setEditorRevision] = useState(1)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [formatHint, setFormatHint] = useState('')
+  const [editorEditing, setEditorEditing] = useState(false)
+  const [editorRecoveryMessage, setEditorRecoveryMessage] = useState('')
   const editorRef = useRef<HTMLDivElement>(null)
   const loadedEditorIdRef = useRef<string | null>(null)
+  const savedSelectionRef = useRef<Range | null>(null)
+  const editorReturnRef = useRef<{ page: Page; level: AcademicLevel; subjectId: string | null; classId: string | null } | null>(null)
 
   const [localTasks, setLocalTasks] = useState<LocalTask[]>(() => {
     try { return JSON.parse(localStorage.getItem('notcan-tasks') || '[]') } catch { return [] }
@@ -387,12 +397,32 @@ export default function App() {
     return classSession.id
   }
 
+  function rememberEditorReturn() {
+    editorReturnRef.current = { page, level: academicLevel, subjectId: selectedSubjectId, classId: selectedClassId }
+  }
+
+  function closeEditor() {
+    setEditorOpen(false)
+    setEditorEditing(false)
+    setEditorRecoveryMessage('')
+    const target = editorReturnRef.current
+    if (!target) return
+    setPage(target.page)
+    setAcademicLevel(target.level)
+    setSelectedSubjectId(target.subjectId)
+    setSelectedClassId(target.classId)
+    editorReturnRef.current = null
+  }
+
+  function draftKey(noteId: string) { return `notcan-web-draft-${noteId}` }
+
   function openNewNote(classId?: string) {
     const targetClassId = classId ?? selectedClassId ?? activeClasses[0]?.id ?? null
     if (!targetClassId) {
       openSubjects()
       return
     }
+    rememberEditorReturn()
     const now = Date.now()
     const id = crypto.randomUUID()
     loadedEditorIdRef.current = null
@@ -403,20 +433,41 @@ export default function App() {
     setEditorCreatedAt(now)
     setEditorRevision(1)
     setSaveState('idle')
+    setEditorEditing(true)
+    setEditorRecoveryMessage('')
     setEditorOpen(true)
   }
 
   function openExistingNote(note: NotePageRecord) {
+    rememberEditorReturn()
     loadedEditorIdRef.current = null
+    let recovered: { title?: string; body?: string; classId?: string; updatedAt?: number } | null = null
+    try { recovered = JSON.parse(localStorage.getItem(draftKey(note.id)) || 'null') } catch { recovered = null }
+    const useDraft = Boolean(recovered?.updatedAt && recovered.updatedAt > note.updatedAtEpochMs)
     setEditorNoteId(note.id)
-    setEditorClassId(note.classSessionId)
-    setEditorTitle(note.title)
-    setEditorBody(normalizeBodyForEditor(note.body))
+    setEditorClassId(useDraft && recovered?.classId ? recovered.classId : note.classSessionId)
+    setEditorTitle(useDraft && typeof recovered?.title === 'string' ? recovered.title : note.title)
+    setEditorBody(normalizeBodyForEditor(useDraft && typeof recovered?.body === 'string' ? recovered.body : note.body))
     setEditorCreatedAt(note.createdAtEpochMs)
     setEditorRevision(note.revision)
     setSaveState('saved')
+    setEditorEditing(false)
+    setEditorRecoveryMessage(useDraft ? 'Se recuperó un borrador local más reciente.' : '')
     setEditorOpen(true)
   }
+
+  useEffect(() => {
+    if (!editorOpen || !editorNoteId) return
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(draftKey(editorNoteId), JSON.stringify({
+        title: editorTitle,
+        body: editorBody,
+        classId: editorClassId,
+        updatedAt: Date.now(),
+      }))
+    }, 220)
+    return () => window.clearTimeout(timer)
+  }, [editorOpen, editorNoteId, editorTitle, editorBody, editorClassId])
 
   useEffect(() => {
     if (!editorOpen || !editorNoteId || !editorRef.current) return
@@ -451,6 +502,8 @@ export default function App() {
         }
         await db.notePages.put(note)
         await queueUpsert('note_pages', note.id, note)
+        localStorage.removeItem(draftKey(note.id))
+        setEditorRecoveryMessage('')
         setEditorRevision(revision)
         setSaveState('saved')
         await refresh()
@@ -521,6 +574,90 @@ export default function App() {
 
     setEditorBody(editor.innerHTML)
     editor.focus()
+  }
+
+  function rememberSelection() {
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) return
+    savedSelectionRef.current = selection.getRangeAt(0).cloneRange()
+  }
+
+  function restoreSelection() {
+    const range = savedSelectionRef.current
+    if (!range) return
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
+
+  function selectedRange(): Range | null {
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection || selection.rangeCount === 0 || selection.isCollapsed || !editor.contains(selection.anchorNode)) {
+      setFormatHint('Selecciona primero el texto que quieres formatear.')
+      window.setTimeout(() => setFormatHint(''), 1800)
+      return null
+    }
+    return selection.getRangeAt(0)
+  }
+
+  function wrapSelectedText(tag: 'mark' | 'span', attribute: string, value: string) {
+    const editor = editorRef.current
+    const range = selectedRange()
+    if (!editor || !range) return
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+    const textNodes: Text[] = []
+    let current = walker.nextNode()
+    while (current) {
+      if ((current.textContent || '').length && range.intersectsNode(current)) textNodes.push(current as Text)
+      current = walker.nextNode()
+    }
+    for (const node of textNodes.reverse()) {
+      let start = node === range.startContainer ? range.startOffset : 0
+      let end = node === range.endContainer ? range.endOffset : node.data.length
+      start = Math.max(0, Math.min(start, node.data.length))
+      end = Math.max(start, Math.min(end, node.data.length))
+      if (end <= start) continue
+      const selected = node.splitText(start)
+      selected.splitText(end - start)
+      const wrapper = document.createElement(tag)
+      wrapper.setAttribute(attribute, value)
+      selected.parentNode?.insertBefore(wrapper, selected)
+      wrapper.appendChild(selected)
+    }
+    setEditorBody(editor.innerHTML)
+  }
+
+  function applyHighlight(color: 'yellow' | 'green' | 'blue' | 'pink') {
+    wrapSelectedText('mark', 'data-notcan-highlight', color)
+  }
+
+  function removeHighlight() {
+    const editor = editorRef.current
+    const range = selectedRange()
+    if (!editor || !range) return
+    const marks = Array.from(editor.querySelectorAll('mark[data-notcan-highlight]')).filter((mark) => range.intersectsNode(mark))
+    marks.forEach((mark) => mark.replaceWith(...Array.from(mark.childNodes)))
+    setEditorBody(editor.innerHTML)
+  }
+
+  function applyFontSize(size: string) {
+    wrapSelectedText('span', 'data-notcan-size', size)
+  }
+
+  function applyBlockAlignment(alignment: 'left' | 'center' | 'right' | 'justify') {
+    const editor = editorRef.current
+    const range = selectedRange()
+    if (!editor || !range) return
+    const blocks = Array.from(editor.querySelectorAll('p,div,h1,h2,li,blockquote')).filter((node) => range.intersectsNode(node)) as HTMLElement[]
+    if (blocks.length === 0) {
+      let node = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE ? range.commonAncestorContainer as HTMLElement : range.commonAncestorContainer.parentElement
+      const block = node?.closest('p,div,h1,h2,li,blockquote') as HTMLElement | null
+      if (block && editor.contains(block)) blocks.push(block)
+    }
+    blocks.forEach((block) => block.setAttribute('data-notcan-align', alignment))
+    setEditorBody(editor.innerHTML)
   }
 
   function createLinkForSelection() {
@@ -669,6 +806,12 @@ export default function App() {
     })
   }
 
+  async function askTuNot(prompt: string, mode: AiMode): Promise<{ answer: string; model?: string }> {
+    if (!session) throw new Error('Inicia sesión para usar TuNot en la web.')
+    const response = await askNotCanAi({ prompt, mode, context: aiUseNotes ? noteContext() : [] })
+    return { answer: response.answer, model: response.model ?? undefined }
+  }
+
   async function runAi(mode: AiMode = aiMode, promptOverride?: string) {
     const prompt = (promptOverride ?? aiPrompt).trim()
     if (!prompt || aiBusy) return
@@ -766,7 +909,7 @@ export default function App() {
     ] },
     { label: 'HERRAMIENTAS', items: [
       { page: 'maps', icon: '⌘', label: 'Mapas' },
-      { page: 'ai', icon: '✦', label: 'NotCan AI' },
+      { page: 'ai', icon: '✦', label: 'TuNot' },
     ] },
   ]
 
@@ -875,7 +1018,7 @@ export default function App() {
             <div className="section-title"><span>✦</span><strong>ACCESOS RÁPIDOS</strong></div>
             <button onClick={() => openNewNote()}>✎ Nuevo apunte <span>→</span></button>
             <button onClick={() => navigate('maps')}>⌘ Crear mapa conceptual <span>→</span></button>
-            <button onClick={() => navigate('ai')}>✦ Preguntar a NotCan AI <span>→</span></button>
+            <button onClick={() => navigate('ai')}>✦ Preguntar a TuNot <span>→</span></button>
           </article>
         </aside>
       </div>
@@ -884,57 +1027,31 @@ export default function App() {
   }
 
   function renderAi() {
-    const quickActions: { mode: AiMode; label: string; prompt: string }[] = [
-      { mode: 'summary', label: 'Resumir mis apuntes', prompt: 'Resume los apuntes recientes y organiza las ideas principales por tema.' },
-      { mode: 'questions', label: 'Crear preguntas', prompt: 'Crea 10 preguntas de estudio con sus respuestas a partir de mis apuntes recientes.' },
-      { mode: 'concept-map', label: 'Mapa conceptual', prompt: 'Construye un mapa conceptual textual a partir de mis apuntes recientes, indicando nodos y relaciones.' },
-    ]
-
-    return <main className="main-area feature-page ai-page">
-      <div className="feature-header">
-        <div><p className="eyebrow">HERRAMIENTAS</p><h1>NotCan AI</h1><p>Pregunta, resume, crea cuestionarios y organiza tus apuntes.</p></div>
-        <span className={`status-pill ${session ? '' : 'muted'}`}>{session ? 'Cuenta conectada' : 'Requiere sesión'}</span>
-      </div>
-
-      <div className="ai-layout">
-        <section className="section-card ai-main-card">
-          <div className="ai-welcome-row"><div className="sparkle">✦</div><div><h2>¿Qué quieres estudiar?</h2><p>NotCan puede usar tus apuntes recientes como contexto.</p></div></div>
-
-          <div className="ai-quick-actions">
-            {quickActions.map((action) => <button key={action.mode} onClick={() => {
-              setAiPrompt(action.prompt)
-              void runAi(action.mode, action.prompt)
-            }}>{action.label}</button>)}
-          </div>
-
-          <label className="ai-context-toggle">
-            <input type="checkbox" checked={aiUseNotes} onChange={(event) => setAiUseNotes(event.target.checked)} />
-            <span><strong>Usar mis apuntes como contexto</strong><small>Se enviarán hasta 8 apuntes recientes a NotCan AI para esta consulta.</small></span>
-          </label>
-
-          <div className="ai-composer ai-composer-live">
-            <textarea value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} placeholder="Por ejemplo: explícame la diferencia entre naturaleza y persona…" />
-            <button className="primary" disabled={aiBusy || !aiPrompt.trim()} onClick={() => void runAi()}>{aiBusy ? 'Pensando…' : 'Enviar'}</button>
-          </div>
-
-          {aiError && <div className="ai-error"><strong>No pude responder todavía</strong><p>{aiError}</p></div>}
-          {aiAnswer && <article className="ai-answer"><div className="ai-answer-head"><span className="sparkle small">✦</span><strong>NotCan AI</strong>{aiModel && <small>{aiModel}</small>}</div><div className="ai-answer-text">{aiAnswer}</div></article>}
-        </section>
-
-        <aside className="section-card ai-side-card">
-          <div className="section-title"><strong>CONTEXTO</strong></div>
-          <h3>{notes.length} apuntes disponibles</h3>
-          <p>Cuando activas el contexto, la IA prioriza lo que ya has escrito en NotCan.</p>
-          <div className="ai-source-list">{notes.slice(0, 5).map((note) => <button key={note.id} onClick={() => openExistingNote(note)}>✎ <span>{note.title}</span></button>)}</div>
-          <p className="ai-privacy-note">La clave del proveedor no se guarda en la página pública. La llamada pasa por el backend de NotCan.</p>
-        </aside>
-      </div>
-    </main>
+    return <TuNotChat
+      connected={Boolean(session)}
+      contextCount={activeNotes.length}
+      useContext={aiUseNotes}
+      onUseContextChange={setAiUseNotes}
+      onAsk={askTuNot}
+      onOpenAccount={() => setAccountOpen(true)}
+    />
   }
 
   function renderPage() {
     if (page === 'home') return renderHome()
     if (page === 'ai') return renderAi()
+    if (page === 'settings') return <main className="main-area feature-page"><UnifiedSettings
+      theme={theme}
+      onThemeChange={setTheme}
+      session={session}
+      pending={pending}
+      syncText={syncLabel.text}
+      syncKind={syncLabel.kind}
+      onSync={session ? handleSync : () => setAccountOpen(true)}
+      onAccount={() => setAccountOpen(true)}
+      cycles={cycles}
+      onCyclesChanged={refresh}
+    /></main>
 
     const titles: Record<Page, [string, string]> = {
       home: ['', ''],
@@ -1133,7 +1250,7 @@ export default function App() {
             }}
           />
           <button onClick={addMapNode}>＋ Nodo</button>
-          <button onClick={() => { setAiPrompt('Crea un mapa conceptual a partir de mis apuntes recientes.'); setAiMode('concept-map'); navigate('ai') }}>✦ Generar con IA</button>
+          <button onClick={() => { setAiPrompt('Crea un mapa conceptual a partir de mis apuntes recientes.'); setAiMode('concept-map'); navigate('ai') }}>✦ Generar con TuNot</button>
         </div>
         <small className="map-composer-hint">El texto de cada nodo se muestra completo. Ctrl/⌘ + Enter añade el nodo.</small>
       </section>}
@@ -1162,9 +1279,7 @@ export default function App() {
       <div className="brand-row"><div className="brand-mark">N</div><div><strong>NotCan</strong><span>Web</span></div></div>
       {navGroups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button key={item.page} className={`nav-item ${page === item.page && !editorOpen ? 'active' : ''} ${item.page === 'ai' ? 'ai-nav' : ''}`} onClick={() => navigate(item.page)}><span>{item.icon}</span>{item.label}</button>)}</div>)}
       <div className="sidebar-bottom">
-        <button className={`nav-item ${page === 'sync' ? 'active' : ''}`} onClick={() => navigate('sync')}><span>↻</span>Sincronización <i className={`dot ${syncLabel.kind}`} /></button>
-        <button className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')}><span>⚙</span>Ajustes</button>
-        <button className={`nav-item ${page === 'account' ? 'active' : ''}`} onClick={() => navigate('account')}><span>○</span>Cuenta</button>
+        <button className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')}><span>⚙</span>Ajustes <i className={`dot ${session ? syncLabel.kind : 'muted'}`} /></button>
       </div>
     </aside>
     {page !== 'home' && sidebarOpen && <button className="sidebar-scrim" aria-label="Cerrar navegación" onClick={() => setSidebarOpen(false)} />}
@@ -1180,46 +1295,63 @@ export default function App() {
           <button className="sync-status" onClick={handleSync}><span className={`dot ${session ? syncLabel.kind : 'muted'}`} /><span><strong>{session ? syncLabel.text : 'Solo local'}</strong><small>{session ? (pending ? `${pending} cambios pendientes` : 'Todo al día') : 'Inicia sesión para sincronizar'}</small></span></button>
           <button className="theme-toggle" aria-label={theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro'} title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'} onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀' : '☾'}</button>
           <button className="new-button" onClick={() => openNewNote()}>＋ Nuevo</button>
-          <button className="avatar-button" onClick={() => navigate('account')}>{session?.user.email?.[0]?.toUpperCase() ?? 'N'}</button>
+          <button className="avatar-button" onClick={() => navigate('settings')}>{session?.user.email?.[0]?.toUpperCase() ?? 'N'}</button>
         </div>
       </header>
 
       {editorOpen ? <main className="note-editor-page">
         <div className="editor-toolbar">
-          <button className="back-editor" onClick={() => setEditorOpen(false)}>← Volver</button>
+          <button className="back-editor" onClick={closeEditor}>← Volver</button>
           <div className="editor-save-state"><span className={`dot ${saveState === 'saved' ? 'good' : saveState === 'saving' ? 'warn' : 'muted'}`} />{saveText}</div>
-          <div className="editor-toolbar-actions"><button className="editor-ai-button" onClick={askAiAboutCurrentNote}>✦ IA</button><button className="editor-delete-button" onClick={() => void deleteCurrentNote()}>⌫ Eliminar</button></div>
+          <div className="editor-toolbar-actions"><div className="editor-mode-toggle"><button className={!editorEditing ? 'active' : ''} onClick={() => setEditorEditing(false)}>Lectura</button><button className={editorEditing ? 'active' : ''} onClick={() => setEditorEditing(true)}>Editar</button></div><button className="editor-ai-button" onClick={askAiAboutCurrentNote}>✦ TuNot</button><button className="editor-delete-button" onClick={() => void deleteCurrentNote()}>⌫ Eliminar</button></div>
         </div>
 
         <div className="editor-sheet">
           <div className="editor-meta-row">
-            <select value={editorClassId ?? ''} onChange={(event) => setEditorClassId(event.target.value)}>{activeClasses.map((item) => <option key={item.id} value={item.id}>{activeSubjects.find((subject) => subject.id === item.subjectId)?.name ?? 'Materia'} · {item.title}</option>)}</select>
+            <select disabled={!editorEditing} value={editorClassId ?? ''} onChange={(event) => setEditorClassId(event.target.value)}>{activeClasses.map((item) => <option key={item.id} value={item.id}>{activeSubjects.find((subject) => subject.id === item.subjectId)?.name ?? 'Materia'} · {item.title}</option>)}</select>
             <span>{editorCreatedAt ? fullDate(editorCreatedAt) : ''}</span>
           </div>
-          <input className="editor-title-input" value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="Título del apunte" />
+          <input className="editor-title-input" readOnly={!editorEditing} value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="Título del apunte" />
 
-          <div className="format-bar" role="toolbar" aria-label="Formato del apunte">
-            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('bold')} title="Negrita (solo selección)"><strong>B</strong></button>
-            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('italic')} title="Cursiva (solo selección)"><em>I</em></button>
-            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('underline')} title="Subrayado (solo selección)"><u>U</u></button>
-            <span />
-            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('formatBlock', 'H1')}>H1</button>
-            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('formatBlock', 'H2')}>H2</button>
+          {editorRecoveryMessage && <div className="editor-recovery-note">↻ {editorRecoveryMessage}</div>}
+          <div className="editor-selection-bar" role="toolbar" aria-label="Resaltado por selección">
+            <strong>Resaltar</strong>
+            <button onMouseDown={preserveSelection} onClick={() => applyHighlight('yellow')} title="Amarillo"><span className="highlight-dot highlight-yellow" /></button>
+            <button onMouseDown={preserveSelection} onClick={() => applyHighlight('green')} title="Verde"><span className="highlight-dot highlight-green" /></button>
+            <button onMouseDown={preserveSelection} onClick={() => applyHighlight('blue')} title="Azul"><span className="highlight-dot highlight-blue" /></button>
+            <button onMouseDown={preserveSelection} onClick={() => applyHighlight('pink')} title="Rosado"><span className="highlight-dot highlight-pink" /></button>
+            <button onMouseDown={preserveSelection} onClick={removeHighlight}>Quitar resaltado</button>
+          </div>
+          {editorEditing && <div className="format-bar phase3" role="toolbar" aria-label="Formato del apunte">
+            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('bold')} title="Negrita"><strong>B</strong></button>
+            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('italic')} title="Cursiva"><em>I</em></button>
+            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('underline')} title="Subrayado"><u>U</u></button>
+            <span className="format-divider" />
+            <select defaultValue="16" onMouseDown={rememberSelection} onChange={(event) => { restoreSelection(); applyFontSize(event.target.value) }} aria-label="Tamaño de fuente">
+              {[12,14,16,18,20,24,28,32].map((size) => <option key={size} value={size}>{size}px</option>)}
+            </select>
+            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('formatBlock', 'H1')}>T1</button>
+            <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('formatBlock', 'H2')}>T2</button>
+            <span className="format-divider" />
+            <button onMouseDown={preserveSelection} onClick={() => applyBlockAlignment('left')} title="Izquierda">≡←</button>
+            <button onMouseDown={preserveSelection} onClick={() => applyBlockAlignment('center')} title="Centrar">≡</button>
+            <button onMouseDown={preserveSelection} onClick={() => applyBlockAlignment('right')} title="Derecha">→≡</button>
+            <button onMouseDown={preserveSelection} onClick={() => applyBlockAlignment('justify')} title="Justificar">☰</button>
+            <span className="format-divider" />
             <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('insertUnorderedList')}>• Lista</button>
             <button onMouseDown={preserveSelection} onClick={() => applySelectionCommand('insertOrderedList')}>1. Lista</button>
-            <span />
             <button onMouseDown={preserveSelection} onClick={createLinkForSelection}>↗ Enlace</button>
-            <button onClick={askAiAboutCurrentNote}>✦ IA</button>
-          </div>
+            <button onClick={askAiAboutCurrentNote}>✦ TuNot</button>
+          </div>}
           {formatHint && <div className="format-hint">{formatHint}</div>}
 
           <div
             ref={editorRef}
-            className="editor-body-input rich-editor"
-            contentEditable
+            className={`editor-body-input rich-editor ${editorEditing ? 'edit-mode' : 'read-mode'}`}
+            contentEditable={editorEditing}
             suppressContentEditableWarning
             data-placeholder="Empieza a escribir tus apuntes…"
-            onInput={(event) => setEditorBody(event.currentTarget.innerHTML)}
+            onInput={(event) => { if (editorEditing) setEditorBody(event.currentTarget.innerHTML) }}
             onPaste={(event) => {
               event.preventDefault()
               const text = event.clipboardData.getData('text/plain')

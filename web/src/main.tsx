@@ -12,6 +12,7 @@ import './rich-editor-ai.css'
 import './ai-provider-ui.css'
 import './web-phase1.css'
 import './academic-workspace.css'
+import './web-phase3.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
