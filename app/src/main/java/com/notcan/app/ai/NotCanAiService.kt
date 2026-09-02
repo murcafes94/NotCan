@@ -61,27 +61,35 @@ class NotCanAiService(private val context: Context) {
             return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
         }
 
-        suspend fun localFallback(): String {
+        suspend fun localFallback(skipLfm: Boolean = false): String {
             val lfmEligible = !mapRequest && !flashcardRequest && !quizRequest
-            if (lfmEligible && localLfm.isAvailable()) {
+            if (!skipLfm && lfmEligible && localLfm.isAvailable()) {
                 try {
-                    return localLfm.answer(
+                    val answer = localLfm.answer(
                         subjectName = subjectName,
                         notes = plainNotes,
                         transcript = plainTranscript,
                         question = localQuestion,
                         strictSources = strictSources
                     )
-                } catch (_: Throwable) {
-                    // El motor extractivo permanece como red de seguridad si llama.cpp falla.
+                    preferences.lastLfmError = ""
+                    return markEngine("LFM2.5 local", answer)
+                } catch (t: Throwable) {
+                    preferences.lastLfmError = t.message ?: t.javaClass.simpleName
                 }
             }
-            return OfflineTuNotEngine.answer(
+            val basic = OfflineTuNotEngine.answer(
                 subjectName = subjectName,
                 notes = plainNotes,
                 transcript = plainTranscript,
                 question = localQuestion
             )
+            return markEngine("Local básico", basic)
+        }
+
+        when (preferences.aiEnginePreference) {
+            "LFM2.5 local" -> return localFallback(skipLfm = false)
+            "Local básico" -> return localFallback(skipLfm = true)
         }
 
         if (!isConfigured()) return localFallback()
@@ -239,11 +247,14 @@ class NotCanAiService(private val context: Context) {
         }
 
         return try {
-            sendToMistral(prompt)
+            markEngine("Mistral", sendToMistral(prompt))
         } catch (_: Throwable) {
             localFallback()
         }
     }
+
+    private fun markEngine(engine: String, text: String): String =
+        "<<<NOTCAN_ENGINE:${engine.replace(">", "")}>>>\n$text"
 
     private fun sendToMistral(prompt: String): String {
         val apiKey = credentials.apiKey()

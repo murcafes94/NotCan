@@ -64,17 +64,15 @@ class LocalLfmTuNotEngine(context: Context) {
             engine.sendUserPrompt(prompt, PREDICT_TOKENS).collect { token -> output.append(token) }
         }
         sanitizeModelOutput(output.toString())
-            .ifBlank { error("LFM2.5 produjo únicamente tokens de control") }
+            .ifBlank { error("LFM2.5 no produjo texto utilizable") }
     }
 
-    private fun sanitizeModelOutput(raw: String): String {
-        return raw
-            .replace(SPECIAL_TOKEN_REGEX, "")
-            .replace("</pad/>", "")
-            .replace("</pad>", "")
-            .replace("<pad>", "")
-            .trim()
-    }
+    private fun sanitizeModelOutput(raw: String): String = raw
+        .replace(SPECIAL_TOKEN_REGEX, "")
+        .replace("</pad/>", "")
+        .replace("</pad>", "")
+        .replace("<pad>", "")
+        .trim()
 
     private suspend fun ensureModelReady(engine: InferenceEngine) {
         var state = withTimeout(INIT_TIMEOUT_MS) {
@@ -97,11 +95,11 @@ class LocalLfmTuNotEngine(context: Context) {
 
     companion object {
         const val MODEL_LABEL = "LFM2.5 1.2B · local"
-        private const val MAX_SOURCE_PART_CHARS = 4_200
-        private const val MAX_SOURCE_CHARS = 8_400
-        private const val PREDICT_TOKENS = 768
-        private const val INIT_TIMEOUT_MS = 45_000L
-        private const val GENERATION_TIMEOUT_MS = 120_000L
+        private const val MAX_SOURCE_PART_CHARS = 3_600
+        private const val MAX_SOURCE_CHARS = 7_200
+        private const val PREDICT_TOKENS = 512
+        private const val INIT_TIMEOUT_MS = 120_000L
+        private const val GENERATION_TIMEOUT_MS = 180_000L
         private val SPECIAL_TOKEN_REGEX = Regex("""<\|[^>]+\|>""")
         private val SYSTEM_PROMPT = """
             Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.
@@ -109,7 +107,7 @@ class LocalLfmTuNotEngine(context: Context) {
             No inventes citas, páginas, autores, fechas ni afirmaciones ausentes de una fuente cuando el usuario pida trabajar solo con sus fuentes.
             Distingue una explicación general de una afirmación tomada del material del estudiante. No muestres cadena de pensamiento.
             Para teología católica, distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica; no presentes una opinión como magisterio.
-            Usa Markdown sencillo: párrafos breves, títulos solo cuando ayuden y listas cuando sean útiles.
+            No llames herramientas ni emitas tokens especiales. Responde con texto normal y Markdown sencillo.
         """.trimIndent()
     }
 }

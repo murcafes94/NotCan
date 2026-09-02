@@ -95,6 +95,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
     var detail by remember { mutableStateOf(preferences.aiDetail) }
+    var aiEngine by remember { mutableStateOf(preferences.aiEnginePreference) }
     var autoTranscribe by remember { mutableStateOf(preferences.autoTranscribeAfterRecording) }
     var preferOnlineTranscription by remember { mutableStateOf(preferences.preferOnlineTranscription) }
     var autoCues by remember { mutableStateOf(preferences.autoDetectAcademicCues) }
@@ -164,6 +165,43 @@ fun SettingsScreen(preferences: NotCanPreferences) {
         )
 
         CycleManagementSection(cycles)
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = NotCanBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Motor de TuNot", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text("Elige Automático o fuerza un motor para probarlo.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Automático", "Mistral").forEach { option ->
+                        FilterChip(
+                            selected = aiEngine == option,
+                            onClick = { aiEngine = option; preferences.aiEnginePreference = option },
+                            label = { Text(option) }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("LFM2.5 local", "Local básico").forEach { option ->
+                        FilterChip(
+                            selected = aiEngine == option,
+                            onClick = { aiEngine = option; preferences.aiEnginePreference = option },
+                            label = { Text(option) }
+                        )
+                    }
+                }
+                if (aiEngine == "LFM2.5 local" && studyState != StudyModelState.INSTALLED) {
+                    Text("LFM2.5 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                }
+                if (preferences.lastLfmError.isNotBlank()) {
+                    Text("Último fallo de LFM2.5: ${preferences.lastLfmError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

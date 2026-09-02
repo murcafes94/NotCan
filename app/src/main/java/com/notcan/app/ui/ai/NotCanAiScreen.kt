@@ -312,21 +312,27 @@ private data class ChatMessage(
     val rawContent: String = content,
     val mapArtifact: ParsedStudyMapArtifact? = null,
     val flashcards: ParsedFlashcardArtifact? = null,
-    val quizArtifact: ParsedQuizArtifact? = null
+    val quizArtifact: ParsedQuizArtifact? = null,
+    val engineLabel: String? = null
 )
+
+private val engineMarkerRegex = Regex("""^<<<NOTCAN_ENGINE:([^>]+)>>>\s*""")
 
 private fun messageFromRaw(role: ChatRole, raw: String): ChatMessage {
     if (role == ChatRole.USER) return ChatMessage(role, raw, raw)
-    val map = StudyMapArtifactParser.parse(raw)
-    val deck = StudyFlashcardArtifactParser.parse(raw)
-    val quiz = StudyQuizArtifactParser.parse(raw)
+    val engineMatch = engineMarkerRegex.find(raw)
+    val engineLabel = engineMatch?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+    val cleanRaw = engineMatch?.let { raw.removeRange(it.range) } ?: raw
+    val map = StudyMapArtifactParser.parse(cleanRaw)
+    val deck = StudyFlashcardArtifactParser.parse(cleanRaw)
+    val quiz = StudyQuizArtifactParser.parse(cleanRaw)
     val visible = when {
-        map != null -> StudyMapArtifactParser.stripArtifact(raw)
-        deck != null -> StudyFlashcardArtifactParser.stripArtifact(raw)
-        quiz != null -> StudyQuizArtifactParser.stripArtifact(raw)
-        else -> sanitizeUnparsedArtifact(raw)
+        map != null -> StudyMapArtifactParser.stripArtifact(cleanRaw)
+        deck != null -> StudyFlashcardArtifactParser.stripArtifact(cleanRaw)
+        quiz != null -> StudyQuizArtifactParser.stripArtifact(cleanRaw)
+        else -> sanitizeUnparsedArtifact(cleanRaw)
     }
-    return ChatMessage(role, visible, raw, map, deck, quiz)
+    return ChatMessage(role, visible, raw, map, deck, quiz, engineLabel)
 }
 
 private fun sanitizeUnparsedArtifact(raw: String): String {
@@ -429,7 +435,9 @@ private fun AiChat(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 720.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (wide) 18.dp else 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            CompactChatHeader(subjectName, classTitle, configured, toolsOpen) { toolsOpen = !toolsOpen }
+            val actualEngine = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.engineLabel
+                ?: if (configured) "Automático" else "Local"
+            CompactChatHeader(subjectName, classTitle, actualEngine, toolsOpen) { toolsOpen = !toolsOpen }
             if (wide) {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     AnimatedVisibility(visible = toolsOpen) {
@@ -531,7 +539,7 @@ private fun CompactAiTools(
 }
 
 @Composable
-private fun CompactChatHeader(subjectName: String?, classTitle: String?, configured: Boolean, toolsOpen: Boolean, onToggleTools: () -> Unit) {
+private fun CompactChatHeader(subjectName: String?, classTitle: String?, engineLabel: String, toolsOpen: Boolean, onToggleTools: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -542,17 +550,18 @@ private fun CompactChatHeader(subjectName: String?, classTitle: String?, configu
                 maxLines = 1
             )
         }
-        ConnectionBadge(configured)
+        ConnectionBadge(engineLabel)
         IconButton(onClick = onToggleTools) { Icon(Icons.Default.Menu, if (toolsOpen) "Ocultar opciones" else "Opciones de TuNot", tint = NotCanBlue) }
     }
 }
 
 @Composable
-private fun ConnectionBadge(configured: Boolean) {
-    Surface(color = NotCanBlue.copy(alpha = if (configured) 0.13f else 0.09f), shape = RoundedCornerShape(50)) {
+private fun ConnectionBadge(engineLabel: String) {
+    val emphasized = engineLabel.contains("Mistral") || engineLabel.contains("LFM2.5")
+    Surface(color = NotCanBlue.copy(alpha = if (emphasized) 0.13f else 0.09f), shape = RoundedCornerShape(50)) {
         Text(
-            if (configured) "Mistral" else "Local",
-            color = if (configured) NotCanBlue else NotCanGray,
+            engineLabel,
+            color = if (emphasized) NotCanBlue else NotCanGray,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -652,7 +661,15 @@ private fun ChatBubble(
             modifier = Modifier.fillMaxWidth(if (user) 0.78f else 0.98f)
         ) {
             Column(Modifier.padding(horizontal = 15.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (user) "Tú" else "TuNot", color = if (user) NotCanBlue else NotCanGray, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (user) "Tú" else buildString {
+                        append("TuNot")
+                        message.engineLabel?.let { append(" · $it") }
+                    },
+                    color = if (user) NotCanBlue else NotCanGray,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
                 val safeVisibleContent = if (user) message.content else sanitizeUnparsedArtifact(message.content)
                 if (safeVisibleContent.isNotBlank()) TuNotRichText(safeVisibleContent, color = NotCanOffWhite, style = MaterialTheme.typography.bodyMedium)
                 if (!user && safeVisibleContent.isNotBlank()) {

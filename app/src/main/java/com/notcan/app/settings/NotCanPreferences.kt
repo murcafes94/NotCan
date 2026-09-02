@@ -20,6 +20,14 @@ class NotCanPreferences(context: Context) {
         get() = prefs.getString(KEY_AI_DETAIL, "Equilibrado") ?: "Equilibrado"
         set(value) = prefs.edit().putString(KEY_AI_DETAIL, value).apply()
 
+    var aiEnginePreference: String
+        get() = prefs.getString(KEY_AI_ENGINE, "Automático") ?: "Automático"
+        set(value) = prefs.edit().putString(KEY_AI_ENGINE, value).apply()
+
+    var lastLfmError: String
+        get() = prefs.getString(KEY_LAST_LFM_ERROR, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_LAST_LFM_ERROR, value.take(500)).apply()
+
     var mistralAgentId: String
         get() = prefs.getString(KEY_MISTRAL_AGENT_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_MISTRAL_AGENT_ID, value.trim()).apply()
@@ -54,6 +62,8 @@ class NotCanPreferences(context: Context) {
         private const val KEY_ASSISTANT_NAME = "assistant_name"
         private const val KEY_AI_INSTRUCTIONS = "ai_instructions"
         private const val KEY_AI_DETAIL = "ai_detail"
+        private const val KEY_AI_ENGINE = "ai_engine_preference"
+        private const val KEY_LAST_LFM_ERROR = "last_lfm_error"
         private const val KEY_MISTRAL_AGENT_ID = "mistral_agent_id"
         private const val KEY_MISTRAL_CONVERSATION_ID = "mistral_conversation_id"
         private const val KEY_DARK_THEME = "dark_theme"
