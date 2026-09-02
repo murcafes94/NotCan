@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js'
+import ApiSettingsPanel from './ApiSettingsPanel'
 import CycleManagementPanel from './CycleManagementPanel'
 import type { StudyCycleRecord } from './types/sync'
 
@@ -18,7 +19,7 @@ type Props = {
 export default function UnifiedSettings({ theme, onThemeChange, session, pending, syncText, syncKind, onSync, onAccount, cycles, onCyclesChanged }: Props) {
   return <div className="unified-settings">
     <section className="settings-hero">
-      <div><p className="eyebrow">NOTCAN</p><h1>Ajustes</h1><p>Cuenta, sincronización, apariencia, estudio y ciclos en un solo lugar.</p></div>
+      <div><p className="eyebrow">NOTCAN</p><h1>Ajustes</h1><p>Cuenta, sincronización, apariencia, APIs, estudio y ciclos en un solo lugar.</p></div>
       <span className={`status-pill ${syncKind}`}>{session ? syncText : 'Solo local'}</span>
     </section>
 
@@ -49,10 +50,12 @@ export default function UnifiedSettings({ theme, onThemeChange, session, pending
         <header><span>✦</span><div><h2>TuNot</h2><p>Asistente de estudio de NotCan.</p></div></header>
         <div className="settings-data-row"><span>Interfaz</span><strong>Chat</strong></div>
         <div className="settings-data-row"><span>Contexto</span><strong>Apuntes del ciclo activo</strong></div>
-        <p className="settings-note">En la web, las consultas al proveedor de IA requieren una cuenta conectada. El material local no se envía salvo cuando activas “Usar mis apuntes”.</p>
+        <div className="settings-data-row"><span>Motores</span><strong>Mistral · Ollama · fuentes</strong></div>
+        <p className="settings-note">El material local solo se incluye cuando activas “Usar mis apuntes”. Las credenciales personales se administran en “APIs y motores” y no se sincronizan con tus apuntes.</p>
       </section>
     </div>
 
+    <ApiSettingsPanel />
     <CycleManagementPanel cycles={cycles} onChanged={onCyclesChanged} />
   </div>
 }
