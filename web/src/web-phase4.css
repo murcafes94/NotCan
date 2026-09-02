@@ -1,0 +1,127 @@
+/* NotCan Web · Fase 4: pulido responsive + APIs */
+
+/* ---------- API settings ---------- */
+.api-settings { padding: 20px; display: grid; gap: 17px; overflow: hidden; }
+.api-settings-head { display: flex; gap: 13px; align-items: flex-start; }
+.api-settings-head h2 { margin: 1px 0 4px; font-size: 20px; }
+.api-settings-head p { margin: 0; color: var(--muted); line-height: 1.5; }
+.api-settings-icon { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 13px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 13%, var(--panel-2)); color: var(--accent); font-size: 21px; }
+.api-provider-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(190px,280px); gap: 16px; align-items: center; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel-2); }
+.api-provider-row > div { display: grid; gap: 4px; }
+.api-provider-row small { color: var(--muted); line-height: 1.45; }
+.api-provider-row select, .api-card input, .api-card select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 9px; padding: 10px 11px; outline: none; }
+.api-provider-row select:focus, .api-card input:focus, .api-card select:focus { border-color: color-mix(in srgb, var(--accent) 62%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.api-cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.api-card { display: grid; gap: 11px; padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--panel) 96%, var(--accent) 4%); min-width: 0; }
+.api-card.managed { align-content: start; }
+.api-card.managed > p { color: var(--muted); margin: 2px 0 0; line-height: 1.55; }
+.api-card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.api-card-title > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.api-card-title > div > div { display: grid; gap: 2px; min-width: 0; }
+.api-card-title small { color: var(--muted); font-size: 11px; }
+.api-logo { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; color: #fff; background: #ef783d; }
+.api-logo.groq { background: #d95845; }.api-logo.local { background: #4b6a78; }.api-logo.supa { background: #2c9e75; }
+.api-state { white-space: nowrap; font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; }
+.api-state.ready { color: #2d9b6b; border-color: color-mix(in srgb, #2d9b6b 35%, var(--line)); background: color-mix(in srgb, #2d9b6b 8%, transparent); }
+.api-card label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
+.api-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.api-actions button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 9px; padding: 9px 11px; cursor: pointer; }
+.api-actions button:disabled { opacity: .42; cursor: default; }.api-actions button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+.api-security-note { font-size: 10.5px !important; color: var(--muted) !important; line-height: 1.5 !important; padding-top: 2px; }
+.api-toast { justify-self: start; color: #2d9b6b; background: color-mix(in srgb, #2d9b6b 9%, var(--panel)); border: 1px solid color-mix(in srgb, #2d9b6b 28%, var(--line)); border-radius: 9px; padding: 7px 10px; font-size: 11px; }
+
+/* ---------- General polish ---------- */
+.section-card, .academic-subject-card, .academic-class-card, .academic-note-card { transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+@media (hover:hover) {
+  .academic-subject-card:hover, .academic-class-card:hover, .academic-note-card:hover { transform: translateY(-1px); box-shadow: 0 9px 25px rgba(0,0,0,.08); }
+}
+:root[data-theme='light'] .section-card, :root[data-theme='light'] .api-card, :root[data-theme='light'] .tunot-bubble { box-shadow: 0 5px 20px rgba(44,56,82,.045); }
+:root[data-theme='light'] .tunot-chat-page, :root[data-theme='light'] .note-editor-page { background: #f8f9fc; }
+
+/* TuNot feels like a native chat rather than a form */
+.tunot-chat-head { min-height: 72px; }
+.tunot-message-text { font-size: 14px; }
+.tunot-composer-dock { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.tunot-composer textarea { scrollbar-width: thin; }
+.tunot-message-actions button:hover { color: var(--text); }
+
+/* Editor: preserve reading space */
+.note-editor-page .editor-sheet { width: min(940px, calc(100% - 32px)); margin-inline: auto; }
+.editor-toolbar { backdrop-filter: blur(16px); }
+.editor-title-input { letter-spacing: -.02em; }
+.rich-editor { line-height: 1.72; }
+.format-bar.phase3 button, .format-bar.phase3 select { min-height: 34px; }
+.editor-selection-bar { width: fit-content; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.editor-selection-bar::-webkit-scrollbar { display: none; }
+
+/* Settings hierarchy */
+.unified-settings { max-width: 1180px; margin: 0 auto; }
+.settings-hero { padding: 3px 1px 2px; }
+.settings-group, .api-settings { border-radius: 15px; }
+.settings-data-row strong { text-align: right; overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .api-cards { grid-template-columns: 1fr; }
+  .api-provider-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  /* The recorded mobile layout had too many desktop controls fighting for width. */
+  .global-topbar { gap: 7px; padding-inline: 9px; }
+  .topbar-actions { gap: 5px; }
+  .topbar-actions .sync-status > span:last-child { display: none; }
+  .topbar-actions .sync-status { width: 35px; height: 35px; padding: 0; display: grid; place-items: center; border-radius: 10px; }
+  .topbar-actions .sync-status > .dot { margin: 0; }
+  .topbar-actions .new-button { width: 36px; height: 36px; padding: 0; overflow: hidden; font-size: 0; display: grid; place-items: center; }
+  .topbar-actions .new-button::after { content: '+'; font-size: 21px; line-height: 1; }
+  .theme-toggle, .avatar-button { width: 36px; height: 36px; }
+  .search-box kbd { display: none; }
+
+  .tunot-chat-head { min-height: 58px; padding: 10px 11px; position: sticky; top: 0; }
+  .tunot-orb { width: 36px; height: 36px; border-radius: 11px; }
+  .tunot-identity h1 { font-size: 20px; }
+  .tunot-head-actions .status-pill { display: none; }
+  .tunot-new-chat { width: 36px; height: 36px; overflow: hidden; font-size: 0; padding: 0; }
+  .tunot-new-chat::after { content: '+'; font-size: 20px; }
+  .tunot-conversation { width: calc(100% - 18px); padding: 14px 0 150px; }
+  .tunot-message { grid-template-columns: 30px minmax(0,1fr); gap: 7px; margin-bottom: 14px; }
+  .tunot-message.user { grid-template-columns: minmax(0,1fr) 30px; }
+  .tunot-message-avatar { width: 30px; height: 30px; border-radius: 9px; font-size: 11px; }
+  .tunot-bubble { border-radius: 13px; padding: 11px 12px; }
+  .tunot-message.user .tunot-bubble { max-width: 91%; }
+  .tunot-message-text { font-size: 13.5px; line-height: 1.58; }
+  .tunot-context-row { padding-inline: 4px; }
+  .tunot-context-row small { max-width: 48%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tunot-composer-dock { padding-inline: 9px; }
+  .tunot-composer { border-radius: 16px; padding-left: 12px; }
+
+  .settings-hero { align-items: center; }
+  .settings-hero h1 { font-size: 25px; }
+  .settings-hero > .status-pill { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .settings-group, .api-settings { padding: 14px; }
+  .api-settings-head { gap: 10px; }
+  .api-settings-icon { width: 36px; height: 36px; flex-basis: 36px; border-radius: 11px; }
+  .api-settings-head h2 { font-size: 18px; }
+  .api-card { padding: 13px; }
+  .api-card-title { align-items: center; }
+  .api-card-title small { display: none; }
+  .api-provider-row { padding: 11px; }
+
+  .note-editor-page .editor-sheet { width: calc(100% - 12px); }
+  .editor-toolbar { padding: 7px 8px; gap: 5px; }
+  .back-editor { max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .editor-save-state { font-size: 10px; }
+  .editor-toolbar-actions { gap: 4px; }
+  .editor-toolbar-actions button { padding-inline: 8px; }
+  .editor-meta-row { gap: 7px; }
+  .editor-title-input { font-size: clamp(25px, 8vw, 34px); }
+  .format-bar.phase3 { margin-inline: -3px; padding-inline: 3px; }
+  .rich-editor { min-height: 60vh; font-size: 15px; }
+}
+
+@media (max-width: 430px) {
+  .api-card-title .api-state { font-size: 0; width: 10px; height: 10px; border-radius: 50%; padding: 0; background: var(--muted); border: 0; }
+  .api-card-title .api-state.ready { background: #2d9b6b; }
+  .settings-toggle-row { align-items: flex-start; }
+  .settings-toggle-row .status-pill { flex: 0 0 auto; }
+}
