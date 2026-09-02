@@ -14,6 +14,7 @@ import { askNotCanAi, type AiContextItem } from './lib/ai'
 import { db, getDeviceId, queueDelete, queueUpsert, seedDemoIfEmpty } from './lib/db'
 import { syncNow } from './lib/sync'
 import { supabase } from './lib/supabase'
+import CycleManagementPanel from './CycleManagementPanel'
 import type {
   ClassSessionRecord,
   GradeItemRecord,
@@ -121,6 +122,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('notcan-theme') === 'light' ? 'light' : 'dark'))
 
   const [session, setSession] = useState<Session | null>(null)
   const [accountOpen, setAccountOpen] = useState(false)
@@ -186,7 +188,6 @@ export default function App() {
     setGrades(gradeRows)
     setPending(outboxCount)
     if (!editorClassId && classRows[0]) setEditorClassId(classRows[0].id)
-    if (!selectedSubjectId && subjectRows[0]) setSelectedSubjectId(subjectRows[0].id)
   }
 
   useEffect(() => {
@@ -203,6 +204,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('notcan-files-meta', JSON.stringify(localFiles))
   }, [localFiles])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('notcan-theme', theme)
+  }, [theme])
 
   useEffect(() => {
     if (page !== 'home') setSidebarOpen(false)
@@ -224,17 +230,18 @@ export default function App() {
     ? subjects.find((item) => item.id === latestClass.subjectId) ?? subjects[0] ?? null
     : subjects[0] ?? null
 
-  const subjectCards = useMemo(() => subjects.slice(0, 4).map((subject, index) => ({
+  const activeCycle = cycles.find((cycle) => cycle.isActive) ?? cycles[0] ?? null
+  const activeSubjects = useMemo(() => activeCycle ? subjects.filter((subject) => subject.cycleId === activeCycle.id) : subjects, [subjects, activeCycle?.id])
+  const subjectCards = useMemo(() => activeSubjects.slice(0, 4).map((subject, index) => ({
     subject,
     index,
     classCount: classes.filter((item) => item.subjectId === subject.id).length,
     noteCount: notes.filter((note) => classes.find((c) => c.id === note.classSessionId)?.subjectId === subject.id).length,
-  })), [subjects, classes, notes])
+  })), [activeSubjects, classes, notes])
 
-  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId) ?? subjects[0] ?? null
+  const selectedSubject = activeSubjects.find((s) => s.id === selectedSubjectId) ?? null
   const selectedSubjectClasses = classes.filter((c) => c.subjectId === selectedSubject?.id)
   const selectedGrades = grades.filter((grade) => grade.subjectId === selectedSubject?.id)
-  const activeCycle = cycles.find((cycle) => cycle.isActive) ?? cycles[0] ?? null
   const todayKey = new Date().toDateString()
   const todayClasses = classes.filter((classSession) => new Date(classSession.startedAtEpochMs).toDateString() === todayKey)
   const upcomingClasses = classes
@@ -845,13 +852,13 @@ export default function App() {
 
       {page === 'subjects' && <div className="feature-grid subjects-view">
         <aside className="section-card list-panel">
-          {subjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => setSelectedSubjectId(subject.id)}>
+          {activeSubjects.map((subject, index) => <button key={subject.id} className={selectedSubject?.id === subject.id ? 'selected' : ''} onClick={() => setSelectedSubjectId(subject.id)}>
             <span className={`course-icon ${subjectAccents[index % subjectAccents.length]}`}>{subjectIcons[index % subjectIcons.length]}</span>
             <span><strong>{subject.name}</strong><small>{classes.filter((c) => c.subjectId === subject.id).length} clases</small></span>
           </button>)}
         </aside>
         <section className="section-card detail-panel">
-          <div className="detail-heading"><div><p className="eyebrow">MATERIA</p><h2>{selectedSubject?.name ?? 'Selecciona una materia'}</h2></div><button className="primary" onClick={() => openNewNote(selectedSubjectClasses[0]?.id)}>＋ Apunte</button></div>
+          <div className="detail-heading"><div><p className="eyebrow">MATERIA</p><h2>{selectedSubject?.name ?? 'Selecciona una materia'}</h2></div><button className="primary" disabled={!selectedSubjectClasses[0]} onClick={() => selectedSubjectClasses[0] && openNewNote(selectedSubjectClasses[0].id)}>＋ Apunte</button></div>
           <div className="class-note-list">
             {selectedSubjectClasses.map((classSession) => <article key={classSession.id}>
               <div><strong>{classSession.title}</strong><small>{fullDate(classSession.startedAtEpochMs)}</small></div>
@@ -1025,12 +1032,15 @@ export default function App() {
 
       {page === 'sync' && <section className="section-card settings-list"><article><div><strong>{session ? 'Cuenta conectada' : 'Modo local'}</strong><p>{session ? session.user.email : 'Puedes trabajar sin cuenta. Para sincronizar entre dispositivos necesitas iniciar sesión.'}</p></div><button className="primary" onClick={session ? handleSync : () => setAccountOpen(true)}>{session ? 'Sincronizar ahora' : 'Iniciar sesión'}</button></article><article><div><strong>Cambios pendientes</strong><p>{pending} operaciones esperan sincronización.</p></div><span className="big-number">{pending}</span></article></section>}
 
-      {page === 'settings' && <section className="section-card settings-list">
-        <article><div><strong>Modo offline</strong><p>NotCan guarda primero en este dispositivo.</p></div><span className="status-pill">Activo</span></article>
-        <article><div><strong>Autoguardado</strong><p>Los apuntes se guardan mientras escribes.</p></div><span className="status-pill">Activo</span></article>
-        <article><div><strong>Formato por selección</strong><p>Negrita, cursiva y subrayado se aplican solo a lo seleccionado y se desactivan al continuar escribiendo.</p></div><span className="status-pill">Activo</span></article>
-        <article><div><strong>NotCan AI</strong><p>Conectado mediante una función segura de Supabase. Requiere la clave Gemini configurada en el servidor.</p></div><span className="status-pill">Gemini</span></article>
-      </section>}
+      {page === 'settings' && <div className="settings-phase1-stack">
+        <section className="section-card settings-list">
+          <article><div><strong>Apariencia</strong><p>Usa la misma idea visual de NotCan Android.</p></div><button className="settings-action" onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Cambiar a claro' : 'Cambiar a oscuro'}</button></article>
+          <article><div><strong>Modo offline</strong><p>NotCan guarda primero en este dispositivo.</p></div><span className="status-pill">Activo</span></article>
+          <article><div><strong>Autoguardado</strong><p>Los apuntes se guardan mientras escribes.</p></div><span className="status-pill">Activo</span></article>
+          <article><div><strong>Formato por selección</strong><p>El editor web seguirá alineándose con el editor de Android durante esta fase.</p></div><span className="status-pill">Activo</span></article>
+        </section>
+        <CycleManagementPanel cycles={cycles} onChanged={refresh} />
+      </div>}
 
       {page === 'account' && <section className="section-card account-page"><div className="account-avatar">{session?.user.email?.[0]?.toUpperCase() ?? 'N'}</div><h2>{session ? 'Cuenta de NotCan' : 'Usando NotCan localmente'}</h2><p>{session?.user.email ?? 'No necesitas cuenta para estudiar. Inicia sesión si quieres sincronizar y usar NotCan AI.'}</p><button className="primary" onClick={() => setAccountOpen(true)}>{session ? 'Gestionar cuenta' : 'Iniciar sesión / Crear cuenta'}</button></section>}
     </main>
@@ -1060,6 +1070,7 @@ export default function App() {
         </div>
         <div className="topbar-actions">
           <button className="sync-status" onClick={handleSync}><span className={`dot ${session ? syncLabel.kind : 'muted'}`} /><span><strong>{session ? syncLabel.text : 'Solo local'}</strong><small>{session ? (pending ? `${pending} cambios pendientes` : 'Todo al día') : 'Inicia sesión para sincronizar'}</small></span></button>
+          <button className="theme-toggle" aria-label={theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro'} title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'} onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀' : '☾'}</button>
           <button className="new-button" onClick={() => openNewNote()}>＋ Nuevo</button>
           <button className="avatar-button" onClick={() => navigate('account')}>{session?.user.email?.[0]?.toUpperCase() ?? 'N'}</button>
         </div>

@@ -64,8 +64,69 @@ export async function queueDelete(entity: OutboxRecord['entity'], entityId: stri
   })
 }
 
+export type CycleTreePreview = { subjects: number; classes: number; notes: number; grades: number }
+
+export async function previewCycleTree(cycleId: string): Promise<CycleTreePreview> {
+  const subjects = await db.subjects.where('cycleId').equals(cycleId).toArray()
+  const subjectIds = new Set(subjects.map((item) => item.id))
+  const classes = (await db.classSessions.toArray()).filter((item) => subjectIds.has(item.subjectId))
+  const classIds = new Set(classes.map((item) => item.id))
+  const notes = (await db.notePages.toArray()).filter((item) => classIds.has(item.classSessionId))
+  const grades = (await db.gradeItems.toArray()).filter((item) => subjectIds.has(item.subjectId))
+  return { subjects: subjects.length, classes: classes.length, notes: notes.length, grades: grades.length }
+}
+
+export async function activateCycleLocal(cycleId: string) {
+  const now = Date.now()
+  const deviceId = getDeviceId()
+  const cycles = await db.studyCycles.toArray()
+  await db.transaction('rw', db.studyCycles, db.outbox, async () => {
+    for (const cycle of cycles) {
+      const nextActive = cycle.id === cycleId
+      if (cycle.isActive === nextActive) continue
+      const next = { ...cycle, isActive: nextActive, updatedAtEpochMs: now, revision: cycle.revision + 1, deviceId }
+      await db.studyCycles.put(next)
+      await queueUpsert('study_cycles', next.id, next)
+    }
+  })
+}
+
+export async function deleteCycleTree(cycleId: string) {
+  const deletingCycle = await db.studyCycles.get(cycleId)
+  if (!deletingCycle) return
+
+  const subjects = await db.subjects.where('cycleId').equals(cycleId).toArray()
+  const subjectIds = new Set(subjects.map((item) => item.id))
+  const classes = (await db.classSessions.toArray()).filter((item) => subjectIds.has(item.subjectId))
+  const classIds = new Set(classes.map((item) => item.id))
+  const notes = (await db.notePages.toArray()).filter((item) => classIds.has(item.classSessionId))
+  const grades = (await db.gradeItems.toArray()).filter((item) => subjectIds.has(item.subjectId))
+
+  await db.transaction('rw', db.studyCycles, db.subjects, db.classSessions, db.notePages, db.gradeItems, db.outbox, async () => {
+    // Supabase usa soft-delete. Encolamos cada descendiente para que Android y web
+    // reciban exactamente el mismo árbol eliminado, no solo el registro padre.
+    for (const note of notes) { await queueDelete('note_pages', note.id); await db.notePages.delete(note.id) }
+    for (const grade of grades) { await queueDelete('grade_items', grade.id); await db.gradeItems.delete(grade.id) }
+    for (const session of classes) { await queueDelete('class_sessions', session.id); await db.classSessions.delete(session.id) }
+    for (const subject of subjects) { await queueDelete('subjects', subject.id); await db.subjects.delete(subject.id) }
+    await queueDelete('study_cycles', cycleId)
+    await db.studyCycles.delete(cycleId)
+  })
+
+  if (deletingCycle.isActive) {
+    const replacement = (await db.studyCycles.toArray()).sort((a, b) => b.createdAtEpochMs - a.createdAtEpochMs)[0]
+    if (replacement) await activateCycleLocal(replacement.id)
+  }
+}
+
+const DEMO_SEEDED_KEY = 'notcan-demo-seeded-v1'
 export async function seedDemoIfEmpty() {
-  if ((await db.studyCycles.count()) > 0) return
+  if ((await db.studyCycles.count()) > 0) {
+    localStorage.setItem(DEMO_SEEDED_KEY, '1')
+    return
+  }
+  // Si el usuario eliminó manualmente su último ciclo, no recreamos el demo al recargar.
+  if (localStorage.getItem(DEMO_SEEDED_KEY) === '1') return
 
   const now = Date.now()
   const deviceId = getDeviceId()
@@ -117,6 +178,7 @@ export async function seedDemoIfEmpty() {
   }
 
   await db.transaction('rw', db.studyCycles, db.subjects, db.classSessions, db.notePages, db.outbox, async () => {
+    localStorage.setItem(DEMO_SEEDED_KEY, '1')
     await db.studyCycles.add(cycle)
     await db.subjects.add(subject)
     await db.classSessions.add(classSession)

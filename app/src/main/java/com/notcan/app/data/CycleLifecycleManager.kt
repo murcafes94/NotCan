@@ -40,6 +40,7 @@ class CycleLifecycleManager(context: Context) {
     )
 
     suspend fun previewCycle(cycleId: String): CyclePreview = withContext(Dispatchers.IO) {
+        val deletingActiveCycle = repository.observeCycles().first().firstOrNull { it.id == cycleId }?.isActive == true
         val subjects = repository.cycleSubjects(cycleId)
         val classes = repository.cycleClasses(cycleId)
         val paths = repository.cycleFilePaths(cycleId)
@@ -101,6 +102,11 @@ class CycleLifecycleManager(context: Context) {
         // Solo después de intentar borrar archivos y fuentes físicas eliminamos los registros.
         // Las FK CASCADE limpian todo el árbol académico y el vocabulario CYCLE.
         repository.deleteCycleData(cycleId)
+        if (deletingActiveCycle) {
+            repository.observeCycles().first().firstOrNull()?.let { replacement ->
+                repository.setActiveCycle(replacement.id)
+            }
+        }
 
         CleanupResult(
             filesFound = paths.size,

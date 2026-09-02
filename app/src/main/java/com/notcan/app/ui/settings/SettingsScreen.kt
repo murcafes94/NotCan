@@ -159,7 +159,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             }
         )
 
-        activeCycle?.let { CycleClosureSection(it) }
+        CycleManagementSection(cycles)
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

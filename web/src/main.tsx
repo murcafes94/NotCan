@@ -10,6 +10,7 @@ import './academic-theme.css'
 import './tablet-responsive.css'
 import './rich-editor-ai.css'
 import './ai-provider-ui.css'
+import './web-phase1.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
