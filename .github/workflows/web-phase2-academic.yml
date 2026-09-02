@@ -1,0 +1,59 @@
+name: Web Phase 2 Academic
+
+on:
+  push:
+    branches: [web-phase2-live]
+    paths:
+      - '.github/workflows/web-phase2-academic.yml'
+      - 'ci/apply_web_phase2_academic.py'
+      - 'ci/web-phase2-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply academic hierarchy
+        run: python3 ci/apply_web_phase2_academic.py
+
+      - name: Commit generated web source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/src/App.tsx web/src/main.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(web): complete Materias Clases Apuntes hierarchy'
+            git push
+          fi
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build web
+        working-directory: web
+        env:
+          GITHUB_PAGES: true
+        run: npm run build
+
+      - name: Upload web preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-web-phase2-academic
+          path: web/dist
+          retention-days: 5
