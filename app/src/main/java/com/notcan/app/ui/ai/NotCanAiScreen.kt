@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -613,10 +614,10 @@ private fun ConversationPanel(
                 )
                 Surface(
                     modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable(enabled = question.isNotBlank() && !busy, onClick = onSubmit),
-                    color = if (question.isNotBlank() && !busy) NotCanBlue else NotCanGray.copy(alpha = 0.16f),
+                    color = if (question.isNotBlank() && !busy) NotCanBlue else NotCanGray.copy(alpha = 0.20f),
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Icon(Icons.Default.Send, "Enviar", tint = if (configured && question.isNotBlank() && !busy) Color.White else NotCanGray, modifier = Modifier.padding(15.dp))
+                    Icon(Icons.Default.Send, "Enviar", tint = Color.White, modifier = Modifier.padding(13.dp))
                 }
             }
         }
