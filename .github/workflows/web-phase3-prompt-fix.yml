@@ -1,0 +1,47 @@
+name: Web Phase 3 Prompt Fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/web-phase3-prompt-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Connect prepared prompt to TuNot
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('web/src/App.tsx')
+          s=p.read_text()
+          old="""      contextCount={activeNotes.length}\n      useContext={aiUseNotes}\n      onUseContextChange={setAiUseNotes}\n      onAsk={askTuNot}\n"""
+          new="""      contextCount={activeNotes.length}\n      useContext={aiUseNotes}\n      initialPrompt={aiPrompt}\n      onInitialPromptConsumed={() => setAiPrompt('')}\n      onUseContextChange={setAiUseNotes}\n      onAsk={askTuNot}\n"""
+          if old not in s: raise SystemExit('TuNot props anchor missing')
+          p.write_text(s.replace(old,new,1))
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/App.tsx
+          git commit -m "fix(web): preserve prepared TuNot prompt"
+          git push origin HEAD:main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run build
