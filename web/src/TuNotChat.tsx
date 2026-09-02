@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import MarkdownMessage from './MarkdownMessage'
 
 type ChatMode = 'chat' | 'summary' | 'questions' | 'concept-map'
 
@@ -16,7 +17,7 @@ type Props = {
   initialPrompt?: string
   onInitialPromptConsumed?: () => void
   onUseContextChange: (value: boolean) => void
-  onAsk: (prompt: string, mode: ChatMode) => Promise<{ answer: string; model?: string }>
+  onAsk: (prompt: string, mode: ChatMode, useContextOverride?: boolean) => Promise<{ answer: string; model?: string }>
   onOpenAccount: () => void
 }
 
@@ -33,7 +34,10 @@ export default function TuNotChat({ connected, contextCount, useContext, initial
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const endRef = useRef<HTMLDivElement>(null)
   const hasConversation = messages.length > 0
-  const contextLabel = useMemo(() => useContext ? `${contextCount} apuntes del ciclo` : 'Sin contexto de apuntes', [contextCount, useContext])
+  const contextLabel = useMemo(() => {
+    if (!useContext) return 'Sin contexto de apuntes'
+    return `${contextCount} ${contextCount === 1 ? 'apunte' : 'apuntes'} del ciclo`
+  }, [contextCount, useContext])
 
   useEffect(() => {
     const prompt = initialPrompt.trim()
@@ -41,6 +45,11 @@ export default function TuNotChat({ connected, contextCount, useContext, initial
     setDraft(prompt)
     onInitialPromptConsumed?.()
   }, [initialPrompt, onInitialPromptConsumed])
+
+  useEffect(() => {
+    if (!hasConversation && !busy) return
+    requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }))
+  }, [messages, busy, hasConversation])
 
   async function send(prompt = draft, mode: ChatMode = 'chat') {
     const text = prompt.trim()
@@ -50,15 +59,24 @@ export default function TuNotChat({ connected, contextCount, useContext, initial
       onOpenAccount()
       return
     }
+
+    const studyAction = mode !== 'chat'
+    if (studyAction && contextCount === 0) {
+      setError('Todavía no hay apuntes en el ciclo activo para realizar esta acción.')
+      return
+    }
+
+    const shouldUseContext = studyAction && contextCount > 0 ? true : useContext
+    if (shouldUseContext && !useContext) onUseContextChange(true)
+
     setBusy(true)
     setError('')
     setDraft('')
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', text }
     setMessages((prev) => [...prev, userMessage])
     try {
-      const result = await onAsk(text, mode)
+      const result = await onAsk(text, mode, shouldUseContext)
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'assistant', text: result.answer, model: result.model }])
-      requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -82,7 +100,11 @@ export default function TuNotChat({ connected, contextCount, useContext, initial
 
       {messages.map((message) => <article key={message.id} className={`tunot-message ${message.role}`}>
         <div className="tunot-message-avatar">{message.role === 'assistant' ? '✦' : 'Tú'}</div>
-        <div className="tunot-bubble"><div className="tunot-message-meta"><strong>{message.role === 'assistant' ? 'TuNot' : 'Tú'}</strong>{message.model && <small>{message.model}</small>}</div><div className="tunot-message-text">{message.text}</div>{message.role === 'assistant' && <div className="tunot-message-actions"><button onClick={() => void navigator.clipboard.writeText(message.text)}>Copiar</button></div>}</div>
+        <div className="tunot-bubble">
+          <div className="tunot-message-meta"><strong>{message.role === 'assistant' ? 'TuNot' : 'Tú'}</strong>{message.model && <small>{message.model}</small>}</div>
+          <div className="tunot-message-text">{message.role === 'assistant' ? <MarkdownMessage text={message.text} /> : message.text}</div>
+          {message.role === 'assistant' && <div className="tunot-message-actions"><button onClick={() => void navigator.clipboard.writeText(message.text)}>Copiar</button></div>}
+        </div>
       </article>)}
       {busy && <article className="tunot-message assistant"><div className="tunot-message-avatar">✦</div><div className="tunot-bubble thinking"><span /><span /><span /></div></article>}
       <div ref={endRef} />
@@ -90,11 +112,9 @@ export default function TuNotChat({ connected, contextCount, useContext, initial
 
     <footer className="tunot-composer-dock">
       {error && <div className="tunot-error">{error}</div>}
-      <div className="tunot-context-row"><label><input type="checkbox" checked={useContext} onChange={(event) => onUseContextChange(event.target.checked)} /><span>Usar mis apuntes</span></label><small>{contextLabel}</small></div>
+      <div className="tunot-context-row"><label><input type="checkbox" checked={useContext} disabled={contextCount === 0} onChange={(event) => onUseContextChange(event.target.checked)} /><span>Usar mis apuntes</span></label><small>{contextLabel}</small></div>
       <div className="tunot-composer"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Escribe a TuNot…" rows={1} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} /><button disabled={!draft.trim() || busy} onClick={() => void send()}>{busy ? '…' : '↑'}</button></div>
       <small className="tunot-disclaimer">TuNot puede equivocarse. Para estudiar, verifica siempre con tus fuentes.</small>
     </footer>
   </main>
 }
-
-// Fase 3: interfaz de chat compartida con el flujo académico web.
