@@ -39,12 +39,12 @@ jobs:
       - name: Build ARM64
         run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
 
-      - name: Commit tested changes
+      - name: Commit tested source changes
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/build.gradle.kts app/src/main/java/com/notcan/app/settings/NotCanPreferences.kt app/src/main/java/com/notcan/app/ai/LocalLfmTuNotEngine.kt app/src/main/java/com/notcan/app/ai/NotCanAiService.kt app/src/main/java/com/notcan/app/ui/ai/NotCanAiScreen.kt app/src/main/java/com/notcan/app/ui/settings/SettingsScreen.kt llama-android/src/main/cpp/CMakeLists.txt .github/workflows/android-debug.yml
+          git add app/build.gradle.kts app/src/main/java/com/notcan/app/settings/NotCanPreferences.kt app/src/main/java/com/notcan/app/ai/LocalLfmTuNotEngine.kt app/src/main/java/com/notcan/app/ai/NotCanAiService.kt app/src/main/java/com/notcan/app/ui/ai/NotCanAiScreen.kt app/src/main/java/com/notcan/app/ui/settings/SettingsScreen.kt llama-android/src/main/cpp/CMakeLists.txt
           git commit -m 'fix(android): make LFM2.5 runtime deterministic' || true
           git push origin HEAD:lfm25-runtime-2
