@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type ChatMode = 'chat' | 'summary' | 'questions' | 'concept-map'
 
@@ -13,6 +13,8 @@ type Props = {
   connected: boolean
   contextCount: number
   useContext: boolean
+  initialPrompt?: string
+  onInitialPromptConsumed?: () => void
   onUseContextChange: (value: boolean) => void
   onAsk: (prompt: string, mode: ChatMode) => Promise<{ answer: string; model?: string }>
   onOpenAccount: () => void
@@ -24,7 +26,7 @@ const starters: { mode: ChatMode; label: string; prompt: string }[] = [
   { mode: 'concept-map', label: 'Mapa', prompt: 'Construye un mapa conceptual textual a partir de mis apuntes recientes, indicando nodos y relaciones.' },
 ]
 
-export default function TuNotChat({ connected, contextCount, useContext, onUseContextChange, onAsk, onOpenAccount }: Props) {
+export default function TuNotChat({ connected, contextCount, useContext, initialPrompt = '', onInitialPromptConsumed, onUseContextChange, onAsk, onOpenAccount }: Props) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -32,6 +34,13 @@ export default function TuNotChat({ connected, contextCount, useContext, onUseCo
   const endRef = useRef<HTMLDivElement>(null)
   const hasConversation = messages.length > 0
   const contextLabel = useMemo(() => useContext ? `${contextCount} apuntes del ciclo` : 'Sin contexto de apuntes', [contextCount, useContext])
+
+  useEffect(() => {
+    const prompt = initialPrompt.trim()
+    if (!prompt) return
+    setDraft(prompt)
+    onInitialPromptConsumed?.()
+  }, [initialPrompt, onInitialPromptConsumed])
 
   async function send(prompt = draft, mode: ChatMode = 'chat') {
     const text = prompt.trim()
