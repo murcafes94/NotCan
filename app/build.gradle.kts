@@ -9,6 +9,7 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val notcanArm64Only = providers.gradleProperty("notcanArm64Only").orNull == "true"
 val sherpaAar = layout.projectDirectory.file("libs/sherpa-onnx-1.13.6.aar").asFile
 val fetchSherpaAar by tasks.registering {
     outputs.file(sherpaAar)
@@ -59,8 +60,11 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 35
-        versionName = "0.8.16"
+        versionCode = 36
+        versionName = "0.8.17"
+        if (notcanArm64Only) {
+            ndk { abiFilters += listOf("arm64-v8a") }
+        }
         buildConfigField("String", "SUPABASE_URL", "\"https://xpkxvhnttquvnbcfnbck.supabase.co\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_wTChkG7BwOd00sz67lOWDQ_dZ8XdYpV\"")
     }

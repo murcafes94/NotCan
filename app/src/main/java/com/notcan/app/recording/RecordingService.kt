@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.notcan.app.MainActivity
@@ -54,7 +55,9 @@ class RecordingService : Service() {
     private var currentClassTitle: String = "Clase"
     private var currentAudioId: String? = null
     private var liveTranscriber: LocalLiveTranscriber? = null
-    private var liveRawTranscript: String = ""
+    private val liveRawTranscript = StringBuilder()
+    private val liveCorrectedTranscript = StringBuilder()
+    private var lastLiveTranscriptPublishElapsedMs = 0L
     private var pcmChannel: Channel<ByteArray>? = null
     private var liveSenderJob: Job? = null
     private var scheduleEndJob: Job? = null
@@ -121,7 +124,9 @@ class RecordingService : Service() {
             autoStopGraceMinutes = intent.getIntExtra(EXTRA_AUTO_STOP_GRACE_MINUTES, 5).coerceIn(0, 60)
             stopping.set(false)
             _liveTranscript.value = ""
-            liveRawTranscript = ""
+            liveRawTranscript.setLength(0)
+            liveCorrectedTranscript.setLength(0)
+            lastLiveTranscriptPublishElapsedMs = 0L
 
             val requestedLive = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
             val liveManager = LiveTranscriptionModelManager(this)
@@ -155,12 +160,11 @@ class RecordingService : Service() {
                         onTranscriptChunk = { chunk ->
                             val raw = chunk.trim()
                             if (raw.isNotBlank()) {
-                                liveRawTranscript = if (liveRawTranscript.isBlank()) raw else "$liveRawTranscript $raw"
+                                appendTranscript(liveRawTranscript, raw)
                                 val corrected = AcademicTranscriptionContext.correctLiveText(raw, academicTerms).trim()
                                 if (corrected.isNotBlank()) {
-                                    _liveTranscript.update { current ->
-                                        if (current.isBlank()) corrected else "$current $corrected"
-                                    }
+                                    appendTranscript(liveCorrectedTranscript, corrected)
+                                    publishLiveTranscript()
                                 }
                             }
                         },
@@ -241,12 +245,13 @@ class RecordingService : Service() {
             try { liveSenderJob?.join() } catch (_: Throwable) { }
             try { liveTranscriber?.close() } catch (_: Throwable) { }
             liveTranscriber = null
+            publishLiveTranscript(force = true)
 
             val file = File(path)
             if (file.exists() && file.length() > 0L) {
                 dao.insertAudioRecording(AudioRecordingEntity(audioId, classSessionId, path, durationMs, createdAt))
-                val liveText = _liveTranscript.value.trim()
-                val rawLiveText = liveRawTranscript.trim()
+                val liveText = liveCorrectedTranscript.toString().trim()
+                val rawLiveText = liveRawTranscript.toString().trim()
                 if (rawLiveText.isNotBlank() && rawLiveText != liveText) {
                     runCatching { File("$path.moonshine.raw.txt").writeText(rawLiveText) }
                 }
@@ -275,6 +280,21 @@ class RecordingService : Service() {
                 stopSelf()
             }
         }
+    }
+
+    private fun appendTranscript(builder: StringBuilder, value: String) {
+        if (value.isBlank()) return
+        if (builder.isNotEmpty()) builder.append(' ')
+        builder.append(value)
+    }
+
+    private fun publishLiveTranscript(force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastLiveTranscriptPublishElapsedMs < LIVE_TRANSCRIPT_PUBLISH_INTERVAL_MS) return
+        lastLiveTranscriptPublishElapsedMs = now
+        val full = liveCorrectedTranscript.toString()
+        _liveTranscript.value = if (full.length <= LIVE_TRANSCRIPT_UI_MAX_CHARS) full
+        else "… " + full.takeLast(LIVE_TRANSCRIPT_UI_MAX_CHARS)
     }
 
     private fun markMoment() {
@@ -334,7 +354,9 @@ class RecordingService : Service() {
         liveSenderJob = null
         pcmChannel = null
         liveTranscriber = null
-        liveRawTranscript = ""
+        liveRawTranscript.setLength(0)
+        liveCorrectedTranscript.setLength(0)
+        lastLiveTranscriptPublishElapsedMs = 0L
         autoStopMode = AUTO_STOP_ASK
         autoStopGraceMinutes = 5
         stopping.set(false)
@@ -419,6 +441,8 @@ class RecordingService : Service() {
         const val AUTO_STOP_CONTINUE = "CONTINUE"
 
         private const val CHANNEL_ID = "notcan_recording"
+        private const val LIVE_TRANSCRIPT_PUBLISH_INTERVAL_MS = 350L
+        private const val LIVE_TRANSCRIPT_UI_MAX_CHARS = 16_000
         private const val NOTIFICATION_ID = 2201
 
         private val _state = MutableStateFlow<RecordingState>(RecordingState.Idle)

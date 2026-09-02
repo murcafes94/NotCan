@@ -143,7 +143,8 @@ class MainActivity : ComponentActivity() {
                 val assistantContextTitle = listOfNotNull(selectedSubject?.name, selectedClass?.title)
                     .joinToString(" · ")
                     .ifBlank { selectedCycle?.name ?: "NotCan" }
-                val assistantOfflineEntries = buildList {
+                val assistantOfflineEntries = remember(selectedSubject?.id, selectedClass?.id, notePages, transcripts, documents) {
+                    buildList {
                     selectedSubject?.let { subject ->
                         add(TuNotOfflineEntry(subject.name, "Materia", subject.name))
                     }
@@ -176,6 +177,7 @@ class MainActivity : ComponentActivity() {
                                 text = document.displayName
                             )
                         )
+                    }
                     }
                 }
                 val assistantOnlineConfigured = mistralCredentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()

@@ -36,6 +36,10 @@ import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.FormatAlignLeft
+import androidx.compose.material.icons.filled.FormatAlignCenter
+import androidx.compose.material.icons.filled.FormatAlignRight
+import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -110,6 +114,7 @@ internal fun WriterNoteEditor(
     var shareMenu by remember(note.id) { mutableStateOf(false) }
     var editing by remember(note.id) { mutableStateOf(false) }
     var annotationPickerOpen by remember(note.id) { mutableStateOf(false) }
+    var fontSizeMenuOpen by remember(note.id) { mutableStateOf(false) }
     val darkEditor = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     LaunchedEffect(note.id, note.body) {
@@ -137,8 +142,12 @@ internal fun WriterNoteEditor(
 
     LaunchedEffect(note.id, html) {
         val pending = html
+        if (pending == lastSavedHtml) return@LaunchedEffect
+        // Evita escribir SharedPreferences y Room por cada tecla. El borrador sigue
+        // guardándose pronto y onDispose fuerza una copia inmediata al salir.
+        delay(120)
         draftPreferences.edit().putString(draftKey, pending).putLong(draftTimeKey, System.currentTimeMillis()).apply()
-        delay(350)
+        delay(480)
         val safeToPersist = userEdited || !isEffectivelyEmptyHtml(pending) || isEffectivelyEmptyHtml(lastSavedHtml)
         if (pending != lastSavedHtml && safeToPersist) {
             onUpdateNote(note.id, title, pending)
@@ -212,6 +221,17 @@ internal fun WriterNoteEditor(
                 WriterStructureButton("T1") { command("formatBlock", "H1") }
                 WriterStructureButton("T2") { command("formatBlock", "H2") }
                 WriterStructureButton("P") { command("formatBlock", "P") }
+                Box {
+                    WriterStructureButton("Aa") { fontSizeMenuOpen = true }
+                    DropdownMenu(expanded = fontSizeMenuOpen, onDismissRequest = { fontSizeMenuOpen = false }) {
+                        listOf(12, 14, 16, 18, 20, 24, 28, 32).forEach { px ->
+                            DropdownMenuItem(
+                                text = { Text("$px pt") },
+                                onClick = { fontSizeMenuOpen = false; command("fontSizePx", px.toString()) }
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = { command("bold") }) { Icon(Icons.Default.FormatBold, "Negrita") }
                 IconButton(onClick = { command("italic") }) { Icon(Icons.Default.FormatItalic, "Cursiva") }
@@ -219,6 +239,10 @@ internal fun WriterNoteEditor(
                 IconButton(onClick = { command("strikeThrough") }) { Icon(Icons.Default.FormatStrikethrough, "Tachado") }
                 IconButton(onClick = { command("insertUnorderedList") }) { Icon(Icons.Default.FormatListBulleted, "Viñetas") }
                 IconButton(onClick = { command("insertOrderedList") }) { Icon(Icons.Default.FormatListNumbered, "Numeración") }
+                IconButton(onClick = { command("justifyLeft") }) { Icon(Icons.Default.FormatAlignLeft, "Alinear a la izquierda") }
+                IconButton(onClick = { command("justifyCenter") }) { Icon(Icons.Default.FormatAlignCenter, "Centrar") }
+                IconButton(onClick = { command("justifyRight") }) { Icon(Icons.Default.FormatAlignRight, "Alinear a la derecha") }
+                IconButton(onClick = { command("justifyFull") }) { Icon(Icons.Default.FormatAlignJustify, "Justificar") }
                 IconButton(onClick = { command("removeFormat") }) { Icon(Icons.Default.FormatClear, "Limpiar formato") }
                 Spacer(Modifier.width(6.dp))
                 WriterColorButton(Color(0xFFFFE066)) { command("hiliteColor", "#FFE066") }
@@ -247,10 +271,6 @@ internal fun WriterNoteEditor(
                                 if (bridgeNoteId == note.id) {
                                     userEdited = true
                                     html = newHtml
-                                    draftPreferences.edit()
-                                        .putString(draftKey, newHtml)
-                                        .putLong(draftTimeKey, System.currentTimeMillis())
-                                        .apply()
                                 }
                             }
                             bridge = activeBridge
@@ -298,7 +318,7 @@ private fun HighlightPickerDialog(
         Choice("Resaltado rosado", "highlight", "#FF9BB8", Color(0xFFFF9BB8)),
         Choice("Subrayado azul", "underline", "#3478F6", Color(0xFF3478F6)),
         Choice("Subrayado rojo", "underline", "#D55460", Color(0xFFD55460)),
-        Choice("Quitar formato", "clear", "", null)
+        Choice("Quitar subrayado", "clearAnnotation", "", null)
     )
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -412,11 +432,14 @@ function save(){const s=window.getSelection();if(s&&s.rangeCount>0&&!s.isCollaps
 function restore(){if(!savedRange)return false;const s=window.getSelection();s.removeAllRanges();s.addRange(savedRange.cloneRange());return true}
 function notify(){if(window.NotCanBridge)window.NotCanBridge.onContentChanged(editor.innerHTML)}
 function withEditable(command,value){if(!restore())return;const old=editor.contentEditable;editor.contentEditable='true';restore();try{document.execCommand(command,false,value||null)}finally{editor.contentEditable=old==='true'?'true':'false'}save();notify()}
-function wrapUnderline(color){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.style.textDecoration='underline 2px '+(color||'#3478F6');span.style.textUnderlineOffset='3px';span.setAttribute('data-notcan-annotation','underline');try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){withEditable('underline',null)}}
+function wrapAnnotation(kind,color){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.setAttribute('data-notcan-annotation',kind);if(kind==='underline'){span.style.textDecoration='underline 2px '+(color||'#3478F6');span.style.textUnderlineOffset='3px'}else{span.style.backgroundColor=color||'#FFE066'}try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){if(kind==='underline')withEditable('underline',null);else withEditable('hiliteColor',color||'#FFE066')}}
+function unwrap(el){const p=el&&el.parentNode;if(!p)return;while(el.firstChild)p.insertBefore(el.firstChild,el);p.removeChild(el)}
+function clearAnnotation(){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount)return;const r=s.getRangeAt(0).cloneRange(),hits=[];function ancestors(n){let e=n&&n.nodeType===1?n:n&&n.parentElement;while(e&&e!==editor){if(e.getAttribute&&e.getAttribute('data-notcan-annotation'))hits.push(e);e=e.parentElement}}ancestors(r.startContainer);ancestors(r.endContainer);editor.querySelectorAll('[data-notcan-annotation]').forEach(function(el){try{if(r.intersectsNode(el))hits.push(el)}catch(e){}});const unique=Array.from(new Set(hits));if(unique.length){unique.forEach(unwrap);notify();return}const old=editor.contentEditable;editor.contentEditable='true';restore();try{document.execCommand('hiliteColor',false,'transparent')}finally{editor.contentEditable=old==='true'?'true':'false'}save();notify()}
+function applyFontSize(px){if(!restore())return;const n=Math.max(10,Math.min(48,parseInt(px||'17',10)||17));const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.style.fontSize=n+'px';try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){}}
 window.notcanSetEditing=function(v){editor.contentEditable=v?'true':'false';if(v)editor.focus()};
 window.notcanSetTheme=function(dark){document.documentElement.style.setProperty('--notcan-text',dark?'#F3F4F6':'#20252C');document.documentElement.style.setProperty('--notcan-selection',dark?'#355A8F':'#B9D0FF');document.documentElement.style.setProperty('--notcan-selection-text',dark?'#FFFFFF':'#172033')};
-window.notcanCommand=function(c,v){withEditable(c,v)};
-window.notcanApplyAnnotation=function(style,color){if(style==='highlight')withEditable('hiliteColor',color||'#FFE066');else if(style==='underline')wrapUnderline(color);else if(style==='clear')withEditable('removeFormat',null)};
+window.notcanCommand=function(c,v){if(c==='fontSizePx')applyFontSize(v);else withEditable(c,v)};
+window.notcanApplyAnnotation=function(style,color){if(style==='highlight')wrapAnnotation('highlight',color);else if(style==='underline')wrapAnnotation('underline',color);else if(style==='clearAnnotation')clearAnnotation()};
 document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()});
 })();</script></body></html>
 """.trimIndent()

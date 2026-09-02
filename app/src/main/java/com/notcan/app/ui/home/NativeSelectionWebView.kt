@@ -68,13 +68,16 @@ internal class NativeSelectionWebView(context: Context) : WebView(context) {
 
     private fun populate(menu: Menu?) {
         if (menu == null || menu.findItem(ACTION_HIGHLIGHT) != null) return
-        menu.add(Menu.NONE, ACTION_HIGHLIGHT, 90, "Subrayar").apply {
+        menu.add(Menu.NONE, ACTION_HIGHLIGHT, 0, "Subrayar").apply {
             setIcon(android.R.drawable.ic_menu_edit)
             setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
     }
 
     private fun onCreate(original: ActionMode.Callback, mode: ActionMode, menu: Menu): Boolean {
+        // Insertar antes de delegar hace que Android coloque Subrayar al inicio del
+        // floating toolbar; luego volvemos a asegurarla por si Chromium recreó el menú.
+        populate(menu)
         val created = original.onCreateActionMode(mode, menu)
         if (created) populate(menu)
         return created
