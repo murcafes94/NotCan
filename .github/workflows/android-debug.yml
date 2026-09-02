@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.18-lfm25-apk
+          name: notcan-v0.8.18.1-lfm25-chat-fix-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.18-lfm-test"
+          TAG="v0.8.18.1-lfm-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.18-LFM2.5-test.apk" \
+            "$APK#NotCan-v0.8.18.1-LFM2.5-chat-fix.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.18 · TuNot LFM2.5 local" \
-            --notes "Prueba experimental ARM64 de TuNot offline con LiquidAI LFM2.5 1.2B Instruct Q4_K_M mediante llama.cpp. El modelo (~731 MB) se descarga aparte desde Ajustes y no aumenta el APK en esa cantidad. TuNot conserva Mistral online como vía principal, LFM2.5 como cerebro generativo local cuando está instalado y el motor extractivo como red de seguridad."
+            --title "NotCan v0.8.18.1 · LFM2.5 chat fix" \
+            --notes "Corrección de la prueba LFM2.5: aplica la plantilla Jinja/ChatML del modelo, ajusta la temperatura local y bloquea tokens internos de control. Si LFM2.5 no produce texto útil, TuNot cae al motor offline seguro en vez de mostrar tokens reservados. El modelo descargado se conserva al actualizar la APK."
