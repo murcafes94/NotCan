@@ -18,6 +18,7 @@ import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.localai.AcademicTranscriptionContext
 import com.notcan.app.localai.BackgroundTranscriptionManager
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
@@ -35,6 +36,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -52,6 +54,7 @@ class RecordingService : Service() {
     private var currentClassTitle: String = "Clase"
     private var currentAudioId: String? = null
     private var liveTranscriber: LocalLiveTranscriber? = null
+    private var liveRawTranscript: String = ""
     private var pcmChannel: Channel<ByteArray>? = null
     private var liveSenderJob: Job? = null
     private var scheduleEndJob: Job? = null
@@ -118,6 +121,7 @@ class RecordingService : Service() {
             autoStopGraceMinutes = intent.getIntExtra(EXTRA_AUTO_STOP_GRACE_MINUTES, 5).coerceIn(0, 60)
             stopping.set(false)
             _liveTranscript.value = ""
+            liveRawTranscript = ""
 
             val requestedLive = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_TRANSCRIPTION, true)
             val liveManager = LiveTranscriptionModelManager(this)
@@ -127,15 +131,46 @@ class RecordingService : Service() {
             pcmChannel = channel
 
             if (liveEnabled && channel != null) {
-                val transcriber = LocalLiveTranscriber(
-                    modelManager = liveManager,
-                    onTranscriptChunk = { chunk ->
-                        _liveTranscript.update { current -> if (current.isBlank()) chunk.trim() else "$current ${chunk.trim()}" }
-                    },
-                    onStatus = { _aiStatus.value = it }
-                )
-                liveTranscriber = transcriber
                 serviceScope.launch {
+                    val academicTerms = runCatching {
+                        val classSession = dao.getClassSession(classSessionId)
+                        val subject = classSession?.let { dao.getSubject(it.subjectId) }
+                        val storedVocabulary = subject?.let { selectedSubject ->
+                            dao.observeVocabularyForCycle(selectedSubject.cycleId)
+                                .first()
+                                .filter { term -> term.subjectId == null || term.subjectId == selectedSubject.id }
+                        }.orEmpty()
+                        val noteContext = dao.getNotesForClass(classSessionId)
+                            .flatMap { note -> listOf(note.title, note.body) }
+                        AcademicTranscriptionContext.buildTerms(
+                            subjectName = subject?.name,
+                            classTitle = currentClassTitle,
+                            stored = storedVocabulary,
+                            contextTexts = noteContext
+                        )
+                    }.getOrDefault(emptyList())
+
+                    val transcriber = LocalLiveTranscriber(
+                        modelManager = liveManager,
+                        onTranscriptChunk = { chunk ->
+                            val raw = chunk.trim()
+                            if (raw.isNotBlank()) {
+                                liveRawTranscript = if (liveRawTranscript.isBlank()) raw else "$liveRawTranscript $raw"
+                                val corrected = AcademicTranscriptionContext.correctLiveText(raw, academicTerms).trim()
+                                if (corrected.isNotBlank()) {
+                                    _liveTranscript.update { current ->
+                                        if (current.isBlank()) corrected else "$current $corrected"
+                                    }
+                                }
+                            }
+                        },
+                        onStatus = { status ->
+                            _aiStatus.value = if (academicTerms.isNotEmpty() && status.startsWith("Transcripción en vivo")) {
+                                "$status · vocabulario académico"
+                            } else status
+                        }
+                    )
+                    liveTranscriber = transcriber
                     val active = transcriber.start()
                     if (!active) {
                         channel.close()
@@ -211,10 +246,19 @@ class RecordingService : Service() {
             if (file.exists() && file.length() > 0L) {
                 dao.insertAudioRecording(AudioRecordingEntity(audioId, classSessionId, path, durationMs, createdAt))
                 val liveText = _liveTranscript.value.trim()
+                val rawLiveText = liveRawTranscript.trim()
+                if (rawLiveText.isNotBlank() && rawLiveText != liveText) {
+                    runCatching { File("$path.moonshine.raw.txt").writeText(rawLiveText) }
+                }
                 if (liveText.isNotBlank()) {
                     val now = System.currentTimeMillis()
+                    val liveModelName = if (rawLiveText.isNotBlank() && rawLiveText != liveText) {
+                        "moonshine-base-es · vocabulario académico"
+                    } else {
+                        "moonshine-base-es"
+                    }
                     dao.insertTranscript(
-                        TranscriptEntity(UUID.randomUUID().toString(), classSessionId, audioId, liveText, "LIVE_LOCAL_PROVISIONAL", "moonshine-base-es", createdAt, now)
+                        TranscriptEntity(UUID.randomUUID().toString(), classSessionId, audioId, liveText, "LIVE_LOCAL_PROVISIONAL", liveModelName, createdAt, now)
                     )
                 }
 
@@ -290,6 +334,7 @@ class RecordingService : Service() {
         liveSenderJob = null
         pcmChannel = null
         liveTranscriber = null
+        liveRawTranscript = ""
         autoStopMode = AUTO_STOP_ASK
         autoStopGraceMinutes = 5
         stopping.set(false)

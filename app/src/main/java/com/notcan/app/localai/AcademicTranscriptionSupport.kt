@@ -60,7 +60,11 @@ object AcademicTranscriptionContext {
         "epíclesis", "anámnesis", "parusía", "sensus fidei", "depositum fidei",
         "lex orandi", "lex credendi", "Eucaristía", "Bautismo", "Confirmación",
         "Orden sacerdotal", "Unción de los enfermos", "Concilio ecuménico",
-        "Padres apostólicos", "Patrística", "ontología", "metafísica",
+        "Padres apostólicos", "Patrística", "Cristología bíblica", "Cristología patrística",
+        "Nicea", "Constantinopla", "Éfeso", "Calcedonia", "Concilio de Nicea",
+        "Concilio de Constantinopla", "Concilio de Éfeso", "Concilio de Calcedonia",
+        "símbolo niceno", "Credo niceno-constantinopolitano", "naturaleza y persona",
+        "conciencia de Cristo", "ontología", "metafísica",
         "hilemorfismo", "potencia y acto", "ley natural", "dignidad humana",
         "bioética", "adopcionismo", "apolinarismo", "arrianismo", "docetismo",
         "gnosticismo", "monofisismo", "monotelismo", "nestorianismo",
@@ -252,7 +256,25 @@ object AcademicTranscriptionContext {
         )
     }
 
-    private fun correctText(text: String, terms: List<AcademicTranscriptionTerm>): String {
+    /**
+     * Corrección conservadora para Moonshine en vivo. Solo usa vocabulario explícito
+     * o contexto de muy alta prioridad y limita la distancia de edición a 2.
+     * El texto acústico bruto se conserva aparte por RecordingService.
+     */
+    fun correctLiveText(text: String, terms: List<AcademicTranscriptionTerm>): String {
+        if (text.isBlank() || terms.isEmpty()) return text
+        val safeTerms = terms.filter { term ->
+            term.value.length >= 6 && (term.explicit || term.weight >= 2.5f)
+        }
+        if (safeTerms.isEmpty()) return text
+        return correctText(text, safeTerms, maxDistance = 2)
+    }
+
+    private fun correctText(
+        text: String,
+        terms: List<AcademicTranscriptionTerm>,
+        maxDistance: Int? = null
+    ): String {
         if (text.isBlank()) return text
         val tokens = text.split(whitespace).map(::Token).toMutableList()
         val candidates = terms
@@ -294,7 +316,8 @@ object AcademicTranscriptionContext {
                     continue
                 }
                 val distance = levenshtein(current, candidate.normalized)
-                val allowed = allowedDistance(candidate.normalized.length, count, candidate.explicit)
+                val baseAllowed = allowedDistance(candidate.normalized.length, count, candidate.explicit)
+                val allowed = maxDistance?.let { cap -> minOf(baseAllowed, cap) } ?: baseAllowed
                 if (distance == 0 || distance > allowed) {
                     index++
                     continue
