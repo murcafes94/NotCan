@@ -1,0 +1,88 @@
+name: Apply 0.8.15 quality round
+
+on:
+  push:
+    paths:
+      - 'ci/notcan-0815-quality-trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  patch-build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Apply 0.8.15 quality patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_0815_quality.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/notcan/app/ai/OfflineTuNotEngine.kt')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace(".map { it.trim(' ', '-', '•', '\\\\t') }", ".map { it.trim(' ', '-', '•') }")
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          git commit -m 'fix(android): stabilize notes navigation transcription and offline TuNot'
+          git push
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Upload 0.8.15 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-0.8.15-quality
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 5
+
+      - name: Publish 0.8.15 test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG='v0.8.15-test'
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
+          gh release create "$TAG" \
+            "$APK#NotCan-v0.8.15-test.apk" \
+            --target "$(git rev-parse HEAD)" \
+            --prerelease \
+            --title 'NotCan v0.8.15 · calidad y TuNot offline' \
+            --notes 'Ronda consolidada: navegación Materias→Clases→Apuntes corregida; editor aislado por nota con borrador de recuperación y guardado al salir; Groq con prompt literal reforzado y vocabulario cristológico; TuNot funcional sin Mistral con respuestas extractivas, mapas, tarjetas y cuestionarios offline; copia de respuestas y cabecera compacta.'
