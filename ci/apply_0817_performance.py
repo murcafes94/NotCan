@@ -203,10 +203,12 @@ replace(recording,
         lastLiveTranscriptPublishElapsedMs = 0L
         autoStopMode''')
 replace(recording,
-'''        private const val NOTIFICATION_ID = 7001''',
-'''        private const val LIVE_TRANSCRIPT_PUBLISH_INTERVAL_MS = 350L
+'''        private const val CHANNEL_ID = "notcan_recording"
+        private const val NOTIFICATION_ID = 2201''',
+'''        private const val CHANNEL_ID = "notcan_recording"
+        private const val LIVE_TRANSCRIPT_PUBLISH_INTERVAL_MS = 350L
         private const val LIVE_TRANSCRIPT_UI_MAX_CHARS = 16_000
-        private const val NOTIFICATION_ID = 7001''')
+        private const val NOTIFICATION_ID = 2201''')
 
 # --- Avoid rebuilding all TuNot offline source text on unrelated recompositions ---
 main = "app/src/main/java/com/notcan/app/MainActivity.kt"
