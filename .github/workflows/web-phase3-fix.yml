@@ -1,0 +1,49 @@
+name: Web Phase 3 Fix
+
+on:
+  push:
+    branches: [web-phase2-live]
+    paths:
+      - '.github/workflows/web-phase3-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-phase2-live
+          fetch-depth: 0
+      - name: Remove legacy settings block
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('web/src/App.tsx')
+          s=p.read_text()
+          pattern=re.compile(r"\n      \{page === 'settings' && <div className=\"settings-phase1-stack\">.*?\n      </div>\}\n", re.S)
+          s2,n=pattern.subn('\n',s,count=1)
+          if n!=1:
+              raise SystemExit(f'legacy settings block matches: {n}')
+          p.write_text(s2)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/App.tsx
+          git commit -m "fix(web): remove legacy settings page"
+          git push origin HEAD:web-phase2-live
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run build
