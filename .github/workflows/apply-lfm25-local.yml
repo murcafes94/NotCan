@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write
 
-# Rerun marker: llama.cpp vendor headers enabled.
+# Rerun marker: llama.cpp vendor headers + common target enabled.
 jobs:
   patch-build:
     runs-on: ubuntu-latest
