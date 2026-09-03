@@ -6,27 +6,67 @@ on:
       - 'ci/gemma-streaming-trigger.txt'
 
 jobs:
-  apply:
+  apply-build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Apply Gemma streaming and adaptive RAG patch
-        run: python3 ci/apply_gemma_streaming.py
+      - name: Apply Gemma streaming and adaptive RAG patch when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q 'var streamingMessage' app/src/main/java/com/notcan/app/ui/ai/NotCanAiScreen.kt; then
+            echo 'Streaming patch is already present.'
+          else
+            python3 ci/apply_gemma_streaming.py
+          fi
 
-      - name: Commit source changes
+      - name: Commit source changes when produced
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app
-          if git diff --cached --quiet; then
-            echo 'No source changes produced'
-            exit 1
+          if ! git diff --cached --quiet; then
+            git commit -m 'perf(android): stream Gemma output and trim focused RAG context'
+            git push
+          else
+            echo 'Source already patched; building current main.'
           fi
-          git commit -m 'perf(android): stream Gemma output and trim focused RAG context'
-          git push
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Upload streaming test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-gemma4-streaming-adaptive-rag
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
