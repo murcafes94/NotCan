@@ -1,0 +1,32 @@
+name: Apply Gemma streaming optimization
+
+on:
+  push:
+    paths:
+      - 'ci/gemma-streaming-trigger.txt'
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply Gemma streaming and adaptive RAG patch
+        run: python3 ci/apply_gemma_streaming.py
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          if git diff --cached --quiet; then
+            echo 'No source changes produced'
+            exit 1
+          fi
+          git commit -m 'perf(android): stream Gemma output and trim focused RAG context'
+          git push
