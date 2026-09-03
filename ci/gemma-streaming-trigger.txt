@@ -1,0 +1,1 @@
+Apply Gemma 4 LiteRT streaming UI and adaptive local RAG context.
