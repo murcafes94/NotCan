@@ -14,11 +14,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Apply CPU diagnostic patch
-        run: python3 ci/apply_gemma_cpu_diagnostic.py
+      - name: Ensure CPU diagnostic patch is applied
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q 'CPU diagnóstico' app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt; then
+            echo 'CPU diagnostic source already present'
+          else
+            python3 ci/apply_gemma_cpu_diagnostic.py
+          fi
 
-      - name: Commit source changes
+      - name: Commit source changes when needed
         shell: bash
         run: |
           set -euo pipefail
