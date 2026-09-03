@@ -1,6 +1,7 @@
 package com.notcan.app.ai
 
 import android.content.Context
+import android.os.SystemClock
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Capabilities
 import com.google.ai.edge.litertlm.Contents
@@ -86,6 +87,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         )
 
         val output = StringBuilder()
+        val generationStartedAt = SystemClock.elapsedRealtime()
         try {
             withTimeout(GENERATION_TIMEOUT_MS) {
                 engineHolder.engine.createConversation(conversationConfig).use { conversation ->
@@ -99,8 +101,13 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 }
             }
         } catch (t: Throwable) {
+            val elapsedMs = SystemClock.elapsedRealtime() - generationStartedAt
+            val generatedChars = output.length
             resetEngine()
-            throw t
+            throw IllegalStateException(
+                "${engineHolder.backendLabel}: ${t.message ?: t.javaClass.simpleName}; ${elapsedMs} ms; ${generatedChars} caracteres generados",
+                t
+            )
         }
 
         val text = output.toString().trim()
@@ -296,38 +303,19 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         return withContext(Dispatchers.IO) {
             holder?.let { return@withContext it }
 
+            // Diagnostic build: force CPU so we can isolate a GPU runtime stall from
+            // a general Gemma/LiteRT problem on this device.
+            ExperimentalFlags.enableSpeculativeDecoding = false
             val modelPath = modelManager.modelFile().absolutePath
-            val gpuAttempt = runCatching {
-                var canUseSpeculative = false
-                runCatching {
-                    Capabilities(modelPath).use { capabilities ->
-                        canUseSpeculative = capabilities.hasSpeculativeDecodingSupport()
-                    }
-                }
-                ExperimentalFlags.enableSpeculativeDecoding = canUseSpeculative
-                try {
-                    createEngine(modelPath, Backend.GPU()).also { it.initialize() }
-                } finally {
-                    ExperimentalFlags.enableSpeculativeDecoding = false
-                }
+            val cpuEngine = runCatching {
+                createEngine(modelPath, Backend.CPU()).also { it.initialize() }
+            }.getOrElse { cpuError ->
+                throw IllegalStateException(
+                    "LiteRT-LM no pudo iniciar Gemma 4 en CPU: ${cpuError.message ?: cpuError.javaClass.simpleName}",
+                    cpuError
+                )
             }
-
-            val ready = gpuAttempt.fold(
-                onSuccess = { EngineHolder(it, "GPU") },
-                onFailure = { gpuError ->
-                    val cpuEngine = runCatching {
-                        createEngine(modelPath, Backend.CPU()).also { it.initialize() }
-                    }.getOrElse { cpuError ->
-                        throw IllegalStateException(
-                            "LiteRT-LM no pudo iniciar Gemma 4. GPU: ${gpuError.message ?: gpuError.javaClass.simpleName}; CPU: ${cpuError.message ?: cpuError.javaClass.simpleName}",
-                            cpuError
-                        )
-                    }
-                    EngineHolder(cpuEngine, "CPU")
-                }
-            )
-            holder = ready
-            ready
+            EngineHolder(cpuEngine, "CPU diagnóstico").also { holder = it }
         }
     }
 
