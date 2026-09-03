@@ -1,0 +1,1 @@
+Force Gemma 4 LiteRT CPU backend for one diagnostic build.
