@@ -16,7 +16,8 @@ import com.notcan.app.localai.GemmaLiteRtModelState
 import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -38,10 +39,26 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private data class EngineHolder(val engine: Engine, val backendLabel: String)
     private data class SourceChunk(val label: String, val text: String, val score: Int = 0)
 
+    private class GenerationException(
+        val backendLabel: String,
+        val elapsedMs: Long,
+        val generatedChars: Int,
+        cause: Throwable
+    ) : IllegalStateException(
+        "$backendLabel: ${cause.message ?: cause.javaClass.simpleName}; $elapsedMs ms; $generatedChars caracteres generados",
+        cause
+    )
+
     data class Answer(val text: String, val backendLabel: String)
 
     @Volatile
     private var holder: EngineHolder? = null
+
+    @Volatile
+    private var lastAnswerText: String = ""
+
+    @Volatile
+    private var lastAnswerSubject: String = ""
 
     fun isAvailable(): Boolean = runCatching {
         modelManager.state() == GemmaLiteRtModelState.INSTALLED
@@ -57,8 +74,21 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     ): Answer = mutex.withLock {
         check(isAvailable()) { "Gemma 4 LiteRT-LM no está instalado" }
 
-        val engineHolder = ensureEngineReady()
-        val sourceContext = buildSourceContext(subjectName, notes, transcript, question, strictSources)
+        val subjectKey = subjectName.orEmpty()
+        val followUpContext = lastAnswerText
+            .takeIf {
+                it.isNotBlank() &&
+                    lastAnswerSubject == subjectKey &&
+                    isResponseTransformRequest(question)
+            }
+            .orEmpty()
+
+        val sourceContext = if (followUpContext.isNotBlank()) {
+            ""
+        } else {
+            buildSourceContext(subjectName, notes, transcript, question, strictSources)
+        }
+
         val prompt = buildString {
             if (strictSources) {
                 appendLine("Responde únicamente con el material de NotCan incluido abajo.")
@@ -66,7 +96,13 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             } else {
                 appendLine("Usa el material de NotCan cuando sea pertinente. Puedes complementar con conocimiento general fiable.")
             }
-            if (sourceContext.isNotBlank()) {
+            if (followUpContext.isNotBlank()) {
+                appendLine()
+                appendLine("--- RESPUESTA ANTERIOR DE TUNOT QUE EL ESTUDIANTE QUIERE TRANSFORMAR ---")
+                appendLine(followUpContext.take(MAX_FOLLOW_UP_CHARS))
+                appendLine("--- FIN DE LA RESPUESTA ANTERIOR ---")
+                appendLine("La solicitud actual se refiere a esa respuesta anterior. No vuelvas a analizar toda la clase salvo que el estudiante lo pida.")
+            } else if (sourceContext.isNotBlank()) {
                 appendLine()
                 appendLine("--- MATERIAL DE NOTCAN RELEVANTE PARA ESTA PREGUNTA ---")
                 appendLine(sourceContext)
@@ -86,12 +122,54 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             )
         )
 
+        val primaryHolder = ensureEngineReady()
+        val answer = try {
+            generate(primaryHolder, prompt, conversationConfig, onPartial)
+        } catch (t: GenerationException) {
+            if (primaryHolder.backendLabel == "GPU" && t.generatedChars == 0) {
+                resetEngine()
+                val cpuHolder = ensureCpuEngineReady("CPU respaldo")
+                generate(cpuHolder, prompt, conversationConfig, onPartial)
+            } else {
+                resetEngine()
+                throw t
+            }
+        } catch (t: Throwable) {
+            resetEngine()
+            throw t
+        }
+
+        lastAnswerText = answer.text
+        lastAnswerSubject = subjectKey
+        answer
+    }
+
+    private suspend fun generate(
+        engineHolder: EngineHolder,
+        prompt: String,
+        conversationConfig: ConversationConfig,
+        onPartial: ((text: String, backendLabel: String) -> Unit)?
+    ): Answer = coroutineScope {
         val output = StringBuilder()
         val generationStartedAt = SystemClock.elapsedRealtime()
         try {
             withTimeout(GENERATION_TIMEOUT_MS) {
                 engineHolder.engine.createConversation(conversationConfig).use { conversation ->
-                    conversation.sendMessageAsync(prompt).collect { message ->
+                    val messages = conversation.sendMessageAsync(prompt).produceIn(this)
+                    val firstMessage = if (engineHolder.backendLabel == "GPU") {
+                        withTimeout(GPU_FIRST_TOKEN_TIMEOUT_MS) {
+                            messages.receiveCatching().getOrNull()
+                        }
+                    } else {
+                        messages.receiveCatching().getOrNull()
+                    }
+
+                    firstMessage?.toString()?.takeIf { it.isNotEmpty() }?.let { delta ->
+                        output.append(delta)
+                        onPartial?.invoke(output.toString(), engineHolder.backendLabel)
+                    }
+
+                    for (message in messages) {
                         val delta = message.toString()
                         if (delta.isNotEmpty()) {
                             output.append(delta)
@@ -101,19 +179,22 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 }
             }
         } catch (t: Throwable) {
-            val elapsedMs = SystemClock.elapsedRealtime() - generationStartedAt
-            val generatedChars = output.length
-            resetEngine()
-            throw IllegalStateException(
-                "${engineHolder.backendLabel}: ${t.message ?: t.javaClass.simpleName}; ${elapsedMs} ms; ${generatedChars} caracteres generados",
-                t
+            throw GenerationException(
+                backendLabel = engineHolder.backendLabel,
+                elapsedMs = SystemClock.elapsedRealtime() - generationStartedAt,
+                generatedChars = output.length,
+                cause = t
             )
         }
 
         val text = output.toString().trim()
         if (text.isBlank()) {
-            resetEngine()
-            error("Gemma 4 no produjo texto utilizable")
+            throw GenerationException(
+                backendLabel = engineHolder.backendLabel,
+                elapsedMs = SystemClock.elapsedRealtime() - generationStartedAt,
+                generatedChars = 0,
+                cause = IllegalStateException("Gemma 4 no produjo texto utilizable")
+            )
         }
         Answer(text = text, backendLabel = engineHolder.backendLabel)
     }
@@ -246,12 +327,28 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         .trim()
         .replace(Regex("\\s+"), " ")
 
+    private fun isResponseTransformRequest(question: String): Boolean {
+        val n = normalize(question)
+        if (n.length > 140) return false
+        return listOf(
+            "resume en una frase", "resumelo", "resumela", "hazlo mas breve", "mas breve",
+            "hazlo mas corto", "mas corto", "en una frase", "dilo en una frase", "simplificalo",
+            "mas sencillo", "explicalo mas sencillo", "dilo de otra forma", "reformula"
+        ).any(n::contains)
+    }
+
     private fun isBroadSourceRequest(question: String): Boolean {
         val n = normalize(question)
-        return listOf(
-            "resume", "resumen", "resumir", "ideas principales", "explica la clase",
-            "explicame la clase", "sintesis", "sintetiza", "panorama general"
+        if (listOf("ideas principales", "explica la clase", "explicame la clase", "panorama general").any(n::contains)) {
+            return true
+        }
+        val summaryIntent = listOf("resume", "resumen", "resumir", "sintesis", "sintetiza").any(n::contains)
+        val broadTarget = listOf(
+            "la clase", "esta clase", "clase completa", "todo el tema", "tema completo",
+            "todos los apuntes", "los apuntes", "la transcripcion", "transcripcion completa",
+            "todo el material", "material completo"
         ).any(n::contains)
+        return summaryIntent && broadTarget
     }
 
     private fun isSourceOverviewRequest(question: String): Boolean {
@@ -303,20 +400,42 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         return withContext(Dispatchers.IO) {
             holder?.let { return@withContext it }
 
-            // Diagnostic build: force CPU so we can isolate a GPU runtime stall from
-            // a general Gemma/LiteRT problem on this device.
-            ExperimentalFlags.enableSpeculativeDecoding = false
             val modelPath = modelManager.modelFile().absolutePath
-            val cpuEngine = runCatching {
-                createEngine(modelPath, Backend.CPU()).also { it.initialize() }
-            }.getOrElse { cpuError ->
-                throw IllegalStateException(
-                    "LiteRT-LM no pudo iniciar Gemma 4 en CPU: ${cpuError.message ?: cpuError.javaClass.simpleName}",
-                    cpuError
-                )
+            val gpuAttempt = runCatching {
+                var canUseSpeculative = false
+                runCatching {
+                    Capabilities(modelPath).use { capabilities ->
+                        canUseSpeculative = capabilities.hasSpeculativeDecodingSupport()
+                    }
+                }
+                ExperimentalFlags.enableSpeculativeDecoding = canUseSpeculative
+                try {
+                    createEngine(modelPath, Backend.GPU()).also { it.initialize() }
+                } finally {
+                    ExperimentalFlags.enableSpeculativeDecoding = false
+                }
             }
-            EngineHolder(cpuEngine, "CPU diagnóstico").also { holder = it }
+
+            gpuAttempt.fold(
+                onSuccess = { EngineHolder(it, "GPU").also { ready -> holder = ready } },
+                onFailure = { ensureCpuEngineReady("CPU respaldo") }
+            )
         }
+    }
+
+    private suspend fun ensureCpuEngineReady(label: String): EngineHolder = withContext(Dispatchers.IO) {
+        holder?.takeIf { it.backendLabel.startsWith("CPU") }?.let { return@withContext it }
+        ExperimentalFlags.enableSpeculativeDecoding = false
+        val modelPath = modelManager.modelFile().absolutePath
+        val cpuEngine = runCatching {
+            createEngine(modelPath, Backend.CPU()).also { it.initialize() }
+        }.getOrElse { cpuError ->
+            throw IllegalStateException(
+                "LiteRT-LM no pudo iniciar Gemma 4 en CPU: ${cpuError.message ?: cpuError.javaClass.simpleName}",
+                cpuError
+            )
+        }
+        EngineHolder(cpuEngine, label).also { holder = it }
     }
 
     private fun createEngine(modelPath: String, backend: Backend): Engine = Engine(
@@ -330,6 +449,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
     companion object {
         const val MODEL_LABEL = "Gemma 4 E2B · LiteRT-LM"
+        private const val MAX_FOLLOW_UP_CHARS = 2_400
         private const val MAX_BROAD_SOURCE_CHARS = 8_500
         private const val MAX_OVERVIEW_SOURCE_CHARS = 5_500
         private const val MAX_FOCUSED_SOURCE_CHARS = 3_400
@@ -342,6 +462,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val TOP_K = 30
         private const val TOP_P = 0.80
         private const val TEMPERATURE = 0.30
+        private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 20_000L
         private const val GENERATION_TIMEOUT_MS = 75_000L
 
         private val SOURCE_STOP_WORDS = setOf(
