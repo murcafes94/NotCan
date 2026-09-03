@@ -43,6 +43,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         val backendLabel: String,
         val elapsedMs: Long,
         val generatedChars: Int,
+        val partialText: String,
         cause: Throwable
     ) : IllegalStateException(
         "$backendLabel: ${cause.message ?: cause.javaClass.simpleName}; $elapsedMs ms; $generatedChars caracteres generados",
@@ -109,6 +110,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 appendLine("--- FIN DEL MATERIAL ---")
             }
             appendLine()
+            appendLine(responseLengthInstruction(question))
             appendLine("Pregunta actual del estudiante:")
             append(question.trim())
         }
@@ -119,15 +121,18 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 topK = TOP_K,
                 topP = TOP_P,
                 temperature = TEMPERATURE
-            ),
-            maxOutputToken = outputTokenBudget(question)
+            )
         )
 
         val primaryHolder = ensureEngineReady()
         val answer = try {
             generate(primaryHolder, prompt, conversationConfig, onPartial)
         } catch (t: GenerationException) {
-            if (primaryHolder.backendLabel == "GPU" && t.generatedChars == 0) {
+            val recovered = recoverUsefulPartial(t.partialText)
+            if (recovered != null) {
+                resetEngine()
+                Answer(recovered, "${t.backendLabel} · respuesta recuperada")
+            } else if (primaryHolder.backendLabel == "GPU" && t.generatedChars == 0) {
                 resetEngine()
                 val cpuHolder = ensureCpuEngineReady("CPU respaldo")
                 generate(cpuHolder, prompt, conversationConfig, onPartial)
@@ -184,6 +189,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 backendLabel = engineHolder.backendLabel,
                 elapsedMs = SystemClock.elapsedRealtime() - generationStartedAt,
                 generatedChars = output.length,
+                partialText = output.toString(),
                 cause = t
             )
         }
@@ -194,6 +200,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 backendLabel = engineHolder.backendLabel,
                 elapsedMs = SystemClock.elapsedRealtime() - generationStartedAt,
                 generatedChars = 0,
+                partialText = "",
                 cause = IllegalStateException("Gemma 4 no produjo texto utilizable")
             )
         }
@@ -328,23 +335,34 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         .trim()
         .replace(Regex("\\s+"), " ")
 
-    private fun outputTokenBudget(question: String): Int {
+    private fun responseLengthInstruction(question: String): String {
         val n = normalize(question)
         val explicitlyBrief = isResponseTransformRequest(question) || listOf(
             "brevemente", "respuesta breve", "responde breve", "una frase", "en una frase",
             "solo una frase", "muy corto", "muy breve"
         ).any(n::contains)
-        if (explicitlyBrief) return 96
+        if (explicitlyBrief) return "Extensión: responde en 1–3 frases, sin introducción ni repetición."
 
         val explicitlyDetailed = listOf(
             "profundiza", "profundizar", "detalladamente", "con detalle", "desarrolla",
             "desarrollalo", "explicacion completa", "explicacion profunda", "amplia"
         ).any(n::contains)
-        if (explicitlyDetailed) return 512
+        if (explicitlyDetailed) return "Extensión: desarrolla con detalle, pero evita repeticiones y termina en cuanto la explicación quede completa."
 
-        if (isBroadSourceRequest(question)) return 448
-        if (isSourceOverviewRequest(question)) return 320
-        return 192
+        if (isBroadSourceRequest(question)) return "Extensión: ofrece un resumen estructurado y suficiente, sin repetir ideas."
+        if (isSourceOverviewRequest(question)) return "Extensión: responde en 2–4 párrafos breves y centrados en la fuente."
+        return "Extensión: responde de forma concisa; normalmente 2–5 párrafos breves son suficientes."
+    }
+
+    private fun recoverUsefulPartial(raw: String): String? {
+        val text = raw.trim()
+        if (text.length < MIN_USEFUL_PARTIAL_CHARS) return null
+        val lastSentence = maxOf(text.lastIndexOf('.'), text.lastIndexOf('!'), text.lastIndexOf('?'))
+        return if (lastSentence >= MIN_USEFUL_PARTIAL_CHARS - 1) {
+            text.substring(0, lastSentence + 1).trim()
+        } else {
+            text
+        }
     }
 
     private fun isResponseTransformRequest(question: String): Boolean {
@@ -392,6 +410,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private fun buildSystemInstruction(strictSources: Boolean): String = buildString {
         appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
         appendLine("Responde en español claro, natural, preciso y útil para estudiar.")
+        appendLine("Sé conciso por defecto: responde solo con la extensión necesaria y evita repetir la misma idea.")
         appendLine("Responde siempre a la pregunta actual; no repitas una respuesta anterior si ya no corresponde al tema preguntado.")
         appendLine("Sé conciso por defecto: responde lo necesario para resolver la pregunta y detente. Amplía solo si el estudiante lo pide o si la tarea exige un resumen/desarrollo amplio.")
         appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
@@ -486,6 +505,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val TEMPERATURE = 0.30
         private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 20_000L
         private const val GENERATION_TIMEOUT_MS = 75_000L
+        private const val MIN_USEFUL_PARTIAL_CHARS = 180
 
         private val SOURCE_STOP_WORDS = setOf(
             "para", "como", "una", "uno", "unos", "unas", "que", "con", "por", "del", "las", "los",
