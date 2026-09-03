@@ -54,6 +54,9 @@ import com.notcan.app.ai.GroqCredentialsStore
 import com.notcan.app.ai.MistralCredentialsStore
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.StudyCycleEntity
+import com.notcan.app.localai.GemmaLiteRtModelManager
+import com.notcan.app.localai.GemmaLiteRtModelSpec
+import com.notcan.app.localai.GemmaLiteRtModelState
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.StudyModelManager
@@ -86,6 +89,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val whisperManager = remember(context) { WhisperModelManager(context.applicationContext) }
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
     val studyManager = remember(context) { StudyModelManager(context.applicationContext) }
+    val gemmaManager = remember(context) { GemmaLiteRtModelManager(context.applicationContext) }
     val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
     val groqCredentials = remember(context) { GroqCredentialsStore(context.applicationContext) }
     val cycleDao = remember(context) { NotCanDatabase.getInstance(context.applicationContext).dao() }
@@ -131,6 +135,12 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     }
     val studyProgress = remember(refreshTick) {
         runCatching { studyManager.progressPercent() }.getOrNull()
+    }
+    val gemmaState = remember(refreshTick) {
+        runCatching { gemmaManager.state() }.getOrDefault(GemmaLiteRtModelState.NOT_INSTALLED)
+    }
+    val gemmaProgress = remember(refreshTick) {
+        runCatching { gemmaManager.progressPercent() }.getOrNull()
     }
     val legacyLfmInstalled = remember(refreshTick) {
         runCatching { studyManager.hasLegacyLfmModel() }.getOrDefault(false)
@@ -189,13 +199,23 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Qwen2.5 local", "Local básico").forEach { option ->
+                    listOf("Gemma 4 local", "Qwen2.5 local").forEach { option ->
                         FilterChip(
                             selected = aiEngine == option,
                             onClick = { aiEngine = option; preferences.aiEnginePreference = option },
                             label = { Text(option) }
                         )
                     }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = aiEngine == "Local básico",
+                        onClick = { aiEngine = "Local básico"; preferences.aiEnginePreference = "Local básico" },
+                        label = { Text("Local básico") }
+                    )
+                }
+                if (aiEngine == "Gemma 4 local" && gemmaState != GemmaLiteRtModelState.INSTALLED) {
+                    Text("Gemma 4 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                 }
                 if (aiEngine == "Qwen2.5 local" && studyState != StudyModelState.INSTALLED) {
                     Text("Qwen2.5 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
@@ -355,7 +375,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text("Componentes offline", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
-                        Text("Recursos locales de voz y transcripción.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                        Text("Recursos locales de IA, voz y transcripción.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
@@ -398,10 +418,29 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 )
 
                 DownloadComponentCard(
+                    title = GemmaLiteRtModelSpec.DISPLAY_NAME,
+                    subtitle = "${GemmaLiteRtModelSpec.MODEL_NAME} · ~2.6 GB · GPU/CPU · funciona sin Internet",
+                    stateText = when (gemmaState) {
+                        GemmaLiteRtModelState.INSTALLED -> "Instalado · listo para TuNot"
+                        GemmaLiteRtModelState.DOWNLOADING -> "Descargando"
+                        GemmaLiteRtModelState.NOT_INSTALLED -> "No instalado"
+                    },
+                    progress = gemmaProgress,
+                    installed = gemmaState == GemmaLiteRtModelState.INSTALLED,
+                    downloading = gemmaState == GemmaLiteRtModelState.DOWNLOADING,
+                    onDownload = {
+                        runCatching { gemmaManager.enqueueDownload() }
+                            .onFailure { saveMessage = "Gemma 4: ${it.message ?: "no se pudo iniciar la descarga"}" }
+                        refreshTick++
+                    },
+                    onRemove = { runCatching { gemmaManager.removeModel() }; refreshTick++ }
+                )
+
+                DownloadComponentCard(
                     title = StudyModelSpec.DISPLAY_NAME,
-                    subtitle = "${StudyModelSpec.MODEL_NAME} · ~1.12 GB · ${StudyModelSpec.LICENSE} · sin costo por tokens",
+                    subtitle = "${StudyModelSpec.MODEL_NAME} · ~1.12 GB · ${StudyModelSpec.LICENSE} · motor anterior de prueba",
                     stateText = when (studyState) {
-                        StudyModelState.INSTALLED -> "Instalado · listo para TuNot"
+                        StudyModelState.INSTALLED -> "Instalado · disponible para comparar"
                         StudyModelState.DOWNLOADING -> "Descargando"
                         StudyModelState.NOT_INSTALLED -> "No instalado"
                     },
@@ -428,7 +467,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text("LFM2.5 anterior", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                                Text("~731 MB · se conserva hasta que confirmes Qwen2.5", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                                Text("~731 MB · legado de las pruebas locales anteriores", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                             }
                             OutlinedButton(onClick = {
                                 runCatching { studyManager.removeLegacyLfmModel() }
