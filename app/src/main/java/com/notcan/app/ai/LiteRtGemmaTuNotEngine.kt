@@ -423,6 +423,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }
     }
 
+    @OptIn(ExperimentalApi::class)
     private suspend fun ensureCpuEngineReady(label: String): EngineHolder = withContext(Dispatchers.IO) {
         holder?.takeIf { it.backendLabel.startsWith("CPU") }?.let { return@withContext it }
         ExperimentalFlags.enableSpeculativeDecoding = false
