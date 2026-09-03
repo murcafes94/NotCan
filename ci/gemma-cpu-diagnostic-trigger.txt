@@ -1,1 +1,1 @@
-Force Gemma 4 LiteRT CPU backend for one diagnostic build.
+Force Gemma 4 LiteRT CPU backend for one diagnostic build. Retry with submodules.
