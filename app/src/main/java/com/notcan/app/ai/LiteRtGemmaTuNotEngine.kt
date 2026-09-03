@@ -51,7 +51,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         notes: String,
         transcript: String,
         question: String,
-        strictSources: Boolean
+        strictSources: Boolean,
+        onPartial: ((text: String, backendLabel: String) -> Unit)? = null
     ): Answer = mutex.withLock {
         check(isAvailable()) { "Gemma 4 LiteRT-LM no está instalado" }
 
@@ -89,7 +90,11 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             withTimeout(GENERATION_TIMEOUT_MS) {
                 engineHolder.engine.createConversation(conversationConfig).use { conversation ->
                     conversation.sendMessageAsync(prompt).collect { message ->
-                        output.append(message.toString())
+                        val delta = message.toString()
+                        if (delta.isNotEmpty()) {
+                            output.append(delta)
+                            onPartial?.invoke(output.toString(), engineHolder.backendLabel)
+                        }
                     }
                 }
             }
@@ -126,24 +131,34 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
         val tokens = queryTokens(question)
         val broadRequest = isBroadSourceRequest(question)
+        val sourceOverviewRequest = isSourceOverviewRequest(question)
         val scored = chunks.map { chunk ->
             chunk.copy(score = scoreChunk(chunk.text, tokens))
         }
 
         val selected = when {
-            broadRequest -> evenlySample(scored, MAX_SELECTED_CHUNKS)
+            broadRequest -> evenlySample(scored, BROAD_SELECTED_CHUNKS)
+            sourceOverviewRequest && tokens.isNotEmpty() -> scored
+                .filter { it.score > 0 }
+                .sortedByDescending { it.score }
+                .take(OVERVIEW_SELECTED_CHUNKS)
             tokens.isNotEmpty() -> scored
                 .filter { it.score > 0 }
                 .sortedByDescending { it.score }
-                .take(MAX_SELECTED_CHUNKS)
+                .take(FOCUSED_SELECTED_CHUNKS)
             else -> emptyList()
         }.ifEmpty {
-            // In strict mode retain representative material so paraphrases can still be found.
-            // In free mode avoid injecting unrelated class material into a general question.
-            if (strictSources) evenlySample(scored, FALLBACK_SELECTED_CHUNKS) else emptyList()
+            // A strict-source question may be a paraphrase with no exact lexical hit.
+            // Keep a small representative fallback instead of paying the cost of the whole class.
+            if (strictSources) evenlySample(scored, FOCUSED_SELECTED_CHUNKS) else emptyList()
         }
 
         if (selected.isEmpty()) return ""
+        val sourceCharLimit = when {
+            broadRequest -> MAX_BROAD_SOURCE_CHARS
+            sourceOverviewRequest -> MAX_OVERVIEW_SOURCE_CHARS
+            else -> MAX_FOCUSED_SOURCE_CHARS
+        }
         return buildString {
             subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("Materia: $it") }
             selected.forEachIndexed { index, chunk ->
@@ -151,7 +166,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 appendLine("[${chunk.label}]")
                 appendLine(chunk.text)
             }
-        }.take(MAX_SOURCE_CHARS)
+        }.take(sourceCharLimit)
     }
 
     private fun chunkSource(label: String, raw: String): List<SourceChunk> {
@@ -229,6 +244,14 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         return listOf(
             "resume", "resumen", "resumir", "ideas principales", "explica la clase",
             "explicame la clase", "sintesis", "sintetiza", "panorama general"
+        ).any(n::contains)
+    }
+
+    private fun isSourceOverviewRequest(question: String): Boolean {
+        val n = normalize(question)
+        return listOf(
+            "de que habla", "de que trata", "que trata", "resumen de la fuente",
+            "resume la fuente", "resume el documento", "resume el archivo"
         ).any(n::contains)
     }
 
@@ -319,11 +342,14 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
     companion object {
         const val MODEL_LABEL = "Gemma 4 E2B · LiteRT-LM"
-        private const val MAX_SOURCE_CHARS = 8_500
+        private const val MAX_BROAD_SOURCE_CHARS = 8_500
+        private const val MAX_OVERVIEW_SOURCE_CHARS = 5_500
+        private const val MAX_FOCUSED_SOURCE_CHARS = 3_400
         private const val SOURCE_CHUNK_CHARS = 1_000
         private const val SOURCE_CHUNK_OVERLAP = 160
-        private const val MAX_SELECTED_CHUNKS = 7
-        private const val FALLBACK_SELECTED_CHUNKS = 5
+        private const val BROAD_SELECTED_CHUNKS = 7
+        private const val OVERVIEW_SELECTED_CHUNKS = 5
+        private const val FOCUSED_SELECTED_CHUNKS = 3
         private const val MAX_ENGINE_TOKENS = 4_096
         private const val TOP_K = 30
         private const val TOP_P = 0.80

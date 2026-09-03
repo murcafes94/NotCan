@@ -30,7 +30,8 @@ class NotCanAiService(private val context: Context) {
         subjectName: String?,
         notes: String,
         transcript: String,
-        question: String
+        question: String,
+        onPartial: ((String) -> Unit)? = null
     ): String {
         val strictSources = question.contains(SOURCE_ONLY_MARKER)
         val forcedWeb = question.contains(WEB_SEARCH_MARKER)
@@ -71,11 +72,15 @@ class NotCanAiService(private val context: Context) {
                         notes = plainNotes,
                         transcript = plainTranscript,
                         question = localQuestion,
-                        strictSources = strictSources
+                        strictSources = strictSources,
+                        onPartial = { partialText, backendLabel ->
+                            onPartial?.invoke(markEngine("Gemma 4 local · $backendLabel", partialText))
+                        }
                     )
                     preferences.lastLocalAiError = ""
                     return markEngine("Gemma 4 local · ${answer.backendLabel}", answer.text)
                 } catch (t: Throwable) {
+                    onPartial?.invoke("")
                     preferences.lastLocalAiError = "Gemma 4: ${t.message ?: t.javaClass.simpleName}"
                 }
             }

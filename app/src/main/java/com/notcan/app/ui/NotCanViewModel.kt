@@ -399,7 +399,14 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                         append(externalSources)
                     }
                 }
-                _aiResult.value = aiService.studyAssistant(subjectName, notesText, transcriptText, question)
+                val finalResult = aiService.studyAssistant(
+                    subjectName = subjectName,
+                    notes = notesText,
+                    transcript = transcriptText,
+                    question = question,
+                    onPartial = { partial -> _aiResult.value = partial }
+                )
+                _aiResult.value = finalResult
                 _aiConfigured.value = true
             } catch (t: Throwable) {
                 _aiConfigured.value = aiService.isConfigured()

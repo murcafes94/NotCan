@@ -367,6 +367,8 @@ private fun AiChat(
     var sourceMode by rememberSaveable(scopeKey) { mutableIntStateOf(1) } // 0 Mis fuentes · 1 Auto · 2 Web
     var socraticMode by rememberSaveable(scopeKey) { mutableStateOf(false) }
     var toolsOpen by remember(scopeKey) { mutableStateOf(false) }
+    var streamingMessage by remember(scopeKey) { mutableStateOf<ChatMessage?>(null) }
+    var submitLocked by remember(scopeKey) { mutableStateOf(false) }
     val messages = remember(scopeKey) {
         mutableStateListOf<ChatMessage>().apply {
             store.load(scopeKey).forEach { stored ->
@@ -384,31 +386,50 @@ private fun AiChat(
         )
     }
 
-    LaunchedEffect(result) {
-        if (result.isBlank()) return@LaunchedEffect
-        val last = messages.lastOrNull()
-        if (last?.role == ChatRole.ASSISTANT && last.rawContent == result) return@LaunchedEffect
+    LaunchedEffect(result, busy) {
+        if (busy) {
+            streamingMessage = result.takeIf { it.isNotBlank() }
+                ?.let { messageFromRaw(ChatRole.ASSISTANT, it) }
+            return@LaunchedEffect
+        }
+
+        if (result.isBlank()) {
+            streamingMessage = null
+            return@LaunchedEffect
+        }
+
         val message = messageFromRaw(ChatRole.ASSISTANT, result)
-        messages.add(message)
-        persist()
-        message.mapArtifact?.let(onOpenMap)
-        message.flashcards?.let(onOpenDeck)
-        message.quizArtifact?.let(onOpenQuiz)
+        val last = messages.lastOrNull()
+        if (!(last?.role == ChatRole.ASSISTANT && last.rawContent == result)) {
+            messages.add(message)
+            persist()
+            message.mapArtifact?.let(onOpenMap)
+            message.flashcards?.let(onOpenDeck)
+            message.quizArtifact?.let(onOpenQuiz)
+        }
+        streamingMessage = null
     }
 
-    LaunchedEffect(messages.size, busy) {
+    LaunchedEffect(busy) {
+        if (!busy) submitLocked = false
+    }
+
+    LaunchedEffect(messages.size, streamingMessage != null, busy) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
     fun clearConversation() {
         messages.clear()
+        streamingMessage = null
+        submitLocked = false
         store.clear(scopeKey)
         onClear()
     }
 
     fun submit() {
         val cleanQuestion = question.trim()
-        if (cleanQuestion.isBlank() || busy) return
+        if (cleanQuestion.isBlank() || busy || submitLocked) return
+        submitLocked = true
         messages.add(ChatMessage(ChatRole.USER, cleanQuestion))
         persist()
         val previousAssistant = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.content.orEmpty()
@@ -435,7 +456,9 @@ private fun AiChat(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 720.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (wide) 18.dp else 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val actualEngine = messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.engineLabel
+            val effectiveBusy = busy || submitLocked
+            val actualEngine = streamingMessage?.engineLabel
+                ?: messages.lastOrNull { it.role == ChatRole.ASSISTANT }?.engineLabel
                 ?: if (configured) "Automático" else "Local"
             CompactChatHeader(subjectName, classTitle, actualEngine, toolsOpen) { toolsOpen = !toolsOpen }
             if (wide) {
@@ -443,13 +466,13 @@ private fun AiChat(
                     AnimatedVisibility(visible = toolsOpen) {
                         CompactAiTools(sourceMode, socraticMode, messages.isNotEmpty(), { sourceMode = it }, { socraticMode = it }, ::clearConversation, Modifier.width(250.dp))
                     }
-                    ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxSize())
+                    ConversationPanel(configured, effectiveBusy, error, messages, streamingMessage, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 AnimatedVisibility(visible = toolsOpen) {
                     CompactAiTools(sourceMode, socraticMode, messages.isNotEmpty(), { sourceMode = it }, { socraticMode = it }, ::clearConversation, Modifier.fillMaxWidth())
                 }
-                ConversationPanel(configured, busy, error, messages, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxWidth())
+                ConversationPanel(configured, effectiveBusy, error, messages, streamingMessage, question, { question = it }, ::submit, listState, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact, Modifier.weight(1f).fillMaxWidth())
             }
         }
     }
@@ -575,6 +598,7 @@ private fun ConversationPanel(
     busy: Boolean,
     error: String?,
     messages: List<ChatMessage>,
+    streamingMessage: ChatMessage?,
     question: String,
     onQuestionChange: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -595,7 +619,12 @@ private fun ConversationPanel(
             ) {
                 if (messages.isEmpty()) item { EmptyConversation(configured) }
                 items(messages) { message -> ChatBubble(message, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact) }
-                if (busy) item {
+                streamingMessage?.let { partial ->
+                    item(key = "tunot-streaming") {
+                        ChatBubble(partial, onOpenMap, onOpenDeck, onOpenQuiz, onSaveArtifact)
+                    }
+                }
+                if (busy && streamingMessage == null) item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
                         CircularProgressIndicator(modifier = Modifier.width(17.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
