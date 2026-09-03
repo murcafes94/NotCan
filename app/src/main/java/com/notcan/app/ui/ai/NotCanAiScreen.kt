@@ -131,10 +131,8 @@ fun NotCanAiScreen(
 
     LaunchedEffect(result, busy, artifactScope) {
         if (autoSaveNextArtifact && !busy && result.isNotBlank()) {
-            if (artifactStore.save(artifactScope, result) != null) {
-                artifactRevision += 1
-                autoSaveNextArtifact = false
-            }
+            if (artifactStore.save(artifactScope, result) != null) artifactRevision += 1
+            autoSaveNextArtifact = false
         }
     }
 
@@ -351,7 +349,7 @@ private fun sanitizeUnparsedArtifact(raw: String): String {
             raw.contains("\"nodes\"") || raw.contains("\"cards\"") || raw.contains("\"questions\"")
         ))
     return if (looksStructured) {
-        "TuNot generó un recurso de estudio, pero el formato llegó incompleto. Vuelve a generarlo para abrirlo de forma interactiva."
+        "TuNot no alcanzó a completar suficientes elementos del recurso para abrirlo de forma interactiva. NotCan intentó recuperar automáticamente las partes completas; vuelve a Estudio para regenerarlo si este aviso aparece."
     } else raw
 }
 
@@ -811,8 +809,8 @@ private fun AiStudio(
     val options = listOf(
         StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones."),
         StudyTool("Vocabulario clave", "Términos académicos del ciclo y de esta materia", Icons.Default.MenuBook, "Usa también el vocabulario académico de NotCan. Identifica los términos más importantes para estudiar esta clase, respeta sus grafías y explica brevemente los que sean pertinentes."),
-        StudyTool("Tarjetas didácticas", "Repaso activo, una pregunta por tarjeta", Icons.Default.Style, "Crea entre 12 y 20 tarjetas didácticas de esta clase.", NotCanAiService.FLASHCARDS_MARKER),
-        StudyTool("Cuestionario", "Respóndelo aquí y repite los errores", Icons.Default.Quiz, "Crea un cuestionario mixto basado exclusivamente en esta clase. Combina opción múltiple, verdadero/falso y algunas preguntas breves de desarrollo.", NotCanAiService.QUIZ_MARKER),
+        StudyTool("Tarjetas didácticas", "Repaso activo, una pregunta por tarjeta", Icons.Default.Style, "Crea entre 10 y 12 tarjetas didácticas de esta clase. Prioriza que todas queden completas.", NotCanAiService.FLASHCARDS_MARKER),
+        StudyTool("Cuestionario", "Respóndelo aquí y repite los errores", Icons.Default.Quiz, "Crea un cuestionario mixto de 10 a 12 preguntas basado exclusivamente en esta clase. Combina opción múltiple, verdadero/falso y algunas preguntas breves de desarrollo.", NotCanAiService.QUIZ_MARKER),
         StudyTool("Mapa mental", "Ramas y subramas interactivas", Icons.Default.AutoAwesome, "Hazme un mapa mental de esta clase. Organiza el tema central, ramas principales y subramas. Usa solamente las fuentes disponibles."),
         StudyTool("Mapa conceptual", "Conceptos y relaciones etiquetadas", Icons.Default.Source, "Hazme un mapa conceptual de esta clase con conceptos, jerarquías y frases de enlace. Usa solamente las fuentes disponibles."),
         StudyTool("Mapa de ideas", "Presentación visual en tarjetas", Icons.Default.Description, "Hazme un mapa de ideas de esta clase, más visual y sencillo, usando tarjetas radiales. Usa solamente las fuentes disponibles.")

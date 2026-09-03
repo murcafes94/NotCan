@@ -138,7 +138,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             samplerConfig = SamplerConfig(
                 topK = TOP_K,
                 topP = TOP_P,
-                temperature = TEMPERATURE
+                temperature = if (isStudyArtifactRequest(intentQuestion)) STRUCTURED_TEMPERATURE else TEMPERATURE
             )
         )
 
@@ -246,6 +246,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         if (chunks.isEmpty()) return ""
 
         val tokens = queryTokens(question)
+        val artifactRequest = isStudyArtifactRequest(question)
         val broadRequest = isBroadSourceRequest(question)
         val sourceOverviewRequest = isSourceOverviewRequest(question)
         val scored = chunks.map { chunk ->
@@ -253,6 +254,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }
 
         val selected = when {
+            artifactRequest -> evenlySample(scored, ARTIFACT_SELECTED_CHUNKS)
             broadRequest -> evenlySample(scored, BROAD_SELECTED_CHUNKS)
             sourceOverviewRequest && tokens.isNotEmpty() -> scored
                 .filter { it.score > 0 }
@@ -271,6 +273,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
         if (selected.isEmpty()) return ""
         val sourceCharLimit = when {
+            artifactRequest -> MAX_ARTIFACT_SOURCE_CHARS
             broadRequest -> MAX_BROAD_SOURCE_CHARS
             sourceOverviewRequest -> MAX_OVERVIEW_SOURCE_CHARS
             else -> MAX_FOCUSED_SOURCE_CHARS
@@ -381,6 +384,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
     private fun generationTimeoutMs(question: String): Long {
         val n = normalize(question)
+        if (isStudyArtifactRequest(question)) return 300_000L
         val brief = isResponseTransformRequest(question) || listOf("brevemente", "una frase", "muy breve").any(n::contains)
         if (brief) return 90_000L
         val heavy = isBroadSourceRequest(question) || listOf(
@@ -394,12 +398,27 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private fun recoverUsefulPartial(raw: String): String? {
         val text = raw.trim()
         if (text.length < MIN_USEFUL_PARTIAL_CHARS) return null
+        if (looksLikeStudyArtifact(text)) return text
         val lastSentence = maxOf(text.lastIndexOf('.'), text.lastIndexOf('!'), text.lastIndexOf('?'))
         return if (lastSentence >= MIN_USEFUL_PARTIAL_CHARS - 1) {
             text.substring(0, lastSentence + 1).trim()
         } else {
             text
         }
+    }
+
+    private fun looksLikeStudyArtifact(value: String): Boolean =
+        value.contains("NOTCAN_MAP", ignoreCase = true) ||
+            value.contains("NOTCAN_FLASHCARDS", ignoreCase = true) ||
+            value.contains("NOTCAN_QUIZ", ignoreCase = true) ||
+            (value.trimStart().startsWith("{") && listOf("\"nodes\"", "\"cards\"", "\"questions\"").any(value::contains))
+
+    private fun isStudyArtifactRequest(question: String): Boolean {
+        val n = normalize(question)
+        return listOf(
+            "mapa mental", "mapa conceptual", "mapa de ideas", "mind map", "concept map",
+            "tarjetas didacticas", "flashcards", "cuestionario", "quiz"
+        ).any(n::contains)
     }
 
     private fun isResponseTransformRequest(question: String): Boolean {
@@ -537,17 +556,20 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val MAX_WEB_CONTEXT_CHARS = 6_000
         private const val MAX_VOCAB_CONTEXT_CHARS = 2_200
         private const val MAX_BROAD_SOURCE_CHARS = 8_500
+        private const val MAX_ARTIFACT_SOURCE_CHARS = 5_200
         private const val MAX_OVERVIEW_SOURCE_CHARS = 5_500
         private const val MAX_FOCUSED_SOURCE_CHARS = 3_400
         private const val SOURCE_CHUNK_CHARS = 1_000
         private const val SOURCE_CHUNK_OVERLAP = 160
         private const val BROAD_SELECTED_CHUNKS = 7
+        private const val ARTIFACT_SELECTED_CHUNKS = 5
         private const val OVERVIEW_SELECTED_CHUNKS = 5
         private const val FOCUSED_SELECTED_CHUNKS = 3
         private const val MAX_ENGINE_TOKENS = 4_096
         private const val TOP_K = 30
         private const val TOP_P = 0.80
         private const val TEMPERATURE = 0.30
+        private const val STRUCTURED_TEMPERATURE = 0.12
         private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 30_000L
         private const val MIN_USEFUL_PARTIAL_CHARS = 180
 

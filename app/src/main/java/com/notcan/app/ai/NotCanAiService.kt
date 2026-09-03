@@ -204,6 +204,7 @@ class NotCanAiService(private val context: Context) {
                 appendLine("Antes de construir el JSON identifica conceptos centrales, elimina redundancias, agrupa ideas relacionadas y verifica que cada rama aporte información distinta.")
                 appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_MAP>>> y <<<END_NOTCAN_MAP>>>.")
                 appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown y sin comentarios.")
+                appendLine("Prioridad de formato: termina y cierra el JSON y el marcador final. Si falta espacio, reduce el número de elementos antes que truncar el recurso.")
                 appendLine("Esquema obligatorio:")
                 appendLine("{\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|radial_cards|ideas|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
                 appendLine("Genera normalmente entre 8 y 16 nodos. Prefiere 4 a 6 ramas principales y como máximo 2 subramas por rama.")
@@ -241,6 +242,7 @@ class NotCanAiService(private val context: Context) {
                 appendLine("NotCan mostrará estas tarjetas en una pantalla de repaso, una por una, con pregunta al frente y respuesta al reverso.")
                 appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_FLASHCARDS>>> y <<<END_NOTCAN_FLASHCARDS>>>.")
                 appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown, sin comentarios y sin texto adicional.")
+                appendLine("Prioridad de formato: termina y cierra el JSON y el marcador final. Si falta espacio, reduce el número de elementos antes que truncar el recurso.")
                 appendLine("Esquema obligatorio:")
                 appendLine("{\"title\":\"...\",\"cards\":[{\"question\":\"...\",\"answer\":\"...\",\"source_ref\":\"Apuntes\"}]}")
                 appendLine("Genera entre 12 y 20 tarjetas salvo que el material sea claramente insuficiente.")
@@ -258,6 +260,7 @@ class NotCanAiService(private val context: Context) {
                 appendLine("NotCan presentará una pregunta a la vez, corregirá localmente las preguntas objetivas y permitirá repetir los errores.")
                 appendLine("Devuelve exclusivamente un artefacto entre los marcadores exactos <<<NOTCAN_QUIZ>>> y <<<END_NOTCAN_QUIZ>>>.")
                 appendLine("Dentro de los marcadores devuelve JSON válido, sin bloque markdown, sin comentarios y sin texto adicional.")
+                appendLine("Prioridad de formato: termina y cierra el JSON y el marcador final. Si falta espacio, reduce el número de elementos antes que truncar el recurso.")
                 appendLine("Esquema obligatorio:")
                 appendLine("{\"title\":\"...\",\"questions\":[{\"id\":\"q1\",\"type\":\"multiple_choice|true_false|short_answer\",\"question\":\"...\",\"options\":[\"...\"],\"correct_answer\":\"...\",\"explanation\":\"...\",\"source_ref\":\"Apuntes\"}]}")
                 appendLine("Genera normalmente entre 12 y 20 preguntas. Si el usuario no especifica tipo, crea un cuestionario mixto con predominio de opción múltiple.")
@@ -450,8 +453,9 @@ class NotCanAiService(private val context: Context) {
         if (mapRequest) {
             appendLine()
             appendLine("Devuelve exclusivamente un mapa entre <<<NOTCAN_MAP>>> y <<<END_NOTCAN_MAP>>> con JSON válido y sin markdown.")
-            appendLine("Esquema: {\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|radial_cards|ideas|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
-            appendLine("Genera 8–16 nodos claros, sin redundancias, todos conectados.")
+            appendLine("Esquema compacto: {\"type\":\"mind_map\",\"title\":\"...\",\"layout\":\"horizontal\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\"}]}")
+            appendLine("Genera normalmente 8–12 nodos. Si el espacio de salida no alcanza, genera menos nodos completos.")
+            appendLine("PRIORIDAD ABSOLUTA DE FORMATO: cierra siempre cada objeto, el array, el JSON y el marcador <<<END_NOTCAN_MAP>>>. Nunca empieces un nodo que no puedas terminar.")
             when {
                 conceptualMapRequest -> appendLine("Usa type concept_map y prioriza relaciones semánticas etiquetadas.")
                 ideaMapRequest -> appendLine("Usa layout ideas y tarjetas breves alrededor del tema central.")
@@ -460,13 +464,17 @@ class NotCanAiService(private val context: Context) {
         }
         if (flashcardRequest) {
             appendLine()
-            appendLine("Devuelve exclusivamente entre <<<NOTCAN_FLASHCARDS>>> y <<<END_NOTCAN_FLASHCARDS>>> un JSON válido: {\"title\":\"...\",\"cards\":[{\"question\":\"...\",\"answer\":\"...\",\"source_ref\":\"Apuntes\"}]}")
-            appendLine("Genera 12–20 tarjetas atómicas, claras y útiles para recuperación activa.")
+            appendLine("Devuelve exclusivamente entre <<<NOTCAN_FLASHCARDS>>> y <<<END_NOTCAN_FLASHCARDS>>> un JSON válido: {\"title\":\"...\",\"cards\":[{\"question\":\"...\",\"answer\":\"...\"}]}")
+            appendLine("Genera normalmente 10–12 tarjetas atómicas. Respuestas breves: una o dos frases salvo necesidad académica.")
+            appendLine("Si el usuario exige más tarjetas, completa tantas como puedas sin sacrificar el cierre del formato.")
+            appendLine("PRIORIDAD ABSOLUTA DE FORMATO: cierra siempre cada tarjeta, el array, el JSON y el marcador <<<END_NOTCAN_FLASHCARDS>>>. Nunca empieces una tarjeta que no puedas terminar.")
         }
         if (quizRequest) {
             appendLine()
-            appendLine("Devuelve exclusivamente entre <<<NOTCAN_QUIZ>>> y <<<END_NOTCAN_QUIZ>>> un JSON válido: {\"title\":\"...\",\"questions\":[{\"id\":\"q1\",\"type\":\"multiple_choice|true_false|short_answer\",\"question\":\"...\",\"options\":[\"...\"],\"correct_answer\":\"...\",\"explanation\":\"...\",\"source_ref\":\"Apuntes\"}]}")
-            appendLine("Genera 12–20 preguntas. En opción múltiple usa 4 opciones y una sola respuesta correcta literal.")
+            appendLine("Devuelve exclusivamente entre <<<NOTCAN_QUIZ>>> y <<<END_NOTCAN_QUIZ>>> un JSON válido: {\"title\":\"...\",\"questions\":[{\"id\":\"q1\",\"type\":\"multiple_choice|true_false|short_answer\",\"question\":\"...\",\"options\":[\"...\"],\"correct_answer\":\"...\",\"explanation\":\"...\"}]}")
+            appendLine("Genera normalmente 10–12 preguntas. En opción múltiple usa 4 opciones y una sola respuesta correcta literal; explanation debe ser breve.")
+            appendLine("Si el usuario exige más preguntas, completa tantas como puedas sin sacrificar el cierre del formato.")
+            appendLine("PRIORIDAD ABSOLUTA DE FORMATO: cierra siempre cada pregunta, el array, el JSON y el marcador <<<END_NOTCAN_QUIZ>>>. Nunca empieces una pregunta que no puedas terminar.")
         }
     }
 
