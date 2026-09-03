@@ -132,6 +132,9 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val studyProgress = remember(refreshTick) {
         runCatching { studyManager.progressPercent() }.getOrNull()
     }
+    val legacyLfmInstalled = remember(refreshTick) {
+        runCatching { studyManager.hasLegacyLfmModel() }.getOrDefault(false)
+    }
     val mistralConfigured = hasSavedKey && agentId.trim().isNotBlank()
 
     Column(
@@ -186,7 +189,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("LFM2.5 local", "Local básico").forEach { option ->
+                    listOf("Qwen2.5 local", "Local básico").forEach { option ->
                         FilterChip(
                             selected = aiEngine == option,
                             onClick = { aiEngine = option; preferences.aiEnginePreference = option },
@@ -194,11 +197,11 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                         )
                     }
                 }
-                if (aiEngine == "LFM2.5 local" && studyState != StudyModelState.INSTALLED) {
-                    Text("LFM2.5 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                if (aiEngine == "Qwen2.5 local" && studyState != StudyModelState.INSTALLED) {
+                    Text("Qwen2.5 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                 }
-                if (preferences.lastLfmError.isNotBlank()) {
-                    Text("Último fallo de LFM2.5: ${preferences.lastLfmError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (preferences.lastLocalAiError.isNotBlank()) {
+                    Text("Último fallo del modelo local: ${preferences.lastLocalAiError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -396,7 +399,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
 
                 DownloadComponentCard(
                     title = StudyModelSpec.DISPLAY_NAME,
-                    subtitle = "${StudyModelSpec.MODEL_NAME} · ~731 MB · ${StudyModelSpec.LICENSE} · sin costo por tokens",
+                    subtitle = "${StudyModelSpec.MODEL_NAME} · ~1.12 GB · ${StudyModelSpec.LICENSE} · sin costo por tokens",
                     stateText = when (studyState) {
                         StudyModelState.INSTALLED -> "Instalado · listo para TuNot"
                         StudyModelState.DOWNLOADING -> "Descargando"
@@ -407,11 +410,35 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     downloading = studyState == StudyModelState.DOWNLOADING,
                     onDownload = {
                         runCatching { studyManager.enqueueDownload() }
-                            .onFailure { saveMessage = "LFM2.5: ${it.message ?: "no se pudo iniciar la descarga"}" }
+                            .onFailure { saveMessage = "Qwen2.5: ${it.message ?: "no se pudo iniciar la descarga"}" }
                         refreshTick++
                     },
                     onRemove = { runCatching { studyManager.removeModel() }; refreshTick++ }
                 )
+
+                if (legacyLfmInstalled) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(13.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("LFM2.5 anterior", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                                Text("~731 MB · se conserva hasta que confirmes Qwen2.5", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                            }
+                            OutlinedButton(onClick = {
+                                runCatching { studyManager.removeLegacyLfmModel() }
+                                    .onSuccess { saveMessage = "LFM2.5 anterior eliminado." }
+                                    .onFailure { saveMessage = it.message ?: "No se pudo eliminar LFM2.5" }
+                                refreshTick++
+                            }) { Text("Eliminar") }
+                        }
+                    }
+                }
             }
         }
 

@@ -21,12 +21,15 @@ class NotCanPreferences(context: Context) {
         set(value) = prefs.edit().putString(KEY_AI_DETAIL, value).apply()
 
     var aiEnginePreference: String
-        get() = prefs.getString(KEY_AI_ENGINE, "Automático") ?: "Automático"
+        get() {
+            val stored = prefs.getString(KEY_AI_ENGINE, "Automático") ?: "Automático"
+            return if (stored == "LFM2.5 local") "Qwen2.5 local" else stored
+        }
         set(value) = prefs.edit().putString(KEY_AI_ENGINE, value).apply()
 
-    var lastLfmError: String
-        get() = prefs.getString(KEY_LAST_LFM_ERROR, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_LAST_LFM_ERROR, value.take(500)).apply()
+    var lastLocalAiError: String
+        get() = prefs.getString(KEY_LAST_LOCAL_AI_ERROR, "") ?: prefs.getString(KEY_LAST_LFM_ERROR, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_LAST_LOCAL_AI_ERROR, value.take(500)).apply()
 
     var mistralAgentId: String
         get() = prefs.getString(KEY_MISTRAL_AGENT_ID, "") ?: ""
@@ -63,7 +66,8 @@ class NotCanPreferences(context: Context) {
         private const val KEY_AI_INSTRUCTIONS = "ai_instructions"
         private const val KEY_AI_DETAIL = "ai_detail"
         private const val KEY_AI_ENGINE = "ai_engine_preference"
-        private const val KEY_LAST_LFM_ERROR = "last_lfm_error"
+        private const val KEY_LAST_LFM_ERROR = "last_lfm_error" // migration only
+        private const val KEY_LAST_LOCAL_AI_ERROR = "last_local_ai_error"
         private const val KEY_MISTRAL_AGENT_ID = "mistral_agent_id"
         private const val KEY_MISTRAL_CONVERSATION_ID = "mistral_conversation_id"
         private const val KEY_DARK_THEME = "dark_theme"

@@ -11,8 +11,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
-/** Experimental on-device TuNot brain backed by LiquidAI LFM2.5 + llama.cpp. */
-class LocalLfmTuNotEngine(context: Context) {
+/** On-device TuNot brain backed by Qwen2.5 1.5B Instruct Q4_K_M + llama.cpp. */
+class LocalQwenTuNotEngine(context: Context) {
     private val appContext = context.applicationContext
     private val modelManager = StudyModelManager(appContext)
     private val mutex = Mutex()
@@ -28,7 +28,7 @@ class LocalLfmTuNotEngine(context: Context) {
         question: String,
         strictSources: Boolean
     ): String = mutex.withLock {
-        check(isAvailable()) { "LFM2.5 no está instalado" }
+        check(isAvailable()) { "Qwen2.5 no está instalado" }
         val engine = AiChat.getInferenceEngine(appContext)
         ensureModelReady(engine)
 
@@ -46,9 +46,9 @@ class LocalLfmTuNotEngine(context: Context) {
 
         val prompt = buildString {
             if (strictSources) {
-                appendLine("Modo SOLO MIS FUENTES: responde únicamente con el material incluido. Si no consta, dilo claramente.")
+                appendLine("Responde SOLO con las fuentes incluidas. Si el dato no consta, dilo claramente.")
             } else {
-                appendLine("Usa el material de clase cuando sea pertinente. Si respondes con conocimiento general, no lo presentes como cita de los apuntes.")
+                appendLine("Usa el material de clase cuando sea pertinente. Puedes explicar con conocimiento general fiable, sin presentarlo como cita de los apuntes.")
             }
             if (sourceContext.isNotBlank()) {
                 appendLine("\n--- MATERIAL DE NOTCAN ---")
@@ -64,14 +64,14 @@ class LocalLfmTuNotEngine(context: Context) {
             engine.sendUserPrompt(prompt, PREDICT_TOKENS).collect { token -> output.append(token) }
         }
         sanitizeModelOutput(output.toString())
-            .ifBlank { error("LFM2.5 no produjo texto utilizable") }
+            .ifBlank { error("Qwen2.5 no produjo texto utilizable") }
     }
 
     private fun sanitizeModelOutput(raw: String): String = raw
         .replace(SPECIAL_TOKEN_REGEX, "")
-        .replace("</pad/>", "")
-        .replace("</pad>", "")
-        .replace("<pad>", "")
+        .replace("<|im_start|>", "")
+        .replace("<|im_end|>", "")
+        .replace("<|endoftext|>", "")
         .trim()
 
     private suspend fun ensureModelReady(engine: InferenceEngine) {
@@ -94,20 +94,21 @@ class LocalLfmTuNotEngine(context: Context) {
     }
 
     companion object {
-        const val MODEL_LABEL = "LFM2.5 1.2B · local"
-        private const val MAX_SOURCE_PART_CHARS = 3_600
-        private const val MAX_SOURCE_CHARS = 7_200
+        const val MODEL_LABEL = "Qwen2.5 1.5B · local"
+        private const val MAX_SOURCE_PART_CHARS = 3_200
+        private const val MAX_SOURCE_CHARS = 6_400
         private const val PREDICT_TOKENS = 512
         private const val INIT_TIMEOUT_MS = 120_000L
         private const val GENERATION_TIMEOUT_MS = 180_000L
         private val SPECIAL_TOKEN_REGEX = Regex("""<\|[^>]+\|>""")
         private val SYSTEM_PROMPT = """
             Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.
-            Responde en español claro, preciso y útil para estudiar. Prioriza fidelidad a los apuntes y transcripciones proporcionados.
-            No inventes citas, páginas, autores, fechas ni afirmaciones ausentes de una fuente cuando el usuario pida trabajar solo con sus fuentes.
-            Distingue una explicación general de una afirmación tomada del material del estudiante. No muestres cadena de pensamiento.
-            Para teología católica, distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica; no presentes una opinión como magisterio.
-            No llames herramientas ni emitas tokens especiales. Responde con texto normal y Markdown sencillo.
+            Responde en español claro, natural, preciso y útil para estudiar.
+            Prioriza fidelidad a los apuntes y transcripciones proporcionados.
+            No inventes citas, páginas, autores, fechas ni referencias.
+            Cuando se trabaje solo con fuentes, no añadas información que no esté en ellas.
+            Para teología católica, distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.
+            No muestres cadena de pensamiento. Responde directamente con Markdown sencillo.
         """.trimIndent()
     }
 }

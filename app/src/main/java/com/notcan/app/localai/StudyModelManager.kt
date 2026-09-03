@@ -6,15 +6,16 @@ import android.net.Uri
 import java.io.File
 
 object StudyModelSpec {
-    const val DISPLAY_NAME = "TuNot offline · LFM2.5"
-    const val MODEL_NAME = "LFM2.5 1.2B Instruct Q4_K_M"
-    const val FILE_NAME = "LFM2.5-1.2B-Instruct-Q4_K_M.gguf"
-    const val DOWNLOAD_URL = "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_K_M.gguf?download=true"
-    const val APPROX_BYTES = 731_000_000L
-    const val MIN_VALID_BYTES = 700_000_000L
-    const val LICENSE = "LFM Open License 1.0"
-    const val SHA256 = "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5"
+    const val DISPLAY_NAME = "TuNot offline · Qwen2.5"
+    const val MODEL_NAME = "Qwen2.5 1.5B Instruct Q4_K_M"
+    const val FILE_NAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    const val DOWNLOAD_URL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true"
+    const val APPROX_BYTES = 1_120_000_000L
+    const val MIN_VALID_BYTES = 1_000_000_000L
+    const val LICENSE = "Apache-2.0"
+    const val SHA256 = "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
 
+    const val LEGACY_LFM_FILE_NAME = "LFM2.5-1.2B-Instruct-Q4_K_M.gguf"
     const val LEGACY_QWEN_FILE_NAME = "Qwen3-0.6B-Q8_0.gguf"
     const val LEGACY_DEEPSEEK_FILE_NAME = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf"
 }
@@ -34,13 +35,21 @@ class StudyModelManager(private val context: Context) {
         return File(dir, StudyModelSpec.FILE_NAME)
     }
 
-    private fun legacyModelFiles(): List<File> {
-        val parent = modelFile().parentFile
-        return listOf(
-            File(parent, StudyModelSpec.LEGACY_QWEN_FILE_NAME),
-            File(parent, StudyModelSpec.LEGACY_DEEPSEEK_FILE_NAME)
-        )
+    private fun modelDir(): File = modelFile().parentFile ?: File(context.filesDir, "models")
+
+    fun legacyLfmFile(): File = File(modelDir(), StudyModelSpec.LEGACY_LFM_FILE_NAME)
+
+    fun hasLegacyLfmModel(): Boolean = legacyLfmFile().let { it.exists() && it.length() >= 650_000_000L }
+
+    fun removeLegacyLfmModel(): Boolean {
+        val file = legacyLfmFile()
+        return !file.exists() || file.delete()
     }
+
+    private fun olderLegacyModelFiles(): List<File> = listOf(
+        File(modelDir(), StudyModelSpec.LEGACY_QWEN_FILE_NAME),
+        File(modelDir(), StudyModelSpec.LEGACY_DEEPSEEK_FILE_NAME)
+    )
 
     fun state(): StudyModelState {
         if (isValidModel(modelFile())) return StudyModelState.INSTALLED
@@ -72,7 +81,7 @@ class StudyModelManager(private val context: Context) {
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(StudyModelSpec.DOWNLOAD_URL))
             .setTitle("NotCan · TuNot offline")
-            .setDescription("LFM2.5 1.2B Instruct Q4_K_M · aprox. 731 MB · funciona sin internet")
+            .setDescription("Qwen2.5 1.5B Instruct Q4_K_M · aprox. 1.12 GB · funciona sin internet")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverRoaming(false)
             .setAllowedOverMetered(true)
@@ -92,7 +101,7 @@ class StudyModelManager(private val context: Context) {
                 staging.outputStream().buffered().use { output -> source.copyTo(output) }
             }
             if (!isValidModel(staging)) {
-                throw IllegalArgumentException("El archivo no parece ser LFM2.5 1.2B Instruct Q4_K_M en formato GGUF o está incompleto")
+                throw IllegalArgumentException("El archivo no parece ser Qwen2.5 1.5B Instruct Q4_K_M en formato GGUF o está incompleto")
             }
             if (destination.exists() && !destination.delete()) {
                 throw IllegalStateException("No se pudo reemplazar el modelo local anterior")
@@ -138,8 +147,9 @@ class StudyModelManager(private val context: Context) {
         }
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
         val currentDeleted = !modelFile().exists() || modelFile().delete()
-        val legacyDeleted = legacyModelFiles().all { !it.exists() || it.delete() }
-        return currentDeleted && legacyDeleted
+        val oldDeleted = olderLegacyModelFiles().all { !it.exists() || it.delete() }
+        // Deliberately do not delete LFM2.5 here. It has its own explicit cleanup action.
+        return currentDeleted && oldDeleted
     }
 
     private fun isValidModel(file: File): Boolean {

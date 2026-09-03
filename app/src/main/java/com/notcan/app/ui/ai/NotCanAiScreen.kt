@@ -557,7 +557,7 @@ private fun CompactChatHeader(subjectName: String?, classTitle: String?, engineL
 
 @Composable
 private fun ConnectionBadge(engineLabel: String) {
-    val emphasized = engineLabel.contains("Mistral") || engineLabel.contains("LFM2.5")
+    val emphasized = engineLabel.contains("Mistral") || engineLabel.contains("Qwen2.5")
     Surface(color = NotCanBlue.copy(alpha = if (emphasized) 0.13f else 0.09f), shape = RoundedCornerShape(50)) {
         Text(
             engineLabel,

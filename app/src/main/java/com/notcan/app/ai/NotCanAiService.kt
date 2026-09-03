@@ -17,7 +17,7 @@ class NotCanAiService(private val context: Context) {
     private val preferences = NotCanPreferences(appContext)
     private val credentials = MistralCredentialsStore(appContext)
     private val webResearch = WebResearchService(appContext)
-    private val localLfm = LocalLfmTuNotEngine(appContext)
+    private val localQwen = LocalQwenTuNotEngine(appContext)
 
     fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
 
@@ -61,21 +61,21 @@ class NotCanAiService(private val context: Context) {
             return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
         }
 
-        suspend fun localFallback(skipLfm: Boolean = false): String {
-            val lfmEligible = !mapRequest && !flashcardRequest && !quizRequest
-            if (!skipLfm && lfmEligible && localLfm.isAvailable()) {
+        suspend fun localFallback(skipQwen: Boolean = false): String {
+            val qwenEligible = !mapRequest && !flashcardRequest && !quizRequest
+            if (!skipQwen && qwenEligible && localQwen.isAvailable()) {
                 try {
-                    val answer = localLfm.answer(
+                    val answer = localQwen.answer(
                         subjectName = subjectName,
                         notes = plainNotes,
                         transcript = plainTranscript,
                         question = localQuestion,
                         strictSources = strictSources
                     )
-                    preferences.lastLfmError = ""
-                    return markEngine("LFM2.5 local", answer)
+                    preferences.lastLocalAiError = ""
+                    return markEngine("Qwen2.5 local", answer)
                 } catch (t: Throwable) {
-                    preferences.lastLfmError = t.message ?: t.javaClass.simpleName
+                    preferences.lastLocalAiError = t.message ?: t.javaClass.simpleName
                 }
             }
             val basic = OfflineTuNotEngine.answer(
@@ -88,8 +88,8 @@ class NotCanAiService(private val context: Context) {
         }
 
         when (preferences.aiEnginePreference) {
-            "LFM2.5 local" -> return localFallback(skipLfm = false)
-            "Local básico" -> return localFallback(skipLfm = true)
+            "Qwen2.5 local" -> return localFallback(skipQwen = false)
+            "Local básico" -> return localFallback(skipQwen = true)
         }
 
         if (!isConfigured()) return localFallback()
