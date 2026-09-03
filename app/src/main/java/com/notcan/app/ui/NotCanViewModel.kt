@@ -20,6 +20,8 @@ import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
+import com.notcan.app.localai.TranscriptionSelection
+import com.notcan.app.localai.TranscriptionTraceStore
 import com.notcan.app.sources.ClassSourceStore
 import com.notcan.app.ui.home.NoteDocxImporter
 import com.notcan.app.sync.SupabaseSyncManager
@@ -277,7 +279,9 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteAudio(audioId: String) {
         val audio = audioRecordings.value.firstOrNull { it.id == audioId } ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            File(audio.localPath).delete()
+            val audioFile = File(audio.localPath)
+            TranscriptionTraceStore.deleteForAudio(audioFile)
+            audioFile.delete()
             repository.deleteAudio(audio.id)
         }
     }
@@ -393,7 +397,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                 val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
                 val externalSources = sourceStore.combinedContext(scopeKey)
                 val transcriptText = buildString {
-                    append(transcripts.value.joinToString("\n\n") { it.body })
+                    append(TranscriptionSelection.preferredForAi(transcripts.value).joinToString("\n\n") { it.body })
                     if (externalSources.isNotBlank()) {
                         appendLine("\n\nARCHIVOS EXTERNOS INDEXADOS PARA ESTA CLASE:")
                         append(externalSources)

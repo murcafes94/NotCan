@@ -45,6 +45,20 @@ class BackgroundTranscriptionWorker(
 
         return try {
             val dao = NotCanDatabase.getInstance(applicationContext).dao()
+            val transcriptId = "final-$audioId"
+            val processingNow = System.currentTimeMillis()
+            dao.insertTranscript(
+                TranscriptEntity(
+                    id = transcriptId,
+                    classSessionId = classSessionId,
+                    audioId = audioId,
+                    body = "Procesando transcripción final…",
+                    status = "PROCESSING_FINAL",
+                    modelName = "Whisper · procesando",
+                    createdAtEpochMs = processingNow,
+                    updatedAtEpochMs = processingNow
+                )
+            )
             val classSession = dao.getClassSession(classSessionId)
             val subject = classSession?.let { dao.getSubject(it.subjectId) }
             val storedVocabulary = subject?.let { selectedSubject ->
@@ -89,15 +103,39 @@ class BackgroundTranscriptionWorker(
                     subjectName = subject?.name,
                     classTitle = displayName
                 )
+                val rawSidecar = TranscriptionTraceStore.writeRaw(audio, "whisper.groq", transcription.text)
                 provider = "Groq online"
                 modelName = "${GroqTranscriptionService.DISPLAY_NAME} · español · literal"
                 transcriptStatus = "FINAL_GROQ_TIMED"
+                TranscriptionTraceStore.writeMetadata(
+                    audio = audio,
+                    provider = provider,
+                    model = modelName,
+                    finalStatus = transcriptStatus,
+                    academicTermCount = academicTerms.size,
+                    rawFile = rawSidecar,
+                    postCorrectionApplied = false
+                )
             } else {
                 if (groqConfigured && !networkAvailable && WhisperModelManager(applicationContext).state() != WhisperModelState.INSTALLED) {
+                    val waitingNow = System.currentTimeMillis()
+                    dao.insertTranscript(
+                        TranscriptEntity(
+                            id = transcriptId,
+                            classSessionId = classSessionId,
+                            audioId = audioId,
+                            body = "Esperando Internet o Whisper local para terminar la transcripción…",
+                            status = "WAITING_FINAL",
+                            modelName = "Whisper · en espera",
+                            createdAtEpochMs = processingNow,
+                            updatedAtEpochMs = waitingNow
+                        )
+                    )
                     notifyFailed(displayName, "Sin Internet y sin Whisper local instalado. Se reintentará después.")
                     return Result.retry()
                 }
                 val rawLocal = LocalWhisperEngine(applicationContext).transcribeM4aDetailed(audio)
+                val rawSidecar = TranscriptionTraceStore.writeRaw(audio, "whisper.local", rawLocal.text)
                 transcription = AcademicTranscriptionContext.correct(rawLocal, academicTerms)
                 provider = if (groqConfigured) "Whisper local · respaldo sin Internet" else "Whisper local"
                 modelName = if (academicTerms.isNotEmpty()) {
@@ -106,6 +144,15 @@ class BackgroundTranscriptionWorker(
                     WhisperModelSpec.DISPLAY_NAME
                 }
                 transcriptStatus = "FINAL_LOCAL_TIMED"
+                TranscriptionTraceStore.writeMetadata(
+                    audio = audio,
+                    provider = provider,
+                    model = modelName,
+                    finalStatus = transcriptStatus,
+                    academicTermCount = academicTerms.size,
+                    rawFile = rawSidecar,
+                    postCorrectionApplied = academicTerms.isNotEmpty() && rawLocal.text.trim() != transcription.text.trim()
+                )
             }
             val plainText = transcription.text.trim()
             val timedText = transcription.segments
@@ -115,7 +162,6 @@ class BackgroundTranscriptionWorker(
                 .ifBlank { plainText }
 
             val now = System.currentTimeMillis()
-            val transcriptId = "final-$audioId"
             dao.insertTranscript(
                 TranscriptEntity(
                     id = transcriptId,
@@ -191,6 +237,21 @@ class BackgroundTranscriptionWorker(
             )
         } catch (t: Throwable) {
             val message = t.message ?: "No se pudo transcribir el audio"
+            runCatching {
+                val failedNow = System.currentTimeMillis()
+                NotCanDatabase.getInstance(applicationContext).dao().insertTranscript(
+                    TranscriptEntity(
+                        id = "final-$audioId",
+                        classSessionId = classSessionId,
+                        audioId = audioId,
+                        body = "No se pudo completar la transcripción final. Puedes reintentarla desde esta clase.",
+                        status = "FAILED_FINAL",
+                        modelName = "Whisper · fallo",
+                        createdAtEpochMs = failedNow,
+                        updatedAtEpochMs = failedNow
+                    )
+                )
+            }
             notifyFailed(displayName, message)
             Result.failure(workDataOf(KEY_ERROR to message))
         }

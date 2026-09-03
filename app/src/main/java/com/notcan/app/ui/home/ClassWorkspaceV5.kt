@@ -315,7 +315,8 @@ private fun LiveTranscriptPanel(transcript: String, status: String, modifier: Mo
 
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = NotCanGraphite), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.fillMaxSize().padding(12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Moonshine · provisional", color = NotCanBlue, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.GraphicEq, contentDescription = null, tint = NotCanBlue, modifier = Modifier.size(18.dp))
             }
             Spacer(Modifier.height(5.dp))
@@ -623,21 +624,26 @@ private fun TranscriptContentV5(
     onDeleteTranscript: (String) -> Unit
 ) {
     val latestAudio = audioRecordings.firstOrNull()
+    val pipelineBusy = busy || transcripts.any {
+        it.status.startsWith("PROCESSING", ignoreCase = true) || it.status.startsWith("WAITING", ignoreCase = true)
+    }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text("Transcripción final", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
                     Text(
-                        when (modelState) {
-                            WhisperModelState.INSTALLED -> "Whisper large-v3-turbo listo. Puede continuar en segundo plano."
-                            WhisperModelState.DOWNLOADING -> "Whisper se está descargando en segundo plano."
-                            WhisperModelState.NOT_INSTALLED -> "Descarga Whisper desde IA → Fuentes. La transcripción provisional de clase usa Moonshine."
+                        when {
+                            transcripts.any { it.status.startsWith("PROCESSING", ignoreCase = true) } -> "Whisper está procesando el audio. El original permanece guardado."
+                            transcripts.any { it.status.startsWith("WAITING", ignoreCase = true) } -> "En espera: NotCan usará Groq al recuperar Internet o Whisper local si está instalado."
+                            modelState == WhisperModelState.INSTALLED -> "Ruta híbrida lista: Groq Whisper Large V3 online; Whisper local como respaldo."
+                            modelState == WhisperModelState.DOWNLOADING -> "Whisper local se está descargando. Groq puede usarse online si está configurado."
+                            else -> "Groq puede hacer la transcripción final online; Moonshine sigue siendo solo provisional."
                         },
                         color = NotCanGray
                     )
-                    Button(enabled = latestAudio != null && modelState == WhisperModelState.INSTALLED && !busy, onClick = { latestAudio?.let { onTranscribeLocal(it.id) } }) {
-                        Text(if (busy) "Procesando…" else "Transcribir último audio")
+                    Button(enabled = latestAudio != null && !pipelineBusy, onClick = { latestAudio?.let { onTranscribeLocal(it.id) } }) {
+                        Text(if (pipelineBusy) "Procesando…" else "Generar transcripción final")
                     }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
@@ -665,22 +671,44 @@ private fun TranscriptContentV5(
 private fun TranscriptRowV5(transcript: TranscriptEntity, onDelete: () -> Unit) {
     val context = LocalContext.current
     var confirmDelete by remember(transcript.id) { mutableStateOf(false) }
+    val stateLabel = when {
+        transcript.status.startsWith("LIVE", ignoreCase = true) -> "Provisional · Moonshine"
+        transcript.status.startsWith("PROCESSING", ignoreCase = true) -> "Procesando final"
+        transcript.status.startsWith("WAITING", ignoreCase = true) -> "En espera"
+        transcript.status.startsWith("FINAL_GROQ", ignoreCase = true) -> "Final · Whisper Large V3 online"
+        transcript.status.startsWith("FINAL_LOCAL", ignoreCase = true) -> "Final · Whisper local"
+        transcript.status.startsWith("FAILED", ignoreCase = true) -> "No completada"
+        else -> "Guardada"
+    }
+    val stateColor = when {
+        transcript.status.startsWith("FAILED", ignoreCase = true) -> NotCanRed
+        transcript.status.startsWith("FINAL", ignoreCase = true) -> NotCanBlue
+        else -> NotCanGray
+    }
+    val canShare = !transcript.status.startsWith("PROCESSING", ignoreCase = true) &&
+        !transcript.status.startsWith("WAITING", ignoreCase = true) &&
+        !transcript.status.startsWith("FAILED", ignoreCase = true)
     Card(colors = CardDefaults.cardColors(containerColor = NotCanGraphite), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                IconButton(onClick = {
-                    val title = transcript.modelName ?: "Transcripción NotCan"
-                    val intent = Intent(Intent.ACTION_SEND)
-                        .setType("text/plain")
-                        .putExtra(Intent.EXTRA_SUBJECT, title)
-                        .putExtra(Intent.EXTRA_TEXT, transcript.body)
-                    context.startActivity(Intent.createChooser(intent, "Compartir transcripción"))
-                }) { Icon(Icons.Default.Share, "Compartir transcripción", tint = NotCanBlue) }
+                Column(Modifier.weight(1f)) {
+                    Text(transcript.modelName ?: "Transcripción", color = NotCanBlue, style = MaterialTheme.typography.labelMedium)
+                    Text(stateLabel, color = stateColor, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                }
+                if (canShare) {
+                    IconButton(onClick = {
+                        val title = transcript.modelName ?: "Transcripción NotCan"
+                        val intent = Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_SUBJECT, title)
+                            .putExtra(Intent.EXTRA_TEXT, transcript.body)
+                        context.startActivity(Intent.createChooser(intent, "Compartir transcripción"))
+                    }) { Icon(Icons.Default.Share, "Compartir transcripción", tint = NotCanBlue) }
+                }
                 IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Eliminar transcripción", tint = NotCanRed) }
             }
             Spacer(Modifier.height(5.dp))
-            Text(transcript.body, color = NotCanOffWhite)
+            Text(transcript.body, color = if (canShare) NotCanOffWhite else NotCanGray)
         }
     }
     if (confirmDelete) {

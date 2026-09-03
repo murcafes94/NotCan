@@ -32,6 +32,7 @@ import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.localai.BackgroundTranscriptionManager
+import com.notcan.app.localai.TranscriptionSelection
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
 import com.notcan.app.settings.NotCanPreferences
@@ -160,7 +161,7 @@ class MainActivity : ComponentActivity() {
                             )
                         )
                     }
-                    transcripts.forEachIndexed { index, transcript ->
+                    TranscriptionSelection.preferredForAi(transcripts).forEachIndexed { index, transcript ->
                         add(
                             TuNotOfflineEntry(
                                 title = "Transcripción ${index + 1}",

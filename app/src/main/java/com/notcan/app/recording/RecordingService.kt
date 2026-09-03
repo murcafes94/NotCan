@@ -24,6 +24,7 @@ import com.notcan.app.localai.BackgroundTranscriptionManager
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.LocalLiveTranscriber
+import com.notcan.app.localai.TranscriptionTraceStore
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.settings.NotCanPreferences
@@ -253,7 +254,7 @@ class RecordingService : Service() {
                 val liveText = liveCorrectedTranscript.toString().trim()
                 val rawLiveText = liveRawTranscript.toString().trim()
                 if (rawLiveText.isNotBlank() && rawLiveText != liveText) {
-                    runCatching { File("$path.moonshine.raw.txt").writeText(rawLiveText) }
+                    TranscriptionTraceStore.writeRaw(file, "moonshine", rawLiveText)
                 }
                 if (liveText.isNotBlank()) {
                     val now = System.currentTimeMillis()
