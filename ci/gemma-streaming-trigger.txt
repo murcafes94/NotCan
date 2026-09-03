@@ -1,1 +1,2 @@
 Apply Gemma 4 LiteRT streaming UI and adaptive local RAG context.
+Build requested: 2026-09-03 streaming test.
