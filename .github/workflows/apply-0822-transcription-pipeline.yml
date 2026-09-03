@@ -1,0 +1,61 @@
+name: Apply 0.8.22 transcription pipeline
+
+on:
+  push:
+    paths:
+      - 'ci/notcan-0822-transcription-trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  patch-build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply transcription pipeline preparation
+        run: python3 ci/apply_0822_transcription_pipeline.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Commit validated source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app
+          git commit -m 'feat(transcription): prepare hybrid final pipeline and provenance'
+          git push
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-v0.8.22-transcription-pipeline
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 5
