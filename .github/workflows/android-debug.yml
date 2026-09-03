@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/**", "feature-study-maps", "fix/**", "notcan-v0.7.7-mistral" ]
+    branches: [ "main", "feature/**", "feature-study-maps", "fix/**", "notcan-v0.7.7-mistral", "probe-litert-015" ]
   workflow_dispatch:
 
 jobs:
@@ -49,6 +49,38 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Probe LiteRT-LM 0.15 output token limit
+        if: github.ref == 'refs/heads/probe-litert-015'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/litertlm-android:0.11.0/litertlm-android:0.15.0/' app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt')
+          s = p.read_text()
+          old = '''        val conversationConfig = ConversationConfig(
+            systemInstruction = Contents.of(buildSystemInstruction(strictSources)),
+            samplerConfig = SamplerConfig(
+                topK = TOP_K,
+                topP = TOP_P,
+                temperature = TEMPERATURE
+            )
+        )'''
+          new = '''        val conversationConfig = ConversationConfig(
+            systemInstruction = Contents.of(buildSystemInstruction(strictSources)),
+            samplerConfig = SamplerConfig(
+                topK = TOP_K,
+                topP = TOP_P,
+                temperature = TEMPERATURE
+            ),
+            maxOutputToken = 256
+        )'''
+          if old not in s:
+              raise SystemExit('ConversationConfig block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
