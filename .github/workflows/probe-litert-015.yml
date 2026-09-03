@@ -1,0 +1,77 @@
+name: Probe LiteRT-LM 0.15
+
+on:
+  push:
+    branches: [probe-litert-015]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Probe LiteRT-LM 0.15 and maxOutputToken
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/litertlm-android:0.11.0/litertlm-android:0.15.0/' app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt')
+          s = p.read_text()
+          old = '''        val conversationConfig = ConversationConfig(
+            systemInstruction = Contents.of(buildSystemInstruction(strictSources)),
+            samplerConfig = SamplerConfig(
+                topK = TOP_K,
+                topP = TOP_P,
+                temperature = TEMPERATURE
+            )
+        )'''
+          new = '''        val conversationConfig = ConversationConfig(
+            systemInstruction = Contents.of(buildSystemInstruction(strictSources)),
+            samplerConfig = SamplerConfig(
+                topK = TOP_K,
+                topP = TOP_P,
+                temperature = TEMPERATURE
+            ),
+            maxOutputToken = 256
+        )'''
+          if old not in s:
+              raise SystemExit('ConversationConfig block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Upload probe APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-litert-015-probe
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
