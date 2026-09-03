@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.19-qwen25-local-apk
+          name: notcan-v0.8.20-gemma4-litert-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.19-qwen-test"
+          TAG="v0.8.20-gemma-litert-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.19-Qwen2.5-local.apk" \
+            "$APK#NotCan-v0.8.20-Gemma4-LiteRT.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.19 · Qwen2.5 local" \
-            --notes "Reemplaza la prueba LFM2.5 por Qwen2.5-1.5B-Instruct Q4_K_M como motor generativo offline de TuNot. Qwen se descarga aparte (~1.12 GB) y funciona mediante llama.cpp sin pago por tokens. La ruta queda Mistral online -> Qwen2.5 local -> Local básico. El archivo LFM2.5 anterior se conserva y puede eliminarse manualmente desde Ajustes después de validar Qwen."
+            --title "NotCan v0.8.20 · Gemma 4 LiteRT local" \
+            --notes "Primera prueba de TuNot con Google LiteRT-LM y Gemma 4 E2B como motor generativo local avanzado. El modelo se descarga aparte (~2.6 GB), usa GPU cuando está disponible y cae a CPU si es necesario. La ruta automática queda Mistral online -> Gemma 4 LiteRT local -> Qwen2.5 local anterior -> Local básico. Gemma permanece totalmente local incluso con Internet; la búsqueda web no se conecta todavía a este motor durante esta fase de estabilidad."
