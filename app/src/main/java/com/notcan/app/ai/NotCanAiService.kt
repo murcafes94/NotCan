@@ -2,7 +2,9 @@ package com.notcan.app.ai
 
 import android.content.Context
 import android.text.Html
+import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.settings.NotCanPreferences
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -18,7 +20,6 @@ class NotCanAiService(private val context: Context) {
     private val credentials = MistralCredentialsStore(appContext)
     private val webResearch = WebResearchService(appContext)
     private val localGemma = LiteRtGemmaTuNotEngine(appContext)
-    private val localQwen = LocalQwenTuNotEngine(appContext)
 
     fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
 
@@ -37,6 +38,8 @@ class NotCanAiService(private val context: Context) {
         val forcedWeb = question.contains(WEB_SEARCH_MARKER)
         val autoWeb = question.contains(AUTO_WEB_MARKER)
         val socraticMode = question.contains(SOCRATIC_MARKER)
+        val pedagogicalMode = question.contains(PEDAGOGY_MARKER)
+        val vocabularyRequested = question.contains(VOCABULARY_MARKER)
         val flashcardRequest = question.contains(FLASHCARDS_MARKER)
         val quizRequest = question.contains(QUIZ_MARKER)
         val cleanQuestion = question
@@ -44,14 +47,11 @@ class NotCanAiService(private val context: Context) {
             .replace(WEB_SEARCH_MARKER, "")
             .replace(AUTO_WEB_MARKER, "")
             .replace(SOCRATIC_MARKER, "")
+            .replace(PEDAGOGY_MARKER, "")
+            .replace(VOCABULARY_MARKER, "")
             .replace(FLASHCARDS_MARKER, "")
             .replace(QUIZ_MARKER, "")
             .trim()
-        val localQuestion = buildString {
-            append(cleanQuestion)
-            if (flashcardRequest) append(" · tarjetas didácticas")
-            if (quizRequest) append(" · cuestionario")
-        }
         val mapRequest = OfflineTuNotEngine.isMapRequest(cleanQuestion) && !flashcardRequest && !quizRequest
         val lowerQuestion = cleanQuestion.lowercase()
         val conceptualMapRequest = mapRequest && ("conceptual" in lowerQuestion || "concept map" in lowerQuestion)
@@ -59,13 +59,30 @@ class NotCanAiService(private val context: Context) {
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
-        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank()) {
-            return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
+
+        val wantsWeb = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
+        val webResults = if (wantsWeb) {
+            runCatching { webResearch.research(cleanQuestion, limit = 5, readTop = 3) }.getOrDefault(emptyList())
+        } else emptyList()
+        val webContext = webResearch.formatForPrompt(webResults)
+        val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
+
+        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank() && vocabularyContext.isBlank()) {
+            return "No hay apuntes, transcripciones ni vocabulario académico disponibles para responder en modo Solo mis fuentes."
         }
 
-        suspend fun localFallback(allowGemma: Boolean = true, allowQwen: Boolean = true): String {
-            val llmEligible = !mapRequest && !flashcardRequest && !quizRequest
-            if (allowGemma && llmEligible && localGemma.isAvailable()) {
+        val localQuestion = buildLocalQuestion(
+            cleanQuestion = cleanQuestion,
+            mapRequest = mapRequest,
+            conceptualMapRequest = conceptualMapRequest,
+            ideaMapRequest = ideaMapRequest,
+            flashcardRequest = flashcardRequest,
+            quizRequest = quizRequest,
+            pedagogicalMode = pedagogicalMode
+        )
+
+        suspend fun localFallback(allowGemma: Boolean = true): String {
+            if (allowGemma && localGemma.isAvailable()) {
                 var lastGemmaPartial = ""
                 var lastGemmaBackend = ""
                 try {
@@ -75,6 +92,10 @@ class NotCanAiService(private val context: Context) {
                         transcript = plainTranscript,
                         question = localQuestion,
                         strictSources = strictSources,
+                        intentQuestion = cleanQuestion,
+                        webContext = if (strictSources) "" else webContext,
+                        vocabularyContext = vocabularyContext,
+                        pedagogicalMode = pedagogicalMode,
                         onPartial = { partialText, backendLabel ->
                             lastGemmaPartial = partialText
                             lastGemmaBackend = backendLabel
@@ -96,43 +117,21 @@ class NotCanAiService(private val context: Context) {
                     preferences.lastLocalAiError = "Gemma 4: $errorText"
                 }
             }
-            if (allowQwen && llmEligible && localQwen.isAvailable()) {
-                try {
-                    val answer = localQwen.answer(
-                        subjectName = subjectName,
-                        notes = plainNotes,
-                        transcript = plainTranscript,
-                        question = localQuestion,
-                        strictSources = strictSources
-                    )
-                    preferences.lastLocalAiError = ""
-                    return markEngine("Qwen2.5 local", answer)
-                } catch (t: Throwable) {
-                    preferences.lastLocalAiError = "Qwen2.5: ${t.message ?: t.javaClass.simpleName}"
-                }
-            }
             val basic = OfflineTuNotEngine.answer(
                 subjectName = subjectName,
                 notes = plainNotes,
                 transcript = plainTranscript,
-                question = localQuestion
+                question = cleanQuestion
             )
             return markEngine("Local básico", basic)
         }
 
         when (preferences.aiEnginePreference) {
-            "Gemma 4 local" -> return localFallback(allowGemma = true, allowQwen = false)
-            "Qwen2.5 local" -> return localFallback(allowGemma = false, allowQwen = true)
-            "Local básico" -> return localFallback(allowGemma = false, allowQwen = false)
+            "Gemma 4 local" -> return localFallback(allowGemma = true)
+            "Local básico" -> return localFallback(allowGemma = false)
         }
 
         if (!isConfigured()) return localFallback()
-
-        val wantsWeb = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
-        val webResults = if (wantsWeb) {
-            runCatching { webResearch.research(cleanQuestion, limit = 5, readTop = 3) }.getOrDefault(emptyList())
-        } else emptyList()
-        val webContext = webResearch.formatForPrompt(webResults)
 
         val sourceText = buildString {
             subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("MATERIA: $it") }
@@ -161,6 +160,14 @@ class NotCanAiService(private val context: Context) {
             appendLine("No abuses de comillas, asteriscos ni encabezados. La respuesta debe verse como apuntes bien editados, no como texto técnico del modelo.")
             appendLine()
             appendLine(TuNotCatholicSourcePolicy.promptPolicy())
+            if (pedagogicalMode) {
+                appendLine("MODO PEDAGOGO ACADÉMICO ACTIVADO.")
+                appendLine("Ayuda a aprender, planificar, priorizar y elegir técnicas de estudio. Sé práctico y ajusta el plan a la carga del estudiante.")
+                appendLine("No actúes como psicólogo ni hagas diagnósticos clínicos. Si el estudiante expresa cansancio o saturación, responde desde la organización y la pedagogía.")
+            }
+            if (vocabularyRequested) {
+                appendLine("El usuario pidió trabajar con el vocabulario académico de NotCan. Prioriza los términos suministrados y respeta exactamente sus grafías.")
+            }
             if (wantsWeb) {
                 appendLine("MODO WEB DE NOTCAN ACTIVADO.")
                 appendLine("NotCan realizó la búsqueda fuera de Mistral y te entrega FUENTES WEB reales debajo.")
@@ -269,6 +276,11 @@ class NotCanAiService(private val context: Context) {
                 appendLine("\n--- MATERIAL DE CLASE DISPONIBLE ---")
                 appendLine(sourceText)
                 appendLine("--- FIN DEL MATERIAL DE CLASE ---\n")
+            }
+            if (vocabularyContext.isNotBlank()) {
+                appendLine("\n--- VOCABULARIO ACADÉMICO DE NOTCAN ---")
+                appendLine(vocabularyContext)
+                appendLine("--- FIN DEL VOCABULARIO ---\n")
             }
             if (webContext.isNotBlank()) {
                 appendLine("\n--- FUENTES WEB RECUPERADAS POR NOTCAN ---")
@@ -400,6 +412,64 @@ class NotCanAiService(private val context: Context) {
         return null
     }
 
+    private suspend fun loadVocabularyContext(subjectName: String?, requested: Boolean): String {
+        val dao = NotCanDatabase.getInstance(appContext).dao()
+        val subjects = dao.getAllSubjects()
+        val subject = subjectName?.let { name -> subjects.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+        val cycleId = subject?.cycleId ?: dao.getAllCycles().firstOrNull { it.isActive }?.id ?: return ""
+        val limit = if (requested) 120 else 60
+        val terms = dao.observeVocabularyForCycle(cycleId).first()
+            .asSequence()
+            .filter { term -> subject == null || term.subjectId == null || term.subjectId == subject.id }
+            .distinctBy { it.normalizedTerm }
+            .take(limit)
+            .toList()
+        if (terms.isEmpty()) return ""
+        return terms.joinToString(" · ") { term ->
+            buildString {
+                append(term.term)
+                if (term.area.isNotBlank() && term.area != "general") append(" [${term.area}]")
+            }
+        }
+    }
+
+    private fun buildLocalQuestion(
+        cleanQuestion: String,
+        mapRequest: Boolean,
+        conceptualMapRequest: Boolean,
+        ideaMapRequest: Boolean,
+        flashcardRequest: Boolean,
+        quizRequest: Boolean,
+        pedagogicalMode: Boolean
+    ): String = buildString {
+        appendLine(cleanQuestion)
+        if (pedagogicalMode) {
+            appendLine()
+            appendLine("Actúa como pedagogo académico de NotCan: ayuda a comprender, organizar el estudio, priorizar y elegir técnicas concretas. No hagas diagnósticos psicológicos.")
+        }
+        if (mapRequest) {
+            appendLine()
+            appendLine("Devuelve exclusivamente un mapa entre <<<NOTCAN_MAP>>> y <<<END_NOTCAN_MAP>>> con JSON válido y sin markdown.")
+            appendLine("Esquema: {\"type\":\"mind_map|concept_map\",\"title\":\"...\",\"layout\":\"horizontal|radial|radial_cards|ideas|tree|constellation\",\"root_node_id\":\"root\",\"nodes\":[{\"id\":\"root\",\"title\":\"...\",\"description\":\"...\",\"level\":0,\"source_refs\":[\"Apuntes\"]}],\"edges\":[{\"from\":\"root\",\"to\":\"n1\",\"label\":\"...\"}]}")
+            appendLine("Genera 8–16 nodos claros, sin redundancias, todos conectados.")
+            when {
+                conceptualMapRequest -> appendLine("Usa type concept_map y prioriza relaciones semánticas etiquetadas.")
+                ideaMapRequest -> appendLine("Usa layout ideas y tarjetas breves alrededor del tema central.")
+                else -> appendLine("Usa type mind_map y una jerarquía tema central → ramas → subramas.")
+            }
+        }
+        if (flashcardRequest) {
+            appendLine()
+            appendLine("Devuelve exclusivamente entre <<<NOTCAN_FLASHCARDS>>> y <<<END_NOTCAN_FLASHCARDS>>> un JSON válido: {\"title\":\"...\",\"cards\":[{\"question\":\"...\",\"answer\":\"...\",\"source_ref\":\"Apuntes\"}]}")
+            appendLine("Genera 12–20 tarjetas atómicas, claras y útiles para recuperación activa.")
+        }
+        if (quizRequest) {
+            appendLine()
+            appendLine("Devuelve exclusivamente entre <<<NOTCAN_QUIZ>>> y <<<END_NOTCAN_QUIZ>>> un JSON válido: {\"title\":\"...\",\"questions\":[{\"id\":\"q1\",\"type\":\"multiple_choice|true_false|short_answer\",\"question\":\"...\",\"options\":[\"...\"],\"correct_answer\":\"...\",\"explanation\":\"...\",\"source_ref\":\"Apuntes\"}]}")
+            appendLine("Genera 12–20 preguntas. En opción múltiple usa 4 opciones y una sola respuesta correcta literal.")
+        }
+    }
+
     private fun sourcePlainText(value: String): String {
         if (value.isBlank()) return ""
         val withoutScripts = value
@@ -416,6 +486,8 @@ class NotCanAiService(private val context: Context) {
         const val WEB_SEARCH_MARKER = "[BUSCAR_WEB_NOTCAN]"
         const val AUTO_WEB_MARKER = "[AUTO_WEB_NOTCAN]"
         const val SOCRATIC_MARKER = "[MODO_SOCRATICO]"
+        const val PEDAGOGY_MARKER = "[MODO_PEDAGOGO_NOTCAN]"
+        const val VOCABULARY_MARKER = "[VOCABULARIO_NOTCAN]"
         const val FLASHCARDS_MARKER = "[GENERAR_TARJETAS_NOTCAN]"
         const val QUIZ_MARKER = "[GENERAR_CUESTIONARIO_NOTCAN]"
         private const val BASE_URL = "https://api.mistral.ai"

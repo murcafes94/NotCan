@@ -23,7 +23,7 @@ class NotCanPreferences(context: Context) {
     var aiEnginePreference: String
         get() {
             val stored = prefs.getString(KEY_AI_ENGINE, "Automático") ?: "Automático"
-            return if (stored == "LFM2.5 local") "Qwen2.5 local" else stored
+            return if (stored == "LFM2.5 local" || stored == "Qwen2.5 local") "Automático" else stored
         }
         set(value) = prefs.edit().putString(KEY_AI_ENGINE, value).apply()
 

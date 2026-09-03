@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "NotCan"
 include(":app")
-include(":llama-android")

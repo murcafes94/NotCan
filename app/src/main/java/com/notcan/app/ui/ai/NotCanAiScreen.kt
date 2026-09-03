@@ -129,8 +129,8 @@ fun NotCanAiScreen(
     var openedDeck by remember { mutableStateOf<ParsedFlashcardArtifact?>(null) }
     var openedQuiz by remember { mutableStateOf<ParsedQuizArtifact?>(null) }
 
-    LaunchedEffect(result, artifactScope) {
-        if (autoSaveNextArtifact && result.isNotBlank()) {
+    LaunchedEffect(result, busy, artifactScope) {
+        if (autoSaveNextArtifact && !busy && result.isNotBlank()) {
             if (artifactStore.save(artifactScope, result) != null) {
                 artifactRevision += 1
                 autoSaveNextArtifact = false
@@ -175,7 +175,7 @@ fun NotCanAiScreen(
                         if (artifactStore.save(artifactScope, raw) != null) artifactRevision += 1
                     }
                 )
-                else -> AiStudio(
+                2 -> AiStudio(
                     subjectName = subjectName,
                     classTitle = classTitle,
                     configured = onlineConfigured,
@@ -194,12 +194,22 @@ fun NotCanAiScreen(
                         artifactRevision += 1
                     }
                 )
+                else -> AiAssistance(
+                    subjectName = subjectName,
+                    classTitle = classTitle,
+                    busy = busy,
+                    onAsk = { prompt ->
+                        onAsk(prompt)
+                        section = 1
+                    }
+                )
             }
         }
         NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
             NavigationBarItem(selected = section == 0, onClick = { section = 0 }, icon = { Icon(Icons.Default.Source, null) }, label = { Text("Fuentes") })
             NavigationBarItem(selected = section == 1, onClick = { section = 1 }, icon = { Icon(Icons.Default.Chat, null) }, label = { Text("Chat") })
             NavigationBarItem(selected = section == 2, onClick = { section = 2 }, icon = { Icon(Icons.Default.AutoAwesome, null) }, label = { Text("Estudio") })
+            NavigationBarItem(selected = section == 3, onClick = { section = 3 }, icon = { Icon(Icons.Default.MenuBook, null) }, label = { Text("Asistencia") })
         }
     }
 }
@@ -800,6 +810,7 @@ private fun AiStudio(
     val savedArtifacts = remember(scope, artifactRevision) { store.load(scope) }
     val options = listOf(
         StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones."),
+        StudyTool("Vocabulario clave", "Términos académicos del ciclo y de esta materia", Icons.Default.MenuBook, "Usa también el vocabulario académico de NotCan. Identifica los términos más importantes para estudiar esta clase, respeta sus grafías y explica brevemente los que sean pertinentes."),
         StudyTool("Tarjetas didácticas", "Repaso activo, una pregunta por tarjeta", Icons.Default.Style, "Crea entre 12 y 20 tarjetas didácticas de esta clase.", NotCanAiService.FLASHCARDS_MARKER),
         StudyTool("Cuestionario", "Respóndelo aquí y repite los errores", Icons.Default.Quiz, "Crea un cuestionario mixto basado exclusivamente en esta clase. Combina opción múltiple, verdadero/falso y algunas preguntas breves de desarrollo.", NotCanAiService.QUIZ_MARKER),
         StudyTool("Mapa mental", "Ramas y subramas interactivas", Icons.Default.AutoAwesome, "Hazme un mapa mental de esta clase. Organiza el tema central, ramas principales y subramas. Usa solamente las fuentes disponibles."),
@@ -881,3 +892,91 @@ private fun AiStudio(
         }
     }
 }
+
+private data class AssistanceTool(
+    val title: String,
+    val subtitle: String,
+    val prompt: String
+)
+
+@Composable
+private fun AiAssistance(
+    subjectName: String?,
+    classTitle: String?,
+    busy: Boolean,
+    onAsk: (String) -> Unit
+) {
+    val options = listOf(
+        AssistanceTool(
+            "Organizar mi estudio",
+            "Convierte una carga grande en un plan realista",
+            "Ayúdame a organizar una sesión de estudio para esta materia. Prioriza lo esencial, divide el trabajo en bloques y pregúntame solo el tiempo disponible si hace falta."
+        ),
+        AssistanceTool(
+            "Preparar un examen",
+            "Orden, práctica activa y repaso",
+            "Actúa como pedagogo y ayúdame a preparar un examen de esta materia. Propón una estrategia por etapas usando recuperación activa, práctica y repaso; adapta el plan al material disponible."
+        ),
+        AssistanceTool(
+            "Elegir método de estudio",
+            "Qué técnica conviene para este contenido",
+            "Analiza el tipo de contenido de esta materia y recomiéndame métodos de estudio concretos. Explica cuándo usar preguntas activas, Feynman, repetición espaciada, mapas o simulacro oral."
+        ),
+        AssistanceTool(
+            "Estoy atrasado",
+            "Prioriza sin intentar hacerlo todo a la vez",
+            "Estoy atrasado con el estudio. Ayúdame a priorizar académicamente: separa imprescindible, importante y aplazable, y propón el siguiente bloque de trabajo. Si necesitas un dato, pregunta solo lo imprescindible."
+        ),
+        AssistanceTool(
+            "Cómo estudiar esta materia",
+            "Estrategia adaptada al contenido",
+            "Explícame cómo estudiar mejor esta materia según el material disponible: qué comprender, qué memorizar, qué practicar y cómo comprobar si realmente lo aprendí."
+        ),
+        AssistanceTool(
+            "Plan de repaso",
+            "Repasar sin releer todo desde cero",
+            "Diseña un plan de repaso eficiente para esta materia con recuperación activa, intervalos de repaso y comprobaciones breves de dominio."
+        )
+    )
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text("Asistencia pedagógica", color = NotCanOffWhite, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                listOfNotNull(subjectName, classTitle).joinToString(" · ").ifBlank { "Organización y métodos de estudio" },
+                color = NotCanGray
+            )
+            Text("TuNot te ayuda a aprender, organizarte y elegir técnicas de estudio. No sustituye a un profesional de salud mental.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+        }
+        items(options) { tool ->
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                    onAsk(
+                        buildString {
+                            appendLine(NotCanAiService.PEDAGOGY_MARKER)
+                            appendLine(NotCanAiService.AUTO_WEB_MARKER)
+                            append(tool.prompt)
+                        }
+                    )
+                },
+                colors = CardDefaults.cardColors(containerColor = NotCanSurface),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Row(Modifier.fillMaxWidth().padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = NotCanBlue.copy(alpha = 0.12f)) {
+                        Icon(Icons.Default.MenuBook, null, tint = NotCanBlue, modifier = Modifier.padding(10.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(tool.title, color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                        Text(tool.subtitle, color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+

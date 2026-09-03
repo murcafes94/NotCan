@@ -60,8 +60,6 @@ import com.notcan.app.localai.GemmaLiteRtModelState
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
 import com.notcan.app.localai.StudyModelManager
-import com.notcan.app.localai.StudyModelSpec
-import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
@@ -130,11 +128,10 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val liveProgress = remember(refreshTick) {
         runCatching { liveManager.progressPercent() }.getOrNull()
     }
-    val studyState = remember(refreshTick) {
-        runCatching { studyManager.state() }.getOrDefault(StudyModelState.NOT_INSTALLED)
-    }
-    val studyProgress = remember(refreshTick) {
-        runCatching { studyManager.progressPercent() }.getOrNull()
+    val oldQwenInstalled = remember(refreshTick) {
+        runCatching {
+            studyManager.modelFile().let { it.exists() && it.length() >= 500_000_000L }
+        }.getOrDefault(false)
     }
     val gemmaState = remember(refreshTick) {
         runCatching { gemmaManager.state() }.getOrDefault(GemmaLiteRtModelState.NOT_INSTALLED)
@@ -199,13 +196,11 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Gemma 4 local", "Qwen2.5 local").forEach { option ->
-                        FilterChip(
-                            selected = aiEngine == option,
-                            onClick = { aiEngine = option; preferences.aiEnginePreference = option },
-                            label = { Text(option) }
-                        )
-                    }
+                    FilterChip(
+                        selected = aiEngine == "Gemma 4 local",
+                        onClick = { aiEngine = "Gemma 4 local"; preferences.aiEnginePreference = "Gemma 4 local" },
+                        label = { Text("Gemma 4 local") }
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -216,9 +211,6 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 }
                 if (aiEngine == "Gemma 4 local" && gemmaState != GemmaLiteRtModelState.INSTALLED) {
                     Text("Gemma 4 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-                }
-                if (aiEngine == "Qwen2.5 local" && studyState != StudyModelState.INSTALLED) {
-                    Text("Qwen2.5 todavía no está instalado.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                 }
                 if (preferences.lastLocalAiError.isNotBlank()) {
                     Text("Último fallo del modelo local: ${preferences.lastLocalAiError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -436,26 +428,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     onRemove = { runCatching { gemmaManager.removeModel() }; refreshTick++ }
                 )
 
-                DownloadComponentCard(
-                    title = StudyModelSpec.DISPLAY_NAME,
-                    subtitle = "${StudyModelSpec.MODEL_NAME} · ~1.12 GB · ${StudyModelSpec.LICENSE} · motor anterior de prueba",
-                    stateText = when (studyState) {
-                        StudyModelState.INSTALLED -> "Instalado · disponible para comparar"
-                        StudyModelState.DOWNLOADING -> "Descargando"
-                        StudyModelState.NOT_INSTALLED -> "No instalado"
-                    },
-                    progress = studyProgress,
-                    installed = studyState == StudyModelState.INSTALLED,
-                    downloading = studyState == StudyModelState.DOWNLOADING,
-                    onDownload = {
-                        runCatching { studyManager.enqueueDownload() }
-                            .onFailure { saveMessage = "Qwen2.5: ${it.message ?: "no se pudo iniciar la descarga"}" }
-                        refreshTick++
-                    },
-                    onRemove = { runCatching { studyManager.removeModel() }; refreshTick++ }
-                )
-
-                if (legacyLfmInstalled) {
+                if (oldQwenInstalled || legacyLfmInstalled) {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
                         shape = RoundedCornerShape(14.dp)
@@ -466,15 +439,15 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("LFM2.5 anterior", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                                Text("~731 MB · legado de las pruebas locales anteriores", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                                Text("Modelos locales anteriores", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
+                                Text("Qwen2.5/LFM2.5 ya no se usan. Puedes eliminarlos y recuperar espacio.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                             }
                             OutlinedButton(onClick = {
-                                runCatching { studyManager.removeLegacyLfmModel() }
-                                    .onSuccess { saveMessage = "LFM2.5 anterior eliminado." }
-                                    .onFailure { saveMessage = it.message ?: "No se pudo eliminar LFM2.5" }
+                                val currentRemoved = runCatching { studyManager.removeModel() }.getOrDefault(false)
+                                val lfmRemoved = runCatching { studyManager.removeLegacyLfmModel() }.getOrDefault(false)
+                                saveMessage = if (currentRemoved && lfmRemoved) "Modelos antiguos eliminados." else "Se intentó limpiar los modelos antiguos."
                                 refreshTick++
-                            }) { Text("Eliminar") }
+                            }) { Text("Liberar espacio") }
                         }
                     }
                 }

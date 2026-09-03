@@ -71,6 +71,10 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         transcript: String,
         question: String,
         strictSources: Boolean,
+        intentQuestion: String = question,
+        webContext: String = "",
+        vocabularyContext: String = "",
+        pedagogicalMode: Boolean = false,
         onPartial: ((text: String, backendLabel: String) -> Unit)? = null
     ): Answer = mutex.withLock {
         check(isAvailable()) { "Gemma 4 LiteRT-LM no está instalado" }
@@ -80,14 +84,14 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             .takeIf {
                 it.isNotBlank() &&
                     lastAnswerSubject == subjectKey &&
-                    isResponseTransformRequest(question)
+                    isResponseTransformRequest(intentQuestion)
             }
             .orEmpty()
 
         val sourceContext = if (followUpContext.isNotBlank()) {
             ""
         } else {
-            buildSourceContext(subjectName, notes, transcript, question, strictSources)
+            buildSourceContext(subjectName, notes, transcript, intentQuestion, strictSources)
         }
 
         val prompt = buildString {
@@ -109,14 +113,28 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 appendLine(sourceContext)
                 appendLine("--- FIN DEL MATERIAL ---")
             }
+            if (vocabularyContext.isNotBlank()) {
+                appendLine()
+                appendLine("--- VOCABULARIO ACADÉMICO DE NOTCAN ---")
+                appendLine(vocabularyContext.take(MAX_VOCAB_CONTEXT_CHARS))
+                appendLine("Estos términos sirven para reconocer grafías y terminología; por sí solos no son definiciones ni prueba doctrinal.")
+                appendLine("--- FIN DEL VOCABULARIO ---")
+            }
+            if (!strictSources && webContext.isNotBlank()) {
+                appendLine()
+                appendLine("--- FUENTES WEB RECUPERADAS POR NOTCAN ---")
+                appendLine(webContext.take(MAX_WEB_CONTEXT_CHARS))
+                appendLine("Usa solo URLs y datos presentes aquí. Si citas web, menciona título/URL sin inventarlos.")
+                appendLine("--- FIN DE FUENTES WEB ---")
+            }
             appendLine()
-            appendLine(responseLengthInstruction(question))
+            appendLine(responseLengthInstruction(intentQuestion))
             appendLine("Pregunta actual del estudiante:")
             append(question.trim())
         }
 
         val conversationConfig = ConversationConfig(
-            systemInstruction = Contents.of(buildSystemInstruction(strictSources)),
+            systemInstruction = Contents.of(buildSystemInstruction(strictSources, pedagogicalMode)),
             samplerConfig = SamplerConfig(
                 topK = TOP_K,
                 topP = TOP_P,
@@ -124,9 +142,10 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             )
         )
 
+        val generationTimeoutMs = generationTimeoutMs(intentQuestion)
         val primaryHolder = ensureEngineReady()
         val answer = try {
-            generate(primaryHolder, prompt, conversationConfig, onPartial)
+            generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)
         } catch (t: GenerationException) {
             val recovered = recoverUsefulPartial(t.partialText)
             if (recovered != null) {
@@ -135,7 +154,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             } else if (primaryHolder.backendLabel == "GPU" && t.generatedChars == 0) {
                 resetEngine()
                 val cpuHolder = ensureCpuEngineReady("CPU respaldo")
-                generate(cpuHolder, prompt, conversationConfig, onPartial)
+                generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)
             } else {
                 resetEngine()
                 throw t
@@ -154,12 +173,13 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         engineHolder: EngineHolder,
         prompt: String,
         conversationConfig: ConversationConfig,
+        timeoutMs: Long,
         onPartial: ((text: String, backendLabel: String) -> Unit)?
     ): Answer = coroutineScope {
         val output = StringBuilder()
         val generationStartedAt = SystemClock.elapsedRealtime()
         try {
-            withTimeout(GENERATION_TIMEOUT_MS) {
+            withTimeout(timeoutMs) {
                 engineHolder.engine.createConversation(conversationConfig).use { conversation ->
                     val messages = conversation.sendMessageAsync(prompt).produceIn(this)
                     val firstMessage = if (engineHolder.backendLabel == "GPU") {
@@ -345,13 +365,30 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
         val explicitlyDetailed = listOf(
             "profundiza", "profundizar", "detalladamente", "con detalle", "desarrolla",
-            "desarrollalo", "explicacion completa", "explicacion profunda", "amplia"
+            "desarrollalo", "explicacion completa", "explicacion profunda", "amplia", "a fondo"
         ).any(n::contains)
-        if (explicitlyDetailed) return "Extensión: desarrolla con detalle, pero evita repeticiones y termina en cuanto la explicación quede completa."
+        if (explicitlyDetailed) return "Extensión: desarrolla todo lo necesario con profundidad, estructura y ejemplos cuando ayuden. No recortes una explicación útil por ser larga."
 
-        if (isBroadSourceRequest(question)) return "Extensión: ofrece un resumen estructurado y suficiente, sin repetir ideas."
-        if (isSourceOverviewRequest(question)) return "Extensión: responde en 2–4 párrafos breves y centrados en la fuente."
-        return "Extensión: responde de forma concisa; normalmente 2–5 párrafos breves son suficientes."
+        if (isBroadSourceRequest(question)) return "Extensión: desarrolla el recurso o resumen con la amplitud necesaria para cubrir bien el material, evitando solo la repetición."
+        if (isSourceOverviewRequest(question)) return "Extensión: ofrece una explicación completa y proporcionada a la fuente; no la reduzcas artificialmente."
+
+        return when (preferences.aiDetail.lowercase()) {
+            "breve" -> "Extensión preferida: breve y directa. Resuelve la pregunta con pocas frases o párrafos, salvo que el usuario pida más."
+            "profundo" -> "Extensión preferida: profunda. Desarrolla conceptos, relaciones, matices y ejemplos hasta que el tema quede bien explicado, sin repetición innecesaria."
+            else -> "Extensión preferida: equilibrada. Usa toda la extensión necesaria para explicar bien; sé breve en preguntas simples y desarrolla las complejas."
+        }
+    }
+
+    private fun generationTimeoutMs(question: String): Long {
+        val n = normalize(question)
+        val brief = isResponseTransformRequest(question) || listOf("brevemente", "una frase", "muy breve").any(n::contains)
+        if (brief) return 90_000L
+        val heavy = isBroadSourceRequest(question) || listOf(
+            "profundiza", "desarrolla", "con detalle", "mapa", "cuestionario", "tarjetas"
+        ).any(n::contains)
+        if (heavy || preferences.aiDetail.equals("Profundo", ignoreCase = true)) return 220_000L
+        if (preferences.aiDetail.equals("Breve", ignoreCase = true)) return 110_000L
+        return 160_000L
     }
 
     private fun recoverUsefulPartial(raw: String): String? {
@@ -377,7 +414,10 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
     private fun isBroadSourceRequest(question: String): Boolean {
         val n = normalize(question)
-        if (listOf("ideas principales", "explica la clase", "explicame la clase", "panorama general").any(n::contains)) {
+        if (listOf(
+                "ideas principales", "explica la clase", "explicame la clase", "panorama general",
+                "mapa mental", "mapa conceptual", "mapa de ideas", "tarjetas didacticas", "cuestionario"
+            ).any(n::contains)) {
             return true
         }
         val summaryIntent = listOf("resume", "resumen", "resumir", "sintesis", "sintetiza").any(n::contains)
@@ -407,12 +447,11 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             .map(chunks::get)
     }
 
-    private fun buildSystemInstruction(strictSources: Boolean): String = buildString {
+    private fun buildSystemInstruction(strictSources: Boolean, pedagogicalMode: Boolean): String = buildString {
         appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
         appendLine("Responde en español claro, natural, preciso y útil para estudiar.")
-        appendLine("Sé conciso por defecto: responde solo con la extensión necesaria y evita repetir la misma idea.")
+        appendLine("Adapta la extensión a la dificultad de la pregunta y al nivel de detalle elegido por el estudiante; no recortes una explicación académica útil solo por ser larga.")
         appendLine("Responde siempre a la pregunta actual; no repitas una respuesta anterior si ya no corresponde al tema preguntado.")
-        appendLine("Sé conciso por defecto: responde lo necesario para resolver la pregunta y detente. Amplía solo si el estudiante lo pide o si la tarea exige un resumen/desarrollo amplio.")
         appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
         if (preferences.aiInstructions.isNotBlank()) {
             appendLine("Preferencias del estudiante: ${preferences.aiInstructions}")
@@ -420,6 +459,10 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         appendLine("No inventes citas, páginas, autores, fechas ni referencias.")
         appendLine("No muestres cadena de pensamiento ni razonamiento interno; entrega directamente la respuesta útil.")
         appendLine("En teología católica distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.")
+        if (pedagogicalMode) {
+            appendLine("Actúa como pedagogo académico: ayuda a comprender, planificar, priorizar, practicar recuperación activa y elegir métodos de estudio concretos.")
+            appendLine("No actúes como psicólogo ni hagas diagnósticos clínicos; mantente en el terreno del aprendizaje y la organización académica.")
+        }
         appendLine("Cuando una afirmación doctrinal sea dudosa, formula con prudencia y no la presentes como cita magisterial.")
         if (strictSources) {
             appendLine("Está activado Solo mis fuentes: no añadas conocimiento externo al material suministrado.")
@@ -491,6 +534,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     companion object {
         const val MODEL_LABEL = "Gemma 4 E2B · LiteRT-LM"
         private const val MAX_FOLLOW_UP_CHARS = 2_400
+        private const val MAX_WEB_CONTEXT_CHARS = 6_000
+        private const val MAX_VOCAB_CONTEXT_CHARS = 2_200
         private const val MAX_BROAD_SOURCE_CHARS = 8_500
         private const val MAX_OVERVIEW_SOURCE_CHARS = 5_500
         private const val MAX_FOCUSED_SOURCE_CHARS = 3_400
@@ -503,8 +548,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val TOP_K = 30
         private const val TOP_P = 0.80
         private const val TEMPERATURE = 0.30
-        private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 20_000L
-        private const val GENERATION_TIMEOUT_MS = 75_000L
+        private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 30_000L
         private const val MIN_USEFUL_PARTIAL_CHARS = 180
 
         private val SOURCE_STOP_WORDS = setOf(
