@@ -382,6 +382,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
 
     fun askAi(question: String) {
         if (question.isBlank() || _aiBusy.value) return
+        _aiResult.value = ""
         _aiBusy.value = true
         _aiError.value = null
         viewModelScope.launch(Dispatchers.IO) {
