@@ -1,0 +1,77 @@
+name: Fix Gemma LiteRT opt-in
+
+on:
+  push:
+    paths:
+      - 'ci/fix-gemma-optin-trigger.txt'
+  workflow_dispatch:
+
+jobs:
+  fix-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Add ExperimentalApi opt-in to CPU fallback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt')
+          s = p.read_text()
+          needle = '    private suspend fun ensureCpuEngineReady(label: String): EngineHolder = withContext(Dispatchers.IO) {'
+          replacement = '    @OptIn(ExperimentalApi::class)\n' + needle
+          if replacement not in s:
+              if needle not in s:
+                  raise SystemExit('ensureCpuEngineReady signature not found')
+              s = s.replace(needle, replacement, 1)
+              p.write_text(s)
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(android): opt in CPU LiteRT fallback API'
+            git push
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          EXPECTED='ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586'
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Upload optimized Gemma APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-gemma4-followup-gpu-fallback
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
