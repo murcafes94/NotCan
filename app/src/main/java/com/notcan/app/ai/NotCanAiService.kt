@@ -17,6 +17,7 @@ class NotCanAiService(private val context: Context) {
     private val preferences = NotCanPreferences(appContext)
     private val credentials = MistralCredentialsStore(appContext)
     private val webResearch = WebResearchService(appContext)
+    private val localGemma = LiteRtGemmaTuNotEngine(appContext)
     private val localQwen = LocalQwenTuNotEngine(appContext)
 
     fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
@@ -61,9 +62,24 @@ class NotCanAiService(private val context: Context) {
             return "No hay apuntes ni transcripciones disponibles para responder en modo Solo mis fuentes."
         }
 
-        suspend fun localFallback(skipQwen: Boolean = false): String {
-            val qwenEligible = !mapRequest && !flashcardRequest && !quizRequest
-            if (!skipQwen && qwenEligible && localQwen.isAvailable()) {
+        suspend fun localFallback(allowGemma: Boolean = true, allowQwen: Boolean = true): String {
+            val llmEligible = !mapRequest && !flashcardRequest && !quizRequest
+            if (allowGemma && llmEligible && localGemma.isAvailable()) {
+                try {
+                    val answer = localGemma.answer(
+                        subjectName = subjectName,
+                        notes = plainNotes,
+                        transcript = plainTranscript,
+                        question = localQuestion,
+                        strictSources = strictSources
+                    )
+                    preferences.lastLocalAiError = ""
+                    return markEngine("Gemma 4 local · ${answer.backendLabel}", answer.text)
+                } catch (t: Throwable) {
+                    preferences.lastLocalAiError = "Gemma 4: ${t.message ?: t.javaClass.simpleName}"
+                }
+            }
+            if (allowQwen && llmEligible && localQwen.isAvailable()) {
                 try {
                     val answer = localQwen.answer(
                         subjectName = subjectName,
@@ -75,7 +91,7 @@ class NotCanAiService(private val context: Context) {
                     preferences.lastLocalAiError = ""
                     return markEngine("Qwen2.5 local", answer)
                 } catch (t: Throwable) {
-                    preferences.lastLocalAiError = t.message ?: t.javaClass.simpleName
+                    preferences.lastLocalAiError = "Qwen2.5: ${t.message ?: t.javaClass.simpleName}"
                 }
             }
             val basic = OfflineTuNotEngine.answer(
@@ -88,8 +104,9 @@ class NotCanAiService(private val context: Context) {
         }
 
         when (preferences.aiEnginePreference) {
-            "Qwen2.5 local" -> return localFallback(skipQwen = false)
-            "Local básico" -> return localFallback(skipQwen = true)
+            "Gemma 4 local" -> return localFallback(allowGemma = true, allowQwen = false)
+            "Qwen2.5 local" -> return localFallback(allowGemma = false, allowQwen = true)
+            "Local básico" -> return localFallback(allowGemma = false, allowQwen = false)
         }
 
         if (!isConfigured()) return localFallback()
