@@ -66,6 +66,8 @@ class NotCanAiService(private val context: Context) {
         suspend fun localFallback(allowGemma: Boolean = true, allowQwen: Boolean = true): String {
             val llmEligible = !mapRequest && !flashcardRequest && !quizRequest
             if (allowGemma && llmEligible && localGemma.isAvailable()) {
+                var lastGemmaPartial = ""
+                var lastGemmaBackend = ""
                 try {
                     val answer = localGemma.answer(
                         subjectName = subjectName,
@@ -74,14 +76,24 @@ class NotCanAiService(private val context: Context) {
                         question = localQuestion,
                         strictSources = strictSources,
                         onPartial = { partialText, backendLabel ->
+                            lastGemmaPartial = partialText
+                            lastGemmaBackend = backendLabel
                             onPartial?.invoke(markEngine("Gemma 4 local · $backendLabel", partialText))
                         }
                     )
                     preferences.lastLocalAiError = ""
                     return markEngine("Gemma 4 local · ${answer.backendLabel}", answer.text)
                 } catch (t: Throwable) {
+                    val errorText = t.message ?: t.javaClass.simpleName
+                    if (lastGemmaPartial.trim().length >= MIN_USABLE_GEMMA_PARTIAL_CHARS) {
+                        preferences.lastLocalAiError = "Gemma 4 (respuesta parcial conservada): $errorText"
+                        return markEngine(
+                            "Gemma 4 local · ${lastGemmaBackend.ifBlank { "parcial" }}",
+                            lastGemmaPartial.trim()
+                        )
+                    }
                     onPartial?.invoke("")
-                    preferences.lastLocalAiError = "Gemma 4: ${t.message ?: t.javaClass.simpleName}"
+                    preferences.lastLocalAiError = "Gemma 4: $errorText"
                 }
             }
             if (allowQwen && llmEligible && localQwen.isAvailable()) {
@@ -410,5 +422,6 @@ class NotCanAiService(private val context: Context) {
         private const val MAX_SOURCE_CHARS = 28_000
         private const val CONNECT_TIMEOUT_MS = 20_000
         private const val READ_TIMEOUT_MS = 90_000
+        private const val MIN_USABLE_GEMMA_PARTIAL_CHARS = 120
     }
 }

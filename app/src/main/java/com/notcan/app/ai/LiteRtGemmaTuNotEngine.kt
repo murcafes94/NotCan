@@ -119,7 +119,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 topK = TOP_K,
                 topP = TOP_P,
                 temperature = TEMPERATURE
-            )
+            ),
+            maxOutputToken = outputTokenBudget(question)
         )
 
         val primaryHolder = ensureEngineReady()
@@ -327,6 +328,25 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         .trim()
         .replace(Regex("\\s+"), " ")
 
+    private fun outputTokenBudget(question: String): Int {
+        val n = normalize(question)
+        val explicitlyBrief = isResponseTransformRequest(question) || listOf(
+            "brevemente", "respuesta breve", "responde breve", "una frase", "en una frase",
+            "solo una frase", "muy corto", "muy breve"
+        ).any(n::contains)
+        if (explicitlyBrief) return 96
+
+        val explicitlyDetailed = listOf(
+            "profundiza", "profundizar", "detalladamente", "con detalle", "desarrolla",
+            "desarrollalo", "explicacion completa", "explicacion profunda", "amplia"
+        ).any(n::contains)
+        if (explicitlyDetailed) return 512
+
+        if (isBroadSourceRequest(question)) return 448
+        if (isSourceOverviewRequest(question)) return 320
+        return 192
+    }
+
     private fun isResponseTransformRequest(question: String): Boolean {
         val n = normalize(question)
         if (n.length > 140) return false
@@ -373,6 +393,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
         appendLine("Responde en español claro, natural, preciso y útil para estudiar.")
         appendLine("Responde siempre a la pregunta actual; no repitas una respuesta anterior si ya no corresponde al tema preguntado.")
+        appendLine("Sé conciso por defecto: responde lo necesario para resolver la pregunta y detente. Amplía solo si el estudiante lo pide o si la tarea exige un resumen/desarrollo amplio.")
         appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
         if (preferences.aiInstructions.isNotBlank()) {
             appendLine("Preferencias del estudiante: ${preferences.aiInstructions}")

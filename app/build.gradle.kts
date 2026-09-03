@@ -142,7 +142,7 @@ dependencies {
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation(project(":llama-android"))
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.15.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
