@@ -1,10 +1,12 @@
 package com.notcan.app.ai
 
 import android.content.Context
+import android.os.SystemClock
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
 import com.notcan.app.localai.StudyModelManager
 import com.notcan.app.localai.StudyModelState
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -32,6 +34,8 @@ class LocalQwenTuNotEngine(context: Context) {
         val engine = AiChat.getInferenceEngine(appContext)
         ensureModelReady(engine)
 
+        // Test-phase context budget: keep prompt processing small enough to distinguish
+        // a runtime problem from a device simply spending minutes ingesting class material.
         val sourceContext = buildString {
             subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("Materia: $it") }
             if (notes.isNotBlank()) {
@@ -60,9 +64,21 @@ class LocalQwenTuNotEngine(context: Context) {
         }
 
         val output = StringBuilder()
-        withTimeout(GENERATION_TIMEOUT_MS) {
-            engine.sendUserPrompt(prompt, PREDICT_TOKENS).collect { token -> output.append(token) }
+        val startedAt = SystemClock.elapsedRealtime()
+        var firstTokenAt: Long? = null
+        try {
+            withTimeout(GENERATION_TIMEOUT_MS) {
+                engine.sendUserPrompt(prompt, PREDICT_TOKENS).collect { token ->
+                    if (firstTokenAt == null) firstTokenAt = SystemClock.elapsedRealtime()
+                    output.append(token)
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+            val firstTokenDetail = firstTokenAt?.let { "primer token en ${it - startedAt} ms" } ?: "sin primer token"
+            error("Qwen2.5 timeout tras ${elapsedMs} ms · $firstTokenDetail · ${output.length} caracteres generados")
         }
+
         sanitizeModelOutput(output.toString())
             .ifBlank { error("Qwen2.5 no produjo texto utilizable") }
     }
@@ -95,9 +111,9 @@ class LocalQwenTuNotEngine(context: Context) {
 
     companion object {
         const val MODEL_LABEL = "Qwen2.5 1.5B · local"
-        private const val MAX_SOURCE_PART_CHARS = 3_200
-        private const val MAX_SOURCE_CHARS = 6_400
-        private const val PREDICT_TOKENS = 512
+        private const val MAX_SOURCE_PART_CHARS = 900
+        private const val MAX_SOURCE_CHARS = 1_600
+        private const val PREDICT_TOKENS = 128
         private const val INIT_TIMEOUT_MS = 120_000L
         private const val GENERATION_TIMEOUT_MS = 180_000L
         private val SPECIAL_TOKEN_REGEX = Regex("""<\|[^>]+\|>""")
