@@ -77,7 +77,6 @@ import com.notcan.app.ai.NotCanAiService
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.DetectedCueEntity
 import com.notcan.app.data.local.TranscriptEntity
-import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.settings.NotCanPreferences
@@ -93,29 +92,22 @@ import com.notcan.app.ui.theme.NotCanSurface
 fun NotCanAiScreen(
     subjectName: String?,
     classTitle: String?,
-    configured: Boolean,
     busy: Boolean,
     error: String?,
     result: String,
     transcripts: List<TranscriptEntity>,
     audioRecordings: List<AudioRecordingEntity>,
     detectedCues: List<DetectedCueEntity> = emptyList(),
-    studyModelState: StudyModelState,
-    studyModelProgress: Int?,
     whisperModelState: WhisperModelState,
     whisperModelProgress: Int?,
     localWhisperBusy: Boolean,
     localWhisperError: String?,
-    onDownloadStudyModel: () -> Unit,
-    onRemoveStudyModel: () -> Unit,
     onDownloadWhisperModel: () -> Unit,
     onRemoveWhisperModel: () -> Unit,
     onTranscribeLocal: (String) -> Unit,
     onAsk: (String) -> Unit,
     onClear: () -> Unit
 ) {
-    @Suppress("UNUSED_VARIABLE")
-    val legacy = listOf(configured, studyModelState, studyModelProgress, onDownloadStudyModel, onRemoveStudyModel)
     val context = LocalContext.current
     val preferences = remember(context) { NotCanPreferences(context.applicationContext) }
     val credentialStore = remember(context) { MistralCredentialsStore(context.applicationContext) }
@@ -588,7 +580,7 @@ private fun CompactChatHeader(subjectName: String?, classTitle: String?, engineL
 
 @Composable
 private fun ConnectionBadge(engineLabel: String) {
-    val emphasized = engineLabel.contains("Mistral") || engineLabel.contains("Qwen2.5")
+    val emphasized = engineLabel.contains("Mistral") || engineLabel.contains("Gemma 4")
     Surface(color = NotCanBlue.copy(alpha = if (emphasized) 0.13f else 0.09f), shape = RoundedCornerShape(50)) {
         Text(
             engineLabel,
@@ -807,7 +799,7 @@ private fun AiStudio(
     val scope = remember(subjectName, classTitle) { "${subjectName.orEmpty()}::${classTitle.orEmpty()}" }
     val savedArtifacts = remember(scope, artifactRevision) { store.load(scope) }
     val options = listOf(
-        StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado de esta clase. Separa ideas principales, conceptos clave, definiciones y relaciones."),
+        StudyTool("Resumen de clase", "Ideas principales, conceptos y estructura", Icons.Default.GraphicEq, "Haz un resumen estructurado para estudiar esta clase: idea central, 5–8 ideas principales, conceptos/definiciones, relaciones y 3 preguntas de comprobación. No repitas contenido."),
         StudyTool("Vocabulario clave", "Términos académicos del ciclo y de esta materia", Icons.Default.MenuBook, "Usa también el vocabulario académico de NotCan. Identifica los términos más importantes para estudiar esta clase, respeta sus grafías y explica brevemente los que sean pertinentes."),
         StudyTool("Tarjetas didácticas", "Repaso activo, una pregunta por tarjeta", Icons.Default.Style, "Crea entre 10 y 12 tarjetas didácticas de esta clase. Prioriza que todas queden completas.", NotCanAiService.FLASHCARDS_MARKER),
         StudyTool("Cuestionario", "Respóndelo aquí y repite los errores", Icons.Default.Quiz, "Crea un cuestionario mixto de 10 a 12 preguntas basado exclusivamente en esta clase. Combina opción múltiple, verdadero/falso y algunas preguntas breves de desarrollo.", NotCanAiService.QUIZ_MARKER),
@@ -913,7 +905,7 @@ private fun AiAssistance(
         AssistanceTool(
             "Preparar un examen",
             "Orden, práctica activa y repaso",
-            "Actúa como pedagogo y ayúdame a preparar un examen de esta materia. Propón una estrategia por etapas usando recuperación activa, práctica y repaso; adapta el plan al material disponible."
+            "Actúa como pedagogo académico y ayúdame a preparar un examen de esta materia. Usa primero el material disponible y mi horario semanal. Propón una estrategia concreta por etapas con recuperación activa, práctica, repaso y criterios para saber si ya domino cada bloque."
         ),
         AssistanceTool(
             "Elegir método de estudio",
@@ -931,9 +923,19 @@ private fun AiAssistance(
             "Explícame cómo estudiar mejor esta materia según el material disponible: qué comprender, qué memorizar, qué practicar y cómo comprobar si realmente lo aprendí."
         ),
         AssistanceTool(
+            "Preparar examen oral",
+            "Explicar con orden, precisión y seguridad",
+            "Prepárame para un examen oral de esta materia. Organiza los temas en respuestas de 2–5 minutos, señala conceptos que debo decir con precisión y luego hazme una pregunta de práctica cada vez."
+        ),
+        AssistanceTool(
+            "Detectar lagunas",
+            "Encontrar qué entiendo y qué todavía no",
+            "Ayúdame a detectar lagunas de aprendizaje usando el material disponible. Propón una comprobación breve por conceptos y prioriza lo que debo corregir antes de seguir avanzando."
+        ),
+        AssistanceTool(
             "Plan de repaso",
             "Repasar sin releer todo desde cero",
-            "Diseña un plan de repaso eficiente para esta materia con recuperación activa, intervalos de repaso y comprobaciones breves de dominio."
+            "Diseña un plan de repaso eficiente para esta materia usando mi material disponible y, cuando conste, mi horario semanal. Incluye recuperación activa, intervalos de repaso, duración aproximada de cada bloque y comprobaciones breves de dominio."
         )
     )
 

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -36,6 +37,7 @@ import com.notcan.app.localai.TranscriptionSelection
 import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
 import com.notcan.app.settings.NotCanPreferences
+import com.notcan.app.storage.StorageMaintenance
 import com.notcan.app.ui.AcademicExtrasViewModel
 import com.notcan.app.ui.NotCanViewModel
 import com.notcan.app.ui.ai.NotCanAiScreen
@@ -49,6 +51,7 @@ import com.notcan.app.ui.settings.SettingsScreen
 import com.notcan.app.ui.tasks.TasksScreen
 import com.notcan.app.ui.theme.NotCanTheme
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -99,6 +102,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
+        lifecycleScope.launch(Dispatchers.IO) { StorageMaintenance.cleanupObsoleteAi(this@MainActivity) }
 
         setContent {
             var darkTheme by remember { mutableStateOf(preferences.darkTheme) }
@@ -120,12 +124,9 @@ class MainActivity : ComponentActivity() {
                 val selectedSubjectId = studyViewModel.selectedSubjectId.collectAsStateWithLifecycle().value
                 val selectedClassId = studyViewModel.selectedClassId.collectAsStateWithLifecycle().value
                 val selectedNoteId = studyViewModel.selectedNoteId.collectAsStateWithLifecycle().value
-                val aiConfigured = studyViewModel.aiConfigured.collectAsStateWithLifecycle().value
                 val aiBusy = studyViewModel.aiBusy.collectAsStateWithLifecycle().value
                 val aiError = studyViewModel.aiError.collectAsStateWithLifecycle().value
                 val aiResult = studyViewModel.aiResult.collectAsStateWithLifecycle().value
-                val studyModelState = studyViewModel.studyModelState.collectAsStateWithLifecycle().value
-                val studyModelProgress = studyViewModel.studyModelProgress.collectAsStateWithLifecycle().value
                 val whisperModelState = studyViewModel.whisperModelState.collectAsStateWithLifecycle().value
                 val whisperModelProgress = studyViewModel.whisperModelProgress.collectAsStateWithLifecycle().value
                 val localWhisperError = studyViewModel.localWhisperError.collectAsStateWithLifecycle().value
@@ -174,7 +175,7 @@ class MainActivity : ComponentActivity() {
                         add(
                             TuNotOfflineEntry(
                                 title = document.displayName,
-                                subtitle = "Documento local · ${document.documentType}",
+                                subtitle = if (document.localPath.startsWith("content://")) "Documento en nube · ${document.documentType}" else "Documento local · ${document.documentType}",
                                 text = document.displayName
                             )
                         )
@@ -311,21 +312,16 @@ class MainActivity : ComponentActivity() {
                         NotCanAiScreen(
                             subjectName = selectedSubject?.name,
                             classTitle = selectedClass?.title,
-                            configured = aiConfigured,
                             busy = aiBusy,
                             error = aiError,
                             result = aiResult,
                             transcripts = transcripts,
                             audioRecordings = audioRecordings,
                             detectedCues = detectedCues,
-                            studyModelState = studyModelState,
-                            studyModelProgress = studyModelProgress,
                             whisperModelState = whisperModelState,
                             whisperModelProgress = whisperModelProgress,
                             localWhisperBusy = false,
                             localWhisperError = localWhisperError,
-                            onDownloadStudyModel = studyViewModel::downloadStudyModel,
-                            onRemoveStudyModel = studyViewModel::removeStudyModel,
                             onDownloadWhisperModel = studyViewModel::downloadWhisperModel,
                             onRemoveWhisperModel = studyViewModel::removeWhisperModel,
                             onTranscribeLocal = ::enqueueBackgroundTranscription,
@@ -476,10 +472,17 @@ class MainActivity : ComponentActivity() {
         val cycle = studyViewModel.cycles.value.firstOrNull { it.id == schedule.cycleId } ?: return
         val subject = studyViewModel.subjects.value.firstOrNull { it.id == schedule.subjectId } ?: return
         try {
-            val eventId = CalendarSync.syncSchedule(this, cycle, subject, schedule)
-            if (eventId != null) {
-                studyViewModel.setScheduleCalendarEvent(schedule.id, eventId)
-                Toast.makeText(this, "${subject.name} sincronizada con el calendario", Toast.LENGTH_SHORT).show()
+            val result = CalendarSync.syncSchedule(
+                this,
+                cycle,
+                subject,
+                schedule,
+                preferences.calendarId.takeIf { it > 0L }
+            )
+            if (result != null) {
+                preferences.calendarId = result.calendar.id
+                studyViewModel.setScheduleCalendarEvent(schedule.id, result.eventId)
+                Toast.makeText(this, "${subject.name} · ${result.calendar.label}", Toast.LENGTH_SHORT).show()
             } else Toast.makeText(this, "No encontré un calendario editable en el dispositivo", Toast.LENGTH_LONG).show()
         } catch (t: Throwable) {
             Toast.makeText(this, "No se pudo sincronizar: ${t.message ?: "error"}", Toast.LENGTH_LONG).show()
@@ -494,10 +497,27 @@ class MainActivity : ComponentActivity() {
 
     private fun requestDocumentImport(classSessionId: String) {
         pendingDocumentClassId = classSessionId
-        documentLauncher.launch(arrayOf("application/pdf", "application/epub+zip", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+        // Android's Storage Access Framework exposes every configured Drive account plus
+        // Xiaomi/local and other document providers. The selected file is referenced, not copied.
+        documentLauncher.launch(arrayOf("*/*"))
     }
 
     private fun openDocument(document: DocumentResourceEntity) {
+        if (document.localPath.startsWith("content://")) {
+            val uri = Uri.parse(document.localPath)
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            val edit = Intent(Intent.ACTION_EDIT).setDataAndType(uri, document.mimeType).addFlags(flags)
+            try {
+                startActivity(edit)
+                return
+            } catch (_: ActivityNotFoundException) {
+                val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, document.mimeType).addFlags(flags)
+                try { startActivity(view) }
+                catch (_: ActivityNotFoundException) { Toast.makeText(this, "No hay una aplicación compatible para abrir este documento", Toast.LENGTH_SHORT).show() }
+                return
+            }
+        }
+
         val file = File(document.localPath)
         if (!file.exists()) {
             Toast.makeText(this, "El archivo local ya no existe", Toast.LENGTH_SHORT).show()

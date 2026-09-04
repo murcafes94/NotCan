@@ -60,6 +60,11 @@ class NotCanPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_CUES, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_CUES, value).apply()
 
+    /** CalendarContract id chosen by the user. -1 means automatic (Google first, then device/local). */
+    var calendarId: Long
+        get() = prefs.getLong(KEY_CALENDAR_ID, -1L)
+        set(value) = prefs.edit().putLong(KEY_CALENDAR_ID, value).apply()
+
     companion object {
         private const val PREFS_NAME = "notcan_preferences"
         private const val KEY_ASSISTANT_NAME = "assistant_name"
@@ -75,5 +80,6 @@ class NotCanPreferences(context: Context) {
         private const val KEY_AUTO_TRANSCRIBE = "auto_transcribe_recording"
         private const val KEY_PREFER_ONLINE_TRANSCRIPTION = "prefer_online_transcription"
         private const val KEY_AUTO_CUES = "auto_detect_academic_cues"
+        private const val KEY_CALENDAR_ID = "calendar_id"
     }
 }

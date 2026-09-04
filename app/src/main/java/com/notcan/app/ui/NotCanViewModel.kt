@@ -1,11 +1,13 @@
 package com.notcan.app.ui
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.notcan.app.ai.NotCanAiService
+import com.notcan.app.calendar.AcademicSchedule
 import com.notcan.app.calendar.PlannedClassOccurrence
 import com.notcan.app.calendar.ReminderScheduler
 import com.notcan.app.data.StudyRepository
@@ -15,8 +17,6 @@ import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.PdfInkStrokeEntity
 import com.notcan.app.data.local.TranscriptEntity
 import com.notcan.app.localai.LocalWhisperEngine
-import com.notcan.app.localai.StudyModelManager
-import com.notcan.app.localai.StudyModelState
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
@@ -45,7 +45,6 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     private val aiService = NotCanAiService(application)
     private val syncManager = SupabaseSyncManager(application)
     private val sourceStore = ClassSourceStore(application)
-    private val studyModelManager = StudyModelManager(application)
     private val whisperModelManager = WhisperModelManager(application)
     private val localWhisper = LocalWhisperEngine(application)
 
@@ -64,13 +63,6 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     val aiError: StateFlow<String?> = _aiError.asStateFlow()
     private val _aiBusy = MutableStateFlow(false)
     val aiBusy: StateFlow<Boolean> = _aiBusy.asStateFlow()
-    private val _aiConfigured = MutableStateFlow(aiService.isConfigured())
-    val aiConfigured: StateFlow<Boolean> = _aiConfigured.asStateFlow()
-
-    private val _studyModelState = MutableStateFlow(studyModelManager.state())
-    val studyModelState: StateFlow<StudyModelState> = _studyModelState.asStateFlow()
-    private val _studyModelProgress = MutableStateFlow(studyModelManager.progressPercent())
-    val studyModelProgress: StateFlow<Int?> = _studyModelProgress.asStateFlow()
 
     private val _whisperModelState = MutableStateFlow(whisperModelManager.state())
     val whisperModelState: StateFlow<WhisperModelState> = _whisperModelState.asStateFlow()
@@ -147,12 +139,8 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
             while (isActive) {
                 _whisperModelState.value = whisperModelManager.state()
                 _whisperModelProgress.value = whisperModelManager.progressPercent()
-                _studyModelState.value = studyModelManager.state()
-                _studyModelProgress.value = studyModelManager.progressPercent()
-                _aiConfigured.value = _studyModelState.value == StudyModelState.INSTALLED
-                val downloading = _whisperModelState.value == WhisperModelState.DOWNLOADING ||
-                    _studyModelState.value == StudyModelState.DOWNLOADING
-                delay(if (downloading) 1_500 else 8_000)
+                val downloading = _whisperModelState.value == WhisperModelState.DOWNLOADING
+                delay(if (downloading) 1_500 else 30_000)
             }
         }
     }
@@ -306,29 +294,6 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun downloadStudyModel() {
-        _aiError.value = null
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                studyModelManager.enqueueDownload()
-                _studyModelState.value = studyModelManager.state()
-            } catch (t: Throwable) {
-                _aiError.value = t.message ?: "No se pudo iniciar la descarga de NotCan AI"
-            }
-        }
-    }
-
-    fun removeStudyModel() {
-        if (_aiBusy.value) return
-        viewModelScope.launch(Dispatchers.IO) {
-            studyModelManager.removeModel()
-            _studyModelState.value = studyModelManager.state()
-            _studyModelProgress.value = null
-            _aiConfigured.value = false
-            _aiResult.value = ""
-        }
-    }
-
     fun transcribeAudioLocal(audioId: String) {
         val audio = audioRecordings.value.firstOrNull { it.id == audioId } ?: return
         if (_localWhisperBusy.value) return
@@ -372,15 +337,44 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         val application = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             val resolver = application.contentResolver
-            val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-                ?: "documento_${System.currentTimeMillis()}"
+            val displayName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            } ?: "documento_${System.currentTimeMillis()}"
             val mimeType = resolver.getType(uri) ?: "application/octet-stream"
             val type = resolveDocumentType(displayName, mimeType)
             val id = UUID.randomUUID().toString()
+
+            // OpenDocument URIs (including Google Drive) can be kept as persistent references.
+            // This avoids a second permanent copy inside NotCan and lets compatible editors
+            // save directly back to the cloud provider.
+            val readFlag = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            val writeFlag = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            val persistent = runCatching {
+                resolver.takePersistableUriPermission(uri, readFlag or writeFlag)
+                true
+            }.getOrElse {
+                runCatching {
+                    resolver.takePersistableUriPermission(uri, readFlag)
+                    true
+                }.getOrDefault(false)
+            }
+
+            if (persistent) {
+                repository.saveDocument(
+                    DocumentResourceEntity(id, classSessionId, displayName, uri.toString(), mimeType, type, System.currentTimeMillis())
+                )
+                return@launch
+            }
+
+            // Rare providers without persistable URI permission keep the previous safe fallback.
             val destinationDir = File(application.filesDir, "documents/$classSessionId").apply { mkdirs() }
             val destination = File(destinationDir, "${id.take(8)}_${sanitizeFileName(displayName)}")
-            resolver.openInputStream(uri)?.use { source -> destination.outputStream().use { target -> source.copyTo(target, 64 * 1024) } } ?: return@launch
-            repository.saveDocument(DocumentResourceEntity(id, classSessionId, displayName, destination.absolutePath, mimeType, type, System.currentTimeMillis()))
+            resolver.openInputStream(uri)?.use { source ->
+                destination.outputStream().use { target -> source.copyTo(target, 64 * 1024) }
+            } ?: return@launch
+            repository.saveDocument(
+                DocumentResourceEntity(id, classSessionId, displayName, destination.absolutePath, mimeType, type, System.currentTimeMillis())
+            )
         }
     }
 
@@ -391,8 +385,21 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         _aiError.value = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val notesText = notePages.value.joinToString("\n\n") { "${it.title}\n${it.body}" }
+                val baseNotes = notePages.value.joinToString("\n\n") { "${it.title}\n${it.body}" }
                 val subjectName = subjects.value.firstOrNull { it.id == _selectedSubjectId.value }?.name
+                val notesText = if (question.contains(NotCanAiService.PEDAGOGY_MARKER)) {
+                    val subjectId = _selectedSubjectId.value
+                    val calendarText = schedules.value.filter { it.subjectId == subjectId }.joinToString("\n") { schedule ->
+                        "${AcademicSchedule.weekdayLabel(schedule.weekdayIso)} ${AcademicSchedule.formatMinutes(schedule.startMinuteOfDay)}–${AcademicSchedule.formatMinutes(schedule.endMinuteOfDay)}"
+                    }
+                    buildString {
+                        append(baseNotes)
+                        if (calendarText.isNotBlank()) {
+                            appendLine("\n\n[HORARIO SEMANAL DE ESTA MATERIA]")
+                            append(calendarText)
+                        }
+                    }
+                } else baseNotes
                 val classTitle = classes.value.firstOrNull { it.id == _selectedClassId.value }?.title
                 val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
                 val externalSources = sourceStore.combinedContext(scopeKey)
@@ -411,9 +418,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                     onPartial = { partial -> _aiResult.value = partial }
                 )
                 _aiResult.value = finalResult
-                _aiConfigured.value = true
             } catch (t: Throwable) {
-                _aiConfigured.value = aiService.isConfigured()
                 _aiError.value = t.message ?: "No se pudo ejecutar la IA"
             } finally {
                 _aiBusy.value = false

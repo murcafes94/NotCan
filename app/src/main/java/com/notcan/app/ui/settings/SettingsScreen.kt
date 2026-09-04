@@ -1,5 +1,7 @@
 package com.notcan.app.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,12 +48,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.notcan.app.ai.GroqCredentialsStore
 import com.notcan.app.ai.MistralCredentialsStore
+import com.notcan.app.calendar.CalendarSync
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.localai.GemmaLiteRtModelManager
@@ -59,7 +63,6 @@ import com.notcan.app.localai.GemmaLiteRtModelSpec
 import com.notcan.app.localai.GemmaLiteRtModelState
 import com.notcan.app.localai.LiveTranscriptionModelManager
 import com.notcan.app.localai.LiveTranscriptionModelState
-import com.notcan.app.localai.StudyModelManager
 import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
@@ -86,7 +89,6 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val scope = rememberCoroutineScope()
     val whisperManager = remember(context) { WhisperModelManager(context.applicationContext) }
     val liveManager = remember(context) { LiveTranscriptionModelManager(context.applicationContext) }
-    val studyManager = remember(context) { StudyModelManager(context.applicationContext) }
     val gemmaManager = remember(context) { GemmaLiteRtModelManager(context.applicationContext) }
     val credentials = remember(context) { MistralCredentialsStore(context.applicationContext) }
     val groqCredentials = remember(context) { GroqCredentialsStore(context.applicationContext) }
@@ -111,7 +113,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(1_500)
+            delay(8_000)
             refreshTick++
         }
     }
@@ -128,21 +130,19 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     val liveProgress = remember(refreshTick) {
         runCatching { liveManager.progressPercent() }.getOrNull()
     }
-    val oldQwenInstalled = remember(refreshTick) {
-        runCatching {
-            studyManager.modelFile().let { it.exists() && it.length() >= 500_000_000L }
-        }.getOrDefault(false)
-    }
     val gemmaState = remember(refreshTick) {
         runCatching { gemmaManager.state() }.getOrDefault(GemmaLiteRtModelState.NOT_INSTALLED)
     }
     val gemmaProgress = remember(refreshTick) {
         runCatching { gemmaManager.progressPercent() }.getOrNull()
     }
-    val legacyLfmInstalled = remember(refreshTick) {
-        runCatching { studyManager.hasLegacyLfmModel() }.getOrDefault(false)
-    }
     val mistralConfigured = hasSavedKey && agentId.trim().isNotBlank()
+    val calendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+    val calendarTargets = remember(refreshTick, calendarPermission) {
+        if (calendarPermission) runCatching { CalendarSync.listWritableCalendars(context) }.getOrDefault(emptyList()) else emptyList()
+    }
+    var selectedCalendarId by remember { mutableStateOf(preferences.calendarId) }
 
     Column(
         modifier = Modifier
@@ -175,6 +175,36 @@ fun SettingsScreen(preferences: NotCanPreferences) {
         )
 
         CycleManagementSection(cycles)
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = NotCanBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Calendario y recordatorios", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text("Google primero; Xiaomi/local queda como respaldo.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (!calendarPermission) {
+                    Text("Concede acceso al calendario la primera vez que pulses Sincronizar en Calendario. Después podrás elegir aquí cualquier cuenta disponible.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                } else if (calendarTargets.isEmpty()) {
+                    Text("No hay calendarios editables visibles en el dispositivo.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    calendarTargets.forEach { target ->
+                        FilterChip(
+                            selected = selectedCalendarId == target.id || (selectedCalendarId <= 0L && target == CalendarSync.preferredTarget(context)),
+                            onClick = {
+                                selectedCalendarId = target.id
+                                preferences.calendarId = target.id
+                            },
+                            label = { Text(target.label) }
+                        )
+                    }
+                    Text("Los eventos se guardan en el proveedor elegido y usan sus propias notificaciones. NotCan mantiene además su recordatorio académico.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -428,29 +458,6 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                     onRemove = { runCatching { gemmaManager.removeModel() }; refreshTick++ }
                 )
 
-                if (oldQwenInstalled || legacyLfmInstalled) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(13.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Modelos locales anteriores", color = NotCanOffWhite, fontWeight = FontWeight.Medium)
-                                Text("Qwen2.5/LFM2.5 ya no se usan. Puedes eliminarlos y recuperar espacio.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
-                            }
-                            OutlinedButton(onClick = {
-                                val currentRemoved = runCatching { studyManager.removeModel() }.getOrDefault(false)
-                                val lfmRemoved = runCatching { studyManager.removeLegacyLfmModel() }.getOrDefault(false)
-                                saveMessage = if (currentRemoved && lfmRemoved) "Modelos antiguos eliminados." else "Se intentó limpiar los modelos antiguos."
-                                refreshTick++
-                            }) { Text("Liberar espacio") }
-                        }
-                    }
-                }
             }
         }
 
