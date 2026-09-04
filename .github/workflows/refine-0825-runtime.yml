@@ -1,0 +1,63 @@
+name: Refine v0.8.25 runtime
+
+on:
+  push:
+    branches: [ "audit-cloud-0825" ]
+  workflow_dispatch:
+
+jobs:
+  refine-build:
+    if: ${{ !contains(github.event.head_commit.message, '[0825 refined]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit-cloud-0825
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Apply runtime refinement
+        run: python3 ci/refine_0825_runtime.py
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          EXPECTED="ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586"
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Commit validated refinement
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "feat(android): restore cloud documents workspace and finish cleanup [0825 applied] [0825 refined]"
+            git push origin HEAD:audit-cloud-0825
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-v0.8.25-audit-cloud-final
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
