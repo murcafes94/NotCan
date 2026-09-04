@@ -26,7 +26,9 @@ jobs:
           gradle-version: "8.9"
 
       - name: Apply final cloud RAG pass
-        run: python3 ci/finalize_0825_cloud_rag.py
+        run: |
+          python3 ci/finalize_0825_prepatch.py
+          python3 ci/finalize_0825_cloud_rag.py
 
       - name: Build debug APK
         run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
