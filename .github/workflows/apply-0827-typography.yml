@@ -37,6 +37,16 @@ jobs:
           PY
       - name: Apply typography patch
         run: python3 ci/apply_0827_typography.py
+      - name: Fix generated Kotlin regex escapes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/notcan/app/ui/home/NoteFileExport.kt')
+          s = p.read_text()
+          s = s.replace(r'Regex("[-+]?[0-9]*\.?[0-9]+")', r'Regex("[-+]?[0-9]*\\.?[0-9]+")')
+          p.write_text(s)
+          PY
       - name: Build debug APK
         run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
       - name: Verify persistent test signature
