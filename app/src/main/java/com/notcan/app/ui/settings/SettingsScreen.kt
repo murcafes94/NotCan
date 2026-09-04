@@ -143,6 +143,12 @@ fun SettingsScreen(preferences: NotCanPreferences) {
         if (calendarPermission) runCatching { CalendarSync.listWritableCalendars(context) }.getOrDefault(emptyList()) else emptyList()
     }
     var selectedCalendarId by remember { mutableStateOf(preferences.calendarId) }
+    val automaticCalendarId = remember(calendarTargets) {
+        calendarTargets.firstOrNull { it.isGoogle && it.isPrimary }?.id
+            ?: calendarTargets.firstOrNull { it.isGoogle }?.id
+            ?: calendarTargets.firstOrNull { it.isPrimary }?.id
+            ?: calendarTargets.firstOrNull()?.id
+    }
 
     Column(
         modifier = Modifier
@@ -193,7 +199,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 } else {
                     calendarTargets.forEach { target ->
                         FilterChip(
-                            selected = selectedCalendarId == target.id || (selectedCalendarId <= 0L && target == CalendarSync.preferredTarget(context)),
+                            selected = selectedCalendarId == target.id || (selectedCalendarId <= 0L && target.id == automaticCalendarId),
                             onClick = {
                                 selectedCalendarId = target.id
                                 preferences.calendarId = target.id

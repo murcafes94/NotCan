@@ -252,6 +252,7 @@ class MainActivity : ComponentActivity() {
                             onTranscribeLocal = ::enqueueBackgroundTranscription,
                             onImportDocument = ::requestDocumentImport,
                             onOpenDocument = ::openDocument,
+                            onDeleteDocument = studyViewModel::deleteDocument,
                             onSavePdfInkStroke = studyViewModel::savePdfInkStroke,
                             onDeletePdfInkStroke = studyViewModel::deletePdfInkStroke,
                             onClearPdfInkPage = studyViewModel::clearPdfInkPage,

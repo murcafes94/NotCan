@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Menu
@@ -80,6 +81,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.notcan.app.data.local.AudioRecordingEntity
 import com.notcan.app.data.local.ClassSessionEntity
 import com.notcan.app.data.local.DetectedCueEntity
+import com.notcan.app.data.local.DocumentResourceEntity
 import com.notcan.app.data.local.ImportantMomentEntity
 import com.notcan.app.data.local.NotePageEntity
 import com.notcan.app.data.local.SubjectEntity
@@ -121,6 +123,7 @@ internal fun NotCanClassWorkspaceV5(
     importantMoments: List<ImportantMomentEntity>,
     notePages: List<NotePageEntity>,
     selectedNoteId: String?,
+    documents: List<DocumentResourceEntity>,
     transcripts: List<TranscriptEntity>,
     detectedCues: List<DetectedCueEntity> = emptyList(),
     recordingState: RecordingState,
@@ -137,6 +140,9 @@ internal fun NotCanClassWorkspaceV5(
     onDeleteAudio: (String) -> Unit,
     onDeleteTranscript: (String) -> Unit,
     onTranscribeLocal: (String) -> Unit,
+    onImportDocument: (String) -> Unit,
+    onOpenDocument: (DocumentResourceEntity) -> Unit,
+    onDeleteDocument: (String) -> Unit,
     onStartRecording: (String) -> Unit,
     onPauseRecording: () -> Unit,
     onResumeRecording: () -> Unit,
@@ -181,6 +187,7 @@ internal fun NotCanClassWorkspaceV5(
                         importantMoments = importantMoments,
                         notePages = notePages,
                         selectedNoteId = selectedNoteId,
+                        documents = documents,
                         transcripts = transcripts,
                         detectedCues = detectedCues,
                         whisperModelState = whisperModelState,
@@ -196,6 +203,9 @@ internal fun NotCanClassWorkspaceV5(
                         onDeleteAudio = onDeleteAudio,
                         onDeleteTranscript = onDeleteTranscript,
                         onTranscribeLocal = onTranscribeLocal,
+                        onImportDocument = onImportDocument,
+                        onOpenDocument = onOpenDocument,
+                        onDeleteDocument = onDeleteDocument,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -340,6 +350,7 @@ private fun NormalClassTabs(
     importantMoments: List<ImportantMomentEntity>,
     notePages: List<NotePageEntity>,
     selectedNoteId: String?,
+    documents: List<DocumentResourceEntity>,
     transcripts: List<TranscriptEntity>,
     detectedCues: List<DetectedCueEntity>,
     whisperModelState: WhisperModelState,
@@ -355,10 +366,13 @@ private fun NormalClassTabs(
     onDeleteAudio: (String) -> Unit,
     onDeleteTranscript: (String) -> Unit,
     onTranscribeLocal: (String) -> Unit,
+    onImportDocument: (String) -> Unit,
+    onOpenDocument: (DocumentResourceEntity) -> Unit,
+    onDeleteDocument: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selected by rememberSaveable(classSessionId) { mutableIntStateOf(0) }
-    val views = listOf("Apuntes", "Audio", "Transcripción", "Estudio")
+    val views = listOf("Apuntes", "Audio", "Transcripción", "Documentos", "Estudio")
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val landscapeIme = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
@@ -404,6 +418,7 @@ private fun NormalClassTabs(
                 0 -> NotesContentV5(classSessionId, notePages, selectedNoteId, onSelectNote, onCreateNote, onUpdateNote, onDeleteNote, onImportNote, onShareNote)
                 1 -> AudioContentV5(classSessionId, audioRecordings, importantMoments, onShareAudio, onDeleteAudio)
                 2 -> TranscriptContentV5(audioRecordings, transcripts, detectedCues, whisperModelState, localWhisperBusy, localWhisperError, onTranscribeLocal, onDeleteTranscript)
+                3 -> DocumentsContentV5(classSessionId, documents, onImportDocument, onOpenDocument, onDeleteDocument)
                 else -> StudyContentV5(subjectName, classTitle, transcripts, notePages, detectedCues)
             }
         }
@@ -609,6 +624,72 @@ private fun AudioRowV5(audio: AudioRecordingEntity, playing: Boolean, onPlay: ()
             confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Eliminar") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
         )
+    }
+}
+
+@Composable
+private fun DocumentsContentV5(
+    classSessionId: String,
+    documents: List<DocumentResourceEntity>,
+    onImportDocument: (String) -> Unit,
+    onOpenDocument: (DocumentResourceEntity) -> Unit,
+    onDeleteDocument: (String) -> Unit
+) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Description, null, tint = NotCanBlue)
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Documentos de la clase", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                            Text("Drive, nube o dispositivo · sin copia permanente cuando el proveedor lo permite", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Button(onClick = { onImportDocument(classSessionId) }) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Añadir documento")
+                    }
+                }
+            }
+        }
+        if (documents.isEmpty()) {
+            item { Text("Todavía no hay documentos vinculados a esta clase.", color = NotCanGray) }
+        } else {
+            items(documents, key = { it.id }) { document ->
+                var confirmDelete by remember(document.id) { mutableStateOf(false) }
+                val cloud = document.localPath.startsWith("content://")
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = NotCanGraphite),
+                    modifier = Modifier.fillMaxWidth().clickable { onOpenDocument(document) }
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Default.FileOpen, null, tint = NotCanBlue)
+                        Column(Modifier.weight(1f)) {
+                            Text(document.displayName, color = NotCanOffWhite, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                if (cloud) "Nube/Drive · abrir o editar en el proveedor" else "Archivo local · ${document.documentType}",
+                                color = if (cloud) NotCanBlue else NotCanGray,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        TextButton(onClick = { onOpenDocument(document) }) { Text(if (cloud) "Abrir/editar" else "Abrir") }
+                        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "Quitar documento", tint = NotCanRed) }
+                    }
+                }
+                if (confirmDelete) {
+                    AlertDialog(
+                        onDismissRequest = { confirmDelete = false },
+                        title = { Text("Quitar documento") },
+                        text = { Text(if (cloud) "NotCan quitará el vínculo de esta clase. El archivo original seguirá en Drive o en su proveedor de nube." else "Se eliminará la copia local guardada por NotCan.") },
+                        confirmButton = { TextButton(onClick = { confirmDelete = false; onDeleteDocument(document.id) }) { Text("Quitar") } },
+                        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -875,3 +956,5 @@ private fun formatDurationV5(durationMs: Long): String {
 }
 
 private fun formatDateTimeV5(epochMs: Long): String = SimpleDateFormat("dd MMM · HH:mm", Locale.getDefault()).format(Date(epochMs))
+
+internal const val NEW_CLASS_RECORDING_SENTINEL = "__NOTCAN_NEW_CLASS__"

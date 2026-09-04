@@ -103,6 +103,8 @@ interface NotCanDao {
     suspend fun getAudioPathsForClass(classId: String): List<String>
     @Query("SELECT localPath FROM document_resources WHERE classSessionId = :classId")
     suspend fun getDocumentPathsForClass(classId: String): List<String>
+    @Query("SELECT COUNT(*) FROM document_resources WHERE localPath = :path")
+    suspend fun countDocumentsByPath(path: String): Int
     @Query("SELECT * FROM note_pages WHERE classSessionId = :classId")
     suspend fun getNotesForClass(classId: String): List<NotePageEntity>
 

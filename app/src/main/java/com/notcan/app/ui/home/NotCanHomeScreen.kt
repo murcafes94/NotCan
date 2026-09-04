@@ -110,6 +110,7 @@ fun NotCanHomeScreen(
     onTranscribeLocal: (String) -> Unit,
     onImportDocument: (String) -> Unit,
     onOpenDocument: (DocumentResourceEntity) -> Unit,
+    onDeleteDocument: (String) -> Unit,
     onSavePdfInkStroke: (String, Int, String, Long, Float, String) -> Unit,
     onDeletePdfInkStroke: (String) -> Unit,
     onClearPdfInkPage: (String, Int) -> Unit,
@@ -189,7 +190,7 @@ fun NotCanHomeScreen(
                 }
 
                 else -> {
-                    NotCanClassWorkspaceV4(
+                    NotCanClassWorkspaceV5(
                         modifier = Modifier.weight(1f),
                         cycleName = selectedCycle?.name,
                         subject = selectedSubject,
@@ -199,7 +200,6 @@ fun NotCanHomeScreen(
                         notePages = notePages,
                         selectedNoteId = selectedNoteId,
                         documents = documents,
-                        pdfInkStrokes = pdfInkStrokes,
                         transcripts = transcripts,
                         detectedCues = detectedCues,
                         recordingState = recordingState,
@@ -218,9 +218,7 @@ fun NotCanHomeScreen(
                         onTranscribeLocal = onTranscribeLocal,
                         onImportDocument = onImportDocument,
                         onOpenDocument = onOpenDocument,
-                        onSavePdfInkStroke = onSavePdfInkStroke,
-                        onDeletePdfInkStroke = onDeletePdfInkStroke,
-                        onClearPdfInkPage = onClearPdfInkPage,
+                        onDeleteDocument = onDeleteDocument,
                         onStartRecording = onStartRecording,
                         onPauseRecording = onPauseRecording,
                         onResumeRecording = onResumeRecording,

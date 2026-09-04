@@ -200,8 +200,12 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
             _selectedNoteId.value = null
         }
         viewModelScope.launch(Dispatchers.IO) {
-            repository.classFilePaths(classId).forEach { path -> runCatching { File(path).delete() } }
+            val paths = repository.classFilePaths(classId)
+            paths.filterNot { it.startsWith("content://") }.forEach { path -> runCatching { File(path).delete() } }
             repository.deleteClassData(classId)
+            paths.filter { it.startsWith("content://") }.forEach { path ->
+                if (repository.documentReferenceCount(path) == 0) releasePersistedDocumentUri(path)
+            }
         }
     }
 
@@ -376,6 +380,27 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                 DocumentResourceEntity(id, classSessionId, displayName, destination.absolutePath, mimeType, type, System.currentTimeMillis())
             )
         }
+    }
+
+    fun deleteDocument(documentId: String) {
+        val document = documents.value.firstOrNull { it.id == documentId } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteDocument(documentId)
+            if (document.localPath.startsWith("content://")) {
+                if (repository.documentReferenceCount(document.localPath) == 0) releasePersistedDocumentUri(document.localPath)
+            } else {
+                runCatching { File(document.localPath).delete() }
+            }
+        }
+    }
+
+    private fun releasePersistedDocumentUri(raw: String) {
+        val resolver = getApplication<Application>().contentResolver
+        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { resolver.releasePersistableUriPermission(uri, read or write) }
+            .recoverCatching { resolver.releasePersistableUriPermission(uri, read) }
     }
 
     fun askAi(question: String) {

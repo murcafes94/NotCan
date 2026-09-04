@@ -212,6 +212,7 @@ class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
 
     suspend fun classFilePaths(classId: String): List<String> =
         (dao.getAudioPathsForClass(classId) + dao.getDocumentPathsForClass(classId)).distinct()
+    suspend fun documentReferenceCount(path: String): Int = dao.countDocumentsByPath(path)
 
     suspend fun deleteClassData(classId: String) {
         dao.getNotesForClass(classId).forEach { markDelete("note_pages", it.id) }
@@ -248,6 +249,7 @@ class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
         dao.deleteNotePage(noteId)
     }
     suspend fun saveDocument(document: DocumentResourceEntity) = dao.insertDocument(document)
+    suspend fun deleteDocument(documentId: String) = dao.deleteDocument(documentId)
     suspend fun saveAudioRecording(audioRecording: AudioRecordingEntity) = dao.insertAudioRecording(audioRecording)
     suspend fun deleteAudio(audioId: String) = dao.deleteAudioAndMoments(audioId)
     suspend fun saveImportantMoment(moment: ImportantMomentEntity) = dao.insertImportantMoment(moment)

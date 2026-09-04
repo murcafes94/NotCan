@@ -2,6 +2,8 @@ package com.notcan.app.data
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
@@ -43,14 +45,15 @@ class CycleLifecycleManager(context: Context) {
         val subjects = repository.cycleSubjects(cycleId)
         val classes = repository.cycleClasses(cycleId)
         val paths = repository.cycleFilePaths(cycleId)
-        val bytes = paths.sumOf { path -> File(path).takeIf { it.exists() }?.length() ?: 0L }
+        val localPaths = paths.filterNot { it.startsWith("content://") }
+        val bytes = localPaths.sumOf { path -> File(path).takeIf { it.exists() }?.length() ?: 0L }
         val events = repository.cycleCalendarEventIds(cycleId)
         val vocabulary = repository.observeVocabularyForCycle(cycleId).first()
             .filter { it.scope == AcademicVocabularyTermEntity.SCOPE_CYCLE && it.cycleId == cycleId }
         CyclePreview(
             subjects = subjects.size,
             classes = classes.size,
-            physicalFiles = paths.size,
+            physicalFiles = localPaths.size,
             physicalBytes = bytes,
             calendarEvents = events.size,
             cycleVocabulary = vocabulary
@@ -67,10 +70,12 @@ class CycleLifecycleManager(context: Context) {
         val classes = repository.cycleClasses(cycleId)
         val subjectsById = subjects.associateBy { it.id }
         val paths = repository.cycleFilePaths(cycleId)
+        val localPaths = paths.filterNot { it.startsWith("content://") }
+        val cloudUris = paths.filter { it.startsWith("content://") }
         val eventIds = repository.cycleCalendarEventIds(cycleId)
 
         var deletedFiles = 0
-        paths.forEach { path ->
+        localPaths.forEach { path ->
             val file = File(path)
             if (!file.exists() || file.delete()) deletedFiles++
             pruneEmptyParents(file.parentFile)
@@ -102,6 +107,9 @@ class CycleLifecycleManager(context: Context) {
         // Solo después de intentar borrar archivos y fuentes físicas eliminamos los registros.
         // Las FK CASCADE limpian todo el árbol académico y el vocabulario CYCLE.
         repository.deleteCycleData(cycleId)
+        cloudUris.distinct().forEach { raw ->
+            if (repository.documentReferenceCount(raw) == 0) releasePersistedUri(raw)
+        }
         if (deletingActiveCycle) {
             repository.observeCycles().first().firstOrNull()?.let { replacement ->
                 repository.setActiveCycle(replacement.id)
@@ -109,12 +117,20 @@ class CycleLifecycleManager(context: Context) {
         }
 
         CleanupResult(
-            filesFound = paths.size,
+            filesFound = localPaths.size,
             filesDeleted = deletedFiles,
             sourceScopesDeleted = deletedScopes,
             calendarEventsFound = eventIds.size,
             calendarEventsDeleted = deletedEvents
         )
+    }
+
+    private fun releasePersistedUri(raw: String) {
+        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { app.contentResolver.releasePersistableUriPermission(uri, read or write) }
+            .recoverCatching { app.contentResolver.releasePersistableUriPermission(uri, read) }
     }
 
     private fun pruneEmptyParents(start: File?) {
