@@ -195,16 +195,21 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteClass(classId: String) {
+        val targetClass = classes.value.firstOrNull { it.id == classId }
+        val targetSubject = targetClass?.let { cls -> subjects.value.firstOrNull { it.id == cls.subjectId } }
+        val scopeKey = sourceStore.scopeKey(targetSubject?.name, targetClass?.title)
         if (_selectedClassId.value == classId) {
             _selectedClassId.value = null
             _selectedNoteId.value = null
         }
         viewModelScope.launch(Dispatchers.IO) {
             val paths = repository.classFilePaths(classId)
+            val cloudUris = paths.filter { it.startsWith("content://") }
             paths.filterNot { it.startsWith("content://") }.forEach { path -> runCatching { File(path).delete() } }
+            sourceStore.deleteScope(scopeKey)
             repository.deleteClassData(classId)
-            paths.filter { it.startsWith("content://") }.forEach { path ->
-                if (repository.documentReferenceCount(path) == 0) releasePersistedDocumentUri(path)
+            cloudUris.distinct().forEach { raw ->
+                if (repository.documentReferenceCount(raw) == 0) releasePersistedDocumentUri(raw)
             }
         }
     }
@@ -367,6 +372,12 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                 repository.saveDocument(
                     DocumentResourceEntity(id, classSessionId, displayName, uri.toString(), mimeType, type, System.currentTimeMillis())
                 )
+                if (type in setOf("PDF", "DOCX", "EPUB")) {
+                    val subjectName = subjects.value.firstOrNull { it.id == _selectedSubjectId.value }?.name
+                    val classTitle = classes.value.firstOrNull { it.id == classSessionId }?.title
+                    val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
+                    runCatching { sourceStore.importReference(scopeKey, uri, displayName, mimeType) }
+                }
                 return@launch
             }
 
@@ -379,12 +390,23 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
             repository.saveDocument(
                 DocumentResourceEntity(id, classSessionId, displayName, destination.absolutePath, mimeType, type, System.currentTimeMillis())
             )
+            if (type in setOf("PDF", "DOCX", "EPUB")) {
+                val subjectName = subjects.value.firstOrNull { it.id == _selectedSubjectId.value }?.name
+                val classTitle = classes.value.firstOrNull { it.id == classSessionId }?.title
+                val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
+                runCatching { sourceStore.importReference(scopeKey, Uri.fromFile(destination), displayName, mimeType) }
+            }
         }
     }
 
     fun deleteDocument(documentId: String) {
         val document = documents.value.firstOrNull { it.id == documentId } ?: return
+        val subjectName = subjects.value.firstOrNull { it.id == _selectedSubjectId.value }?.name
+        val classTitle = classes.value.firstOrNull { it.id == document.classSessionId }?.title
+        val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
         viewModelScope.launch(Dispatchers.IO) {
+            val sourceUri = if (document.localPath.startsWith("content://")) document.localPath else Uri.fromFile(File(document.localPath)).toString()
+            sourceStore.deleteByUri(scopeKey, sourceUri)
             repository.deleteDocument(documentId)
             if (document.localPath.startsWith("content://")) {
                 if (repository.documentReferenceCount(document.localPath) == 0) releasePersistedDocumentUri(document.localPath)

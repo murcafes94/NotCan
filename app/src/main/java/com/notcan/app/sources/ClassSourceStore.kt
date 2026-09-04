@@ -12,9 +12,9 @@ import java.util.UUID
 /**
  * File-backed library used by TuNot.
  *
- * Sources are intentionally independent from editable notes. PDF, DOCX and EPUB files are copied
- * into app-private storage, indexed locally and exposed to the AI/search layer through their
- * extracted text. The original file always remains the canonical source.
+ * Sources are intentionally independent from editable notes. PDF, DOCX and EPUB sources may be
+ * copied into app-private storage or referenced through a persisted URI. TuNot stores extracted text
+ * sidecars for search/RAG while the original document remains the canonical source.
  */
 class ClassSourceStore(private val context: Context) {
 
@@ -29,7 +29,8 @@ class ClassSourceStore(private val context: Context) {
         val indexed: Boolean,
         val enabled: Boolean = true,
         val indexChars: Int = 0,
-        val sourceUrl: String? = null
+        val sourceUrl: String? = null,
+        val sourceUri: String? = null
     )
 
     data class SearchHit(
@@ -86,6 +87,51 @@ class ClassSourceStore(private val context: Context) {
         return item
     }
 
+    fun importReference(
+        scopeKey: String,
+        uri: Uri,
+        displayNameOverride: String? = null,
+        mimeTypeOverride: String? = null
+    ): SourceItem {
+        val resolver = context.contentResolver
+        val rawUri = uri.toString()
+        list(scopeKey).firstOrNull { it.sourceUri == rawUri }?.let { existing ->
+            return reindex(existing)
+        }
+
+        val displayName = displayNameOverride?.takeIf { it.isNotBlank() } ?:
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }?.takeIf { it.isNotBlank() } ?: "fuente_${System.currentTimeMillis()}"
+        val mimeType = mimeTypeOverride?.takeIf { it.isNotBlank() }
+            ?: resolver.getType(uri).orEmpty().ifBlank { guessMime(displayName) }
+        val type = resolveType(displayName, mimeType)
+        require(type in SUPPORTED_TYPES) { "Solo se admiten PDF, DOCX y EPUB como fuentes" }
+
+        val id = UUID.randomUUID().toString()
+        val dir = scopeDir(scopeKey).apply { mkdirs() }
+        val descriptor = File(dir, "${id.take(8)}_${sanitize(displayName)}.ref")
+        descriptor.writeText(rawUri, Charsets.UTF_8)
+        val item = SourceItem(
+            id = id,
+            scopeKey = scopeKey,
+            displayName = displayName,
+            type = type,
+            mimeType = mimeType,
+            localPath = descriptor.absolutePath,
+            createdAtEpochMs = System.currentTimeMillis(),
+            indexed = false,
+            sourceUri = rawUri
+        )
+        val indexed = reindexReference(item)
+        val finalItem = item.copy(
+            indexed = indexed?.exists() == true,
+            indexChars = indexed?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
+        )
+        saveItem(finalItem)
+        return finalItem
+    }
+
     fun importWeb(scopeKey: String, title: String, url: String, content: String): SourceItem {
         require(url.startsWith("https://") || url.startsWith("http://")) { "URL web no válida" }
         val cleanTitle = title.trim().ifBlank { url }.take(180)
@@ -128,15 +174,44 @@ class ClassSourceStore(private val context: Context) {
 
     fun reindex(item: SourceItem): SourceItem {
         val file = File(item.localPath)
-        val index = if (item.type == "WEB" && file.exists()) {
-            SourceTextIndexer.indexFileFor(file).also { it.writeText(file.readText(Charsets.UTF_8), Charsets.UTF_8) }
-        } else SourceTextIndexer.index(context, file, item.type)
+        val index = when {
+            !item.sourceUri.isNullOrBlank() -> reindexReference(item)
+            item.type == "WEB" && file.exists() -> {
+                SourceTextIndexer.indexFileFor(file).also { it.writeText(file.readText(Charsets.UTF_8), Charsets.UTF_8) }
+            }
+            else -> SourceTextIndexer.index(context, file, item.type)
+        }
         val updated = item.copy(
             indexed = index?.exists() == true,
             indexChars = index?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
         )
         saveItem(updated)
         return updated
+    }
+
+    fun deleteByUri(scopeKey: String, rawUri: String) {
+        list(scopeKey).filter { it.sourceUri == rawUri }.forEach { delete(scopeKey, it.id) }
+    }
+
+    private fun reindexReference(item: SourceItem): File? {
+        val rawUri = item.sourceUri?.takeIf { it.isNotBlank() } ?: return null
+        val uri = runCatching { Uri.parse(rawUri) }.getOrNull() ?: return null
+        val descriptor = File(item.localPath)
+        descriptor.parentFile?.mkdirs()
+        if (!descriptor.exists()) descriptor.writeText(rawUri, Charsets.UTF_8)
+        val temp = File.createTempFile("tunot_source_", ".bin", context.cacheDir)
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+            } ?: return null
+            val tempIndex = SourceTextIndexer.index(context, temp, item.type) ?: return null
+            val target = SourceTextIndexer.indexFileFor(descriptor)
+            tempIndex.copyTo(target, overwrite = true)
+            target
+        } finally {
+            SourceTextIndexer.indexFileFor(temp).delete()
+            temp.delete()
+        }
     }
 
     fun setEnabled(scopeKey: String, sourceId: String, enabled: Boolean) {
@@ -237,6 +312,7 @@ class ClassSourceStore(private val context: Context) {
         .put("enabled", enabled)
         .put("indexChars", indexChars)
         .put("sourceUrl", sourceUrl)
+        .put("sourceUri", sourceUri)
 
     private fun JSONObject.toSourceItem(): SourceItem? = runCatching {
         SourceItem(
@@ -250,7 +326,8 @@ class ClassSourceStore(private val context: Context) {
             indexed = optBoolean("indexed", false),
             enabled = optBoolean("enabled", true),
             indexChars = optInt("indexChars", 0),
-            sourceUrl = optString("sourceUrl").takeIf { it.isNotBlank() && it != "null" }
+            sourceUrl = optString("sourceUrl").takeIf { it.isNotBlank() && it != "null" },
+            sourceUri = optString("sourceUri").takeIf { it.isNotBlank() && it != "null" }
         )
     }.getOrNull()
 
