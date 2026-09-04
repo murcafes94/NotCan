@@ -48,6 +48,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The patch script also refreshes rolling-build metadata, but Actions tokens
+          # are not allowed to push workflow-file changes. Keep runtime changes only;
+          # workflow metadata can be updated separately by the repository connector.
+          git checkout -- .github/workflows/android-debug.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
