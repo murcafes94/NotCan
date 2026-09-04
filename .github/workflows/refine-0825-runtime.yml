@@ -26,7 +26,9 @@ jobs:
           gradle-version: "8.9"
 
       - name: Apply runtime refinement
-        run: python3 ci/refine_0825_runtime.py
+        run: |
+          python3 ci/refine_0825_runtime.py
+          python3 ci/refine_0825_fix.py
 
       - name: Build debug APK
         run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
