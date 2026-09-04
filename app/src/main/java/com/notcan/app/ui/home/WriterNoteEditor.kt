@@ -115,6 +115,7 @@ internal fun WriterNoteEditor(
     var editing by remember(note.id) { mutableStateOf(false) }
     var annotationPickerOpen by remember(note.id) { mutableStateOf(false) }
     var fontSizeMenuOpen by remember(note.id) { mutableStateOf(false) }
+    var fontFamilyMenuOpen by remember(note.id) { mutableStateOf(false) }
     val darkEditor = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     LaunchedEffect(note.id, note.body) {
@@ -224,10 +225,28 @@ internal fun WriterNoteEditor(
                 Box {
                     WriterStructureButton("Aa") { fontSizeMenuOpen = true }
                     DropdownMenu(expanded = fontSizeMenuOpen, onDismissRequest = { fontSizeMenuOpen = false }) {
-                        listOf(12, 14, 16, 18, 20, 24, 28, 32).forEach { px ->
+                        listOf(10, 11, 12, 14, 16, 18, 20, 24, 28, 32).forEach { pt ->
                             DropdownMenuItem(
-                                text = { Text("$px pt") },
-                                onClick = { fontSizeMenuOpen = false; command("fontSizePx", px.toString()) }
+                                text = { Text("$pt pt") },
+                                onClick = { fontSizeMenuOpen = false; command("fontSizePt", pt.toString()) }
+                            )
+                        }
+                    }
+                }
+                Box {
+                    WriterStructureButton("Ab") { fontFamilyMenuOpen = true }
+                    DropdownMenu(expanded = fontFamilyMenuOpen, onDismissRequest = { fontFamilyMenuOpen = false }) {
+                        listOf(
+                            "Roboto" to "Roboto, Arial, sans-serif",
+                            "Arial" to "Arial, sans-serif",
+                            "Times New Roman" to "'Times New Roman', serif",
+                            "Georgia" to "Georgia, serif",
+                            "Courier New" to "'Courier New', monospace",
+                            "Cursiva" to "cursive"
+                        ).forEach { (label, family) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { fontFamilyMenuOpen = false; command("fontFamily", family) }
                             )
                         }
                     }
@@ -435,12 +454,14 @@ function withEditable(command,value){if(!restore())return;const old=editor.conte
 function wrapAnnotation(kind,color){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.setAttribute('data-notcan-annotation',kind);if(kind==='underline'){span.style.textDecoration='underline 2px '+(color||'#3478F6');span.style.textUnderlineOffset='3px'}else{span.style.backgroundColor=color||'#FFE066'}try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){if(kind==='underline')withEditable('underline',null);else withEditable('hiliteColor',color||'#FFE066')}}
 function unwrap(el){const p=el&&el.parentNode;if(!p)return;while(el.firstChild)p.insertBefore(el.firstChild,el);p.removeChild(el)}
 function clearAnnotation(){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount)return;const r=s.getRangeAt(0).cloneRange(),hits=[];function ancestors(n){let e=n&&n.nodeType===1?n:n&&n.parentElement;while(e&&e!==editor){if(e.getAttribute&&e.getAttribute('data-notcan-annotation'))hits.push(e);e=e.parentElement}}ancestors(r.startContainer);ancestors(r.endContainer);editor.querySelectorAll('[data-notcan-annotation]').forEach(function(el){try{if(r.intersectsNode(el))hits.push(el)}catch(e){}});const unique=Array.from(new Set(hits));if(unique.length){unique.forEach(unwrap);notify();return}const old=editor.contentEditable;editor.contentEditable='true';restore();try{document.execCommand('hiliteColor',false,'transparent')}finally{editor.contentEditable=old==='true'?'true':'false'}save();notify()}
-function applyFontSize(px){if(!restore())return;const n=Math.max(10,Math.min(48,parseInt(px||'17',10)||17));const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.style.fontSize=n+'px';try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){}}
+function applyInlineStyle(prop,value,dataName){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount||s.isCollapsed)return;const r=s.getRangeAt(0).cloneRange();const span=document.createElement('span');span.style[prop]=value;if(dataName)span.setAttribute(dataName,value);try{span.appendChild(r.extractContents());r.insertNode(span);s.removeAllRanges();const nr=document.createRange();nr.selectNodeContents(span);s.addRange(nr);savedRange=nr.cloneRange();notify()}catch(e){}}
+function applyFontSize(pt){const n=Math.max(6,Math.min(72,parseInt(pt||'11',10)||11));applyInlineStyle('fontSize',n+'pt','data-notcan-font-size')}
+function applyFontFamily(family){const safe=(family||'Roboto, Arial, sans-serif').replace(/[<>;]/g,'');applyInlineStyle('fontFamily',safe,'data-notcan-font-family')}
 function blockFor(node){let e=node&&node.nodeType===1?node:node&&node.parentElement;while(e&&e!==editor){if(/^(P|DIV|H1|H2|H3|H4|H5|H6|LI|BLOCKQUOTE)$/.test(e.tagName))return e;e=e.parentElement}return null}
 function applyAlignment(mode){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount)return;const r=s.getRangeAt(0).cloneRange();const blocks=[];editor.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote').forEach(function(el){try{if(r.intersectsNode(el))blocks.push(el)}catch(e){}});if(!blocks.length){const b=blockFor(r.startContainer);if(b)blocks.push(b)}const align=mode==='full'?'justify':mode==='center'?'center':mode==='right'?'right':'left';Array.from(new Set(blocks)).forEach(function(b){b.style.textAlign=align;if(align==='justify')b.style.textJustify='inter-word';else b.style.removeProperty('text-justify')});save();notify()}
 window.notcanSetEditing=function(v){editor.contentEditable=v?'true':'false';if(v)editor.focus()};
 window.notcanSetTheme=function(dark){document.documentElement.style.setProperty('--notcan-text',dark?'#F3F4F6':'#20252C');document.documentElement.style.setProperty('--notcan-selection',dark?'#355A8F':'#B9D0FF');document.documentElement.style.setProperty('--notcan-selection-text',dark?'#FFFFFF':'#172033')};
-window.notcanCommand=function(c,v){if(c==='fontSizePx')applyFontSize(v);else if(c==='justifyFull')applyAlignment('full');else if(c==='justifyCenter')applyAlignment('center');else if(c==='justifyRight')applyAlignment('right');else if(c==='justifyLeft')applyAlignment('left');else withEditable(c,v)};
+window.notcanCommand=function(c,v){if(c==='fontSizePt')applyFontSize(v);else if(c==='fontFamily')applyFontFamily(v);else if(c==='justifyFull')applyAlignment('full');else if(c==='justifyCenter')applyAlignment('center');else if(c==='justifyRight')applyAlignment('right');else if(c==='justifyLeft')applyAlignment('left');else withEditable(c,v)};
 window.notcanApplyAnnotation=function(style,color){if(style==='highlight')wrapAnnotation('highlight',color);else if(style==='underline')wrapAnnotation('underline',color);else if(style==='clearAnnotation')clearAnnotation()};
 document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()});
 })();</script></body></html>
