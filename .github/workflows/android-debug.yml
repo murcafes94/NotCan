@@ -51,7 +51,7 @@ jobs:
           submodules: recursive
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.25-apk
+          name: notcan-v0.8.26-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.25-test"
+          TAG="v0.8.26-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.25.apk" \
+            "$APK#NotCan-v0.8.26.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.25 · estudio, nube y TuNot" \
-            --notes "Build de prueba v0.8.25. Incluye TuNot local con Gemma 4 LiteRT estable, transcripción Groq/Whisper, documentos de clase con referencias persistentes de Drive/SAF, selección de calendario Google/Xiaomi/local, cierre manual seguro de ciclos, limpieza de modelos obsoletos y optimizaciones de estudio, almacenamiento y recordatorios. Los documentos PDF/DOCX/EPUB vinculados se indexan localmente para TuNot sin conservar una segunda copia permanente del binario cuando el proveedor admite URI persistente."
+            --title "NotCan v0.8.26 · apuntes y exportación fiel" \
+            --notes "Build de prueba v0.8.26. Mejora el editor de apuntes con selección de tipografía y tamaños reales en puntos, y corrige la exportación PDF/DOCX para conservar títulos, negrita, cursiva, subrayado, tachado, colores, resaltados, tamaños, fuentes, alineación, viñetas y numeración. También evita duplicar el título del apunte al exportar y pagina correctamente párrafos largos en PDF. Mantiene las mejoras de v0.8.25 para TuNot, transcripción, Drive/SAF, calendarios y recordatorios."
