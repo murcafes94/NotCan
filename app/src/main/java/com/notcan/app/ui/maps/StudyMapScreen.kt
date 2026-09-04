@@ -183,17 +183,19 @@ fun StudyMapScreen(
             val virtualWidthDpValue = maxOf(
                 maxWidth.value,
                 when (layoutStyle) {
-                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> 1700f
+                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> maxOf(1800f, nodeCount * 150f)
+                    StudyMapLayoutStyle.TREE -> maxOf(1900f, nodeCount * 250f)
                     StudyMapLayoutStyle.RADIAL, StudyMapLayoutStyle.RADIAL_CARDS,
-                    StudyMapLayoutStyle.IDEA_BOARD, StudyMapLayoutStyle.CONSTELLATION -> maxOf(1800f, nodeCount * 96f)
+                    StudyMapLayoutStyle.IDEA_BOARD, StudyMapLayoutStyle.CONSTELLATION -> maxOf(1900f, nodeCount * 112f)
                 }
             )
             val virtualHeightDpValue = maxOf(
                 maxHeight.value,
                 textDemand * 0.86f,
                 when (layoutStyle) {
-                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES, StudyMapLayoutStyle.TREE -> nodeCount * 158f
-                    else -> maxOf(1800f, nodeCount * 112f)
+                    StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> maxOf(1500f, nodeCount * 190f)
+                    StudyMapLayoutStyle.TREE -> maxOf(1400f, nodeCount * 120f)
+                    else -> maxOf(1900f, nodeCount * 128f)
                 }
             )
             val virtualWidthDp = virtualWidthDpValue.dp
@@ -225,9 +227,10 @@ fun StudyMapScreen(
                 val fitted = minOf(
                     ((widthPx - padding * 2f) / contentWidth),
                     ((heightPx - padding * 2f) / contentHeight)
-                ).coerceIn(0.62f, 1.35f)
-                // Al abrir priorizamos lectura a tamaño real. Ajustar puede reducir explícitamente.
-                val targetZoom = if (fitRequest == 0) 1f else fitted
+                ).coerceIn(0.38f, 1.25f)
+                // Open every layout already framed inside the viewport. The user can immediately
+                // zoom in for reading instead of discovering half the graph outside the screen.
+                val targetZoom = if (fitRequest == 0) minOf(fitted, 0.92f) else fitted
                 zoom = targetZoom
                 panX = (widthPx - contentWidth * targetZoom) / 2f - minX * targetZoom
                 panY = (heightPx - contentHeight * targetZoom) / 2f - minY * targetZoom
@@ -274,16 +277,15 @@ fun StudyMapScreen(
                         visibleMap.edges.forEach { edge ->
                             val from = positionedById[edge.from] ?: return@forEach
                             val to = positionedById[edge.to] ?: return@forEach
-                            val horizontal = layoutStyle == StudyMapLayoutStyle.HORIZONTAL_BRANCHES || layoutStyle == StudyMapLayoutStyle.TREE
-                            val start = if (horizontal) {
-                                Offset(from.x + from.width, from.y + from.height / 2f)
-                            } else {
-                                Offset(from.x + from.width / 2f, from.y + from.height / 2f)
+                            val start = when (layoutStyle) {
+                                StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> Offset(from.x + from.width, from.y + from.height / 2f)
+                                StudyMapLayoutStyle.TREE -> Offset(from.x + from.width / 2f, from.y + from.height)
+                                else -> Offset(from.x + from.width / 2f, from.y + from.height / 2f)
                             }
-                            val end = if (horizontal) {
-                                Offset(to.x, to.y + to.height / 2f)
-                            } else {
-                                Offset(to.x + to.width / 2f, to.y + to.height / 2f)
+                            val end = when (layoutStyle) {
+                                StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> Offset(to.x, to.y + to.height / 2f)
+                                StudyMapLayoutStyle.TREE -> Offset(to.x + to.width / 2f, to.y)
+                                else -> Offset(to.x + to.width / 2f, to.y + to.height / 2f)
                             }
                             val dx = end.x - start.x
                             val branchColor = branchColorFor(edge.to, visibleMap)
@@ -320,11 +322,22 @@ fun StudyMapScreen(
                         if (label.isBlank()) return@forEach
                         val from = positionedById[edge.from] ?: return@forEach
                         val to = positionedById[edge.to] ?: return@forEach
-                        val horizontal = layoutStyle == StudyMapLayoutStyle.HORIZONTAL_BRANCHES || layoutStyle == StudyMapLayoutStyle.TREE
-                        val startX = if (horizontal) from.x + from.width else from.x + from.width / 2f
-                        val startY = from.y + from.height / 2f
-                        val endX = if (horizontal) to.x else to.x + to.width / 2f
-                        val endY = to.y + to.height / 2f
+                        val startX = when (layoutStyle) {
+                            StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> from.x + from.width
+                            else -> from.x + from.width / 2f
+                        }
+                        val startY = when (layoutStyle) {
+                            StudyMapLayoutStyle.TREE -> from.y + from.height
+                            else -> from.y + from.height / 2f
+                        }
+                        val endX = when (layoutStyle) {
+                            StudyMapLayoutStyle.HORIZONTAL_BRANCHES -> to.x
+                            else -> to.x + to.width / 2f
+                        }
+                        val endY = when (layoutStyle) {
+                            StudyMapLayoutStyle.TREE -> to.y
+                            else -> to.y + to.height / 2f
+                        }
                         val dx = endX - startX
                         val dy = endY - startY
                         val length = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
@@ -551,6 +564,8 @@ private fun StudyMapNodeCard(
                     },
                     fontWeight = if (node.level <= 1) FontWeight.SemiBold else FontWeight.Medium,
                     softWrap = true,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 if (childCount > 0) {
@@ -569,7 +584,9 @@ private fun StudyMapNodeCard(
                     it,
                     color = if (visualCard) NotCanOffWhite.copy(alpha = 0.78f) else NotCanGray,
                     style = if (visualCard) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
-                    softWrap = true
+                    softWrap = true,
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             if (node.sourceRefs.isNotEmpty()) {
@@ -578,7 +595,9 @@ private fun StudyMapNodeCard(
                     color = branchColor,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    softWrap = true
+                    softWrap = true,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

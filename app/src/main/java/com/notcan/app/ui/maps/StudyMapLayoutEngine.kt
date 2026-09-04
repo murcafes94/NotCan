@@ -9,17 +9,19 @@ import kotlin.math.sin
 
 object StudyMapLayoutEngine {
     private fun estimatedNodeHeight(node: StudyMapNode, base: Float, width: Float = 210f): Float {
-        // Estimate the real rendered height from the available card width. Compose may grow a card
-        // beyond heightIn(), so the layout engine must reserve that space before positioning siblings.
-        val usableWidth = (width - 30f).coerceAtLeast(120f)
-        val titleCharsPerLine = (usableWidth / 10.5f).toInt().coerceIn(13, 28)
-        val bodyCharsPerLine = (usableWidth / 8.2f).toInt().coerceIn(16, 34)
-        val titleLines = ceil(node.title.length.coerceAtLeast(1) / titleCharsPerLine.toFloat()).toInt().coerceAtLeast(1)
+        // Map cards are intentionally summaries. The full node text remains in the artifact,
+        // while the canvas reserves a bounded number of lines so one verbose node cannot
+        // collapse an entire layout into a tall overlapping column.
+        val usableWidth = (width - 34f).coerceAtLeast(120f)
+        val titleCharsPerLine = (usableWidth / 10.2f).toInt().coerceIn(13, 30)
+        val bodyCharsPerLine = (usableWidth / 8.0f).toInt().coerceIn(17, 36)
+        val titleLines = ceil(node.title.length.coerceAtLeast(1) / titleCharsPerLine.toFloat())
+            .toInt().coerceIn(1, 4)
         val descriptionLines = node.description?.takeIf { it.isNotBlank() }
-            ?.let { ceil(it.length / bodyCharsPerLine.toFloat()).toInt().coerceAtLeast(1) } ?: 0
+            ?.let { ceil(it.length / bodyCharsPerLine.toFloat()).toInt().coerceIn(1, 6) } ?: 0
         val sourceLines = if (node.sourceRefs.isNotEmpty()) 1 else 0
-        val measured = 28f + titleLines * 27f + descriptionLines * 22f + sourceLines * 23f
-        return max(base, measured + 14f)
+        val measured = 30f + titleLines * 27f + descriptionLines * 21f + sourceLines * 22f
+        return max(base, measured + 16f)
     }
     fun layout(
         map: StudyMap,
@@ -38,67 +40,61 @@ object StudyMapLayoutEngine {
     private fun horizontalBranches(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
         val byId = map.nodes.associateBy { it.id }
         val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
-        val result = mutableListOf<PositionedStudyMapNode>()
         val root = byId[map.rootNodeId] ?: return emptyList()
-        val maxDepth = depthOf(map.rootNodeId, children).coerceAtLeast(1)
-        val rootWidth = 240f
-        val rootHeight = estimatedNodeHeight(root, 96f)
-        val horizontalStep = ((width - rootWidth - 140f) / maxDepth).coerceIn(235f, 315f)
-        val estimatedContentWidth = rootWidth + 52f + maxDepth * horizontalStep + 230f
-        val rootX = ((width - estimatedContentWidth) / 2f).coerceAtLeast(40f)
-        val rootY = (height / 2f) - rootHeight / 2f
-        result += PositionedStudyMapNode(root, rootX, rootY, rootWidth, rootHeight)
+        val result = mutableListOf<PositionedStudyMapNode>()
+        val verticalGap = 54f
+        val horizontalGap = 84f
+        val rootWidth = 270f
+        val rootHeight = estimatedNodeHeight(root, 112f, rootWidth)
+        val subtreeCache = mutableMapOf<String, Float>()
 
-        val leafCountCache = mutableMapOf<String, Int>()
-        fun leafCount(id: String, visiting: MutableSet<String> = mutableSetOf()): Int {
-            leafCountCache[id]?.let { return it }
-            if (!visiting.add(id)) return 1
-            val childIds = children[id].orEmpty()
-            val count = if (childIds.isEmpty()) 1 else childIds.sumOf { leafCount(it, visiting.toMutableSet()) }
-            return count.coerceAtLeast(1).also { leafCountCache[id] = it }
+        fun cardWidth(depth: Int): Float = when {
+            depth == 0 -> rootWidth
+            depth == 1 -> 250f
+            depth == 2 -> 225f
+            else -> 205f
         }
 
-        val top = 48f
-        val bottom = (height - 48f).coerceAtLeast(top + 300f)
+        fun cardHeight(id: String, depth: Int): Float {
+            val node = byId[id] ?: return 90f
+            return estimatedNodeHeight(node, if (depth <= 1) 104f else 90f, cardWidth(depth))
+        }
 
-        fun placeChildren(parentId: String, depth: Int, bandTop: Float, bandBottom: Float, visiting: Set<String>) {
-            val childIds = children[parentId].orEmpty().filterNot { it in visiting }
+        fun subtreeHeight(id: String, depth: Int, seen: Set<String> = emptySet()): Float {
+            subtreeCache[id]?.let { return it }
+            if (id in seen) return cardHeight(id, depth)
+            val childIds = children[id].orEmpty().filterNot { it in seen }
+            val own = cardHeight(id, depth)
+            val descendants = if (childIds.isEmpty()) 0f else {
+                childIds.sumOf { subtreeHeight(it, depth + 1, seen + id).toDouble() }.toFloat() +
+                    verticalGap * (childIds.size - 1).coerceAtLeast(0)
+            }
+            return max(own, descendants).also { subtreeCache[id] = it }
+        }
+
+        val totalHeight = subtreeHeight(map.rootNodeId, 0)
+        val contentTop = max(54f, (height - totalHeight) / 2f)
+        val rootY = contentTop + totalHeight / 2f - rootHeight / 2f
+        val rootX = 64f
+        result += PositionedStudyMapNode(root, rootX, rootY, rootWidth, rootHeight)
+
+        fun placeChildren(parentId: String, depth: Int, left: Float, top: Float, seen: Set<String>) {
+            val childIds = children[parentId].orEmpty().filterNot { it in seen }
             if (childIds.isEmpty()) return
-            val totalWeight = childIds.sumOf { leafCount(it) }.coerceAtLeast(1)
-            var cursor = bandTop
-
+            var cursor = top
             childIds.forEach { childId ->
                 val node = byId[childId] ?: return@forEach
-                val weight = leafCount(childId)
-                val fraction = weight.toFloat() / totalWeight.toFloat()
-                val bandHeight = (bandBottom - bandTop) * fraction
-                val centerY = cursor + bandHeight / 2f
-                val cardWidth = when {
-                    depth <= 1 -> 230f
-                    depth == 2 -> 210f
-                    else -> 190f
-                }
-                val cardHeight = estimatedNodeHeight(node, when {
-                    depth <= 1 -> 92f
-                    depth == 2 -> 82f
-                    else -> 74f
-                })
-                val x = rootX + rootWidth + 52f + (depth - 1) * horizontalStep
-                val y = (centerY - cardHeight / 2f).coerceAtLeast(18f)
-
-                result += PositionedStudyMapNode(node, x, y, cardWidth, cardHeight)
-                placeChildren(
-                    parentId = childId,
-                    depth = depth + 1,
-                    bandTop = cursor,
-                    bandBottom = cursor + bandHeight,
-                    visiting = visiting + childId
-                )
-                cursor += bandHeight
+                val branchHeight = subtreeHeight(childId, depth, seen + parentId)
+                val w = cardWidth(depth)
+                val h = cardHeight(childId, depth)
+                val y = cursor + branchHeight / 2f - h / 2f
+                result += PositionedStudyMapNode(node, left, y, w, h)
+                placeChildren(childId, depth + 1, left + w + horizontalGap, cursor, seen + parentId + childId)
+                cursor += branchHeight + verticalGap
             }
         }
 
-        placeChildren(map.rootNodeId, 1, top, bottom, setOf(map.rootNodeId))
+        placeChildren(map.rootNodeId, 1, rootX + rootWidth + horizontalGap, contentTop, setOf(map.rootNodeId))
         return result
     }
 
@@ -229,27 +225,63 @@ object StudyMapLayoutEngine {
     private fun tree(map: StudyMap, width: Float, height: Float): List<PositionedStudyMapNode> {
         val byId = map.nodes.associateBy { it.id }
         val children = map.edges.groupBy { it.from }.mapValues { (_, value) -> value.map { it.to } }
-        val levels = collectLevels(map.rootNodeId, children)
+        val root = byId[map.rootNodeId] ?: return emptyList()
         val result = mutableListOf<PositionedStudyMapNode>()
-        val usableHeight = (height - 100f).coerceAtLeast(340f)
-        val maxDepth = (levels.keys.maxOrNull() ?: 0).coerceAtLeast(1)
-        val horizontalStep = ((width - 300f).coerceAtLeast(300f)) / maxDepth
+        val horizontalGap = 58f
+        val verticalGap = 118f
+        val leafWidth = 245f
+        val subtreeWidthCache = mutableMapOf<String, Float>()
 
-        levels.forEach { (depth, ids) ->
-            val verticalStep = usableHeight / (ids.size + 1)
-            ids.forEachIndexed { index, id ->
-                val node = byId[id] ?: return@forEachIndexed
-                val cardWidth = if (depth == 0) 230f else 205f
-                val cardHeight = estimatedNodeHeight(node, if (depth == 0) 96f else 84f)
-                result += PositionedStudyMapNode(
-                    node = node,
-                    x = 50f + depth * horizontalStep,
-                    y = 36f + verticalStep * (index + 1) - cardHeight / 2f,
-                    width = cardWidth,
-                    height = cardHeight
-                )
+        fun nodeWidth(depth: Int): Float = if (depth == 0) 270f else if (depth == 1) 235f else 210f
+        fun nodeHeight(id: String, depth: Int): Float {
+            val node = byId[id] ?: return 92f
+            return estimatedNodeHeight(node, if (depth == 0) 112f else 94f, nodeWidth(depth))
+        }
+
+        fun subtreeWidth(id: String, depth: Int, seen: Set<String> = emptySet()): Float {
+            subtreeWidthCache[id]?.let { return it }
+            if (id in seen) return nodeWidth(depth)
+            val childIds = children[id].orEmpty().filterNot { it in seen }
+            val own = nodeWidth(depth)
+            val descendants = if (childIds.isEmpty()) leafWidth else {
+                childIds.sumOf { subtreeWidth(it, depth + 1, seen + id).toDouble() }.toFloat() +
+                    horizontalGap * (childIds.size - 1).coerceAtLeast(0)
+            }
+            return max(own, descendants).also { subtreeWidthCache[id] = it }
+        }
+
+        val levels = collectLevels(map.rootNodeId, children)
+        val maxHeightByDepth = levels.mapValues { (depth, ids) -> ids.maxOfOrNull { nodeHeight(it, depth) } ?: 96f }
+        val yByDepth = mutableMapOf<Int, Float>()
+        var yCursor = 56f
+        for (depth in 0..(levels.keys.maxOrNull() ?: 0)) {
+            yByDepth[depth] = yCursor
+            yCursor += (maxHeightByDepth[depth] ?: 96f) + verticalGap
+        }
+
+        val totalWidth = subtreeWidth(map.rootNodeId, 0)
+        val contentLeft = max(54f, (width - totalWidth) / 2f)
+
+        fun place(id: String, depth: Int, left: Float, seen: Set<String>) {
+            val node = byId[id] ?: return
+            if (id in seen) return
+            val branchWidth = subtreeWidth(id, depth, seen)
+            val w = nodeWidth(depth)
+            val h = nodeHeight(id, depth)
+            val x = left + branchWidth / 2f - w / 2f
+            val y = yByDepth[depth] ?: 56f
+            result += PositionedStudyMapNode(node, x, y, w, h)
+
+            val childIds = children[id].orEmpty().filterNot { it in seen }
+            var childLeft = left
+            childIds.forEach { childId ->
+                val cw = subtreeWidth(childId, depth + 1, seen + id)
+                place(childId, depth + 1, childLeft, seen + id)
+                childLeft += cw + horizontalGap
             }
         }
+
+        place(root.id, 0, contentLeft, emptySet())
         return result
     }
 
