@@ -8,8 +8,13 @@ import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -116,7 +121,31 @@ internal fun WriterNoteEditor(
     var annotationPickerOpen by remember(note.id) { mutableStateOf(false) }
     var fontSizeMenuOpen by remember(note.id) { mutableStateOf(false) }
     var fontFamilyMenuOpen by remember(note.id) { mutableStateOf(false) }
+    var fontWeightMenuOpen by remember(note.id) { mutableStateOf(false) }
+    var spacingMenuOpen by remember(note.id) { mutableStateOf(false) }
+    var importedFonts by remember(context) { mutableStateOf(LocalFontStore.list(context)) }
+    var fontRevision by remember(note.id) { mutableStateOf(0) }
     val darkEditor = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fontImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { LocalFontStore.importFont(context, uri) }
+                .onSuccess { entry ->
+                    importedFonts = LocalFontStore.list(context)
+                    fontRevision += 1
+                    Toast.makeText(context, "Fuente ${entry.displayName} añadida", Toast.LENGTH_SHORT).show()
+                    webView?.loadDataWithBaseURL(
+                        "https://notcan.local/",
+                        writerDocument(html, darkEditor, LocalFontStore.fontFaceCss(context)),
+                        "text/html",
+                        "UTF-8",
+                        null
+                    )
+                }
+                .onFailure { error ->
+                    Toast.makeText(context, error.message ?: "No se pudo importar la fuente", Toast.LENGTH_LONG).show()
+                }
+        }
+    }
 
     LaunchedEffect(note.id, note.body) {
         val externalHtml = normalizeStoredBody(note.body)
@@ -126,7 +155,7 @@ internal fun WriterNoteEditor(
             !localDirty -> {
                 html = externalHtml
                 lastSavedHtml = externalHtml
-                webView?.loadDataWithBaseURL(null, writerDocument(externalHtml, darkEditor), "text/html", "UTF-8", null)
+                webView?.loadDataWithBaseURL("https://notcan.local/", writerDocument(externalHtml, darkEditor, LocalFontStore.fontFaceCss(context)), "text/html", "UTF-8", null)
             }
             externalHtml == lastSavedHtml -> Unit
             else -> Unit // Preserve the newer local draft until it is saved.
@@ -237,6 +266,10 @@ internal fun WriterNoteEditor(
                     WriterStructureButton("Ab") { fontFamilyMenuOpen = true }
                     DropdownMenu(expanded = fontFamilyMenuOpen, onDismissRequest = { fontFamilyMenuOpen = false }) {
                         listOf(
+                            "Sistema · Sans" to "sans-serif",
+                            "Sistema · Serif" to "serif",
+                            "Noto Sans" to "'Noto Sans', sans-serif",
+                            "Noto Serif" to "'Noto Serif', serif",
                             "Roboto" to "Roboto, Arial, sans-serif",
                             "Arial" to "Arial, sans-serif",
                             "Times New Roman" to "'Times New Roman', serif",
@@ -247,6 +280,66 @@ internal fun WriterNoteEditor(
                             DropdownMenuItem(
                                 text = { Text(label) },
                                 onClick = { fontFamilyMenuOpen = false; command("fontFamily", family) }
+                            )
+                        }
+                        importedFonts.forEach { entry ->
+                            DropdownMenuItem(
+                                text = { Text("Local · ${entry.displayName}") },
+                                onClick = {
+                                    fontFamilyMenuOpen = false
+                                    command("fontFamily", "'${entry.cssFamily}'")
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("＋ Añadir fuente local…") },
+                            onClick = {
+                                fontFamilyMenuOpen = false
+                                fontImportLauncher.launch(arrayOf("*/*"))
+                            }
+                        )
+                    }
+                }
+                Box {
+                    WriterStructureButton("Gr") { fontWeightMenuOpen = true }
+                    DropdownMenu(expanded = fontWeightMenuOpen, onDismissRequest = { fontWeightMenuOpen = false }) {
+                        listOf(
+                            "Ligera" to "300",
+                            "Normal" to "400",
+                            "Media" to "500",
+                            "Seminegrita" to "600",
+                            "Negrita" to "700",
+                            "Extra negrita" to "800"
+                        ).forEach { (label, weight) ->
+                            DropdownMenuItem(
+                                text = { Text("$label · $weight") },
+                                onClick = { fontWeightMenuOpen = false; command("fontWeight", weight) }
+                            )
+                        }
+                    }
+                }
+                Box {
+                    WriterStructureButton("↕") { spacingMenuOpen = true }
+                    DropdownMenu(expanded = spacingMenuOpen, onDismissRequest = { spacingMenuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Interlineado") }, onClick = {}, enabled = false)
+                        listOf("1,0" to "1.0", "1,15" to "1.15", "1,5" to "1.5", "2,0" to "2.0").forEach { (label, value) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { spacingMenuOpen = false; command("lineHeight", value) }
+                            )
+                        }
+                        DropdownMenuItem(text = { Text("Espacio después del párrafo") }, onClick = {}, enabled = false)
+                        listOf(0, 6, 12, 18).forEach { pt ->
+                            DropdownMenuItem(
+                                text = { Text("$pt pt") },
+                                onClick = { spacingMenuOpen = false; command("paragraphSpacing", pt.toString()) }
+                            )
+                        }
+                        DropdownMenuItem(text = { Text("Espaciado entre letras") }, onClick = {}, enabled = false)
+                        listOf("Normal" to "0", "Ligero" to "0.02", "Amplio" to "0.05").forEach { (label, value) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { spacingMenuOpen = false; command("letterSpacing", value) }
                             )
                         }
                     }
@@ -284,7 +377,12 @@ internal fun WriterNoteEditor(
                             settings.allowFileAccess = false
                             settings.setSupportZoom(false)
                             isVerticalScrollBarEnabled = true
-                            webViewClient = WebViewClient()
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                    return LocalFontStore.intercept(context, request?.url)
+                                        ?: super.shouldInterceptRequest(view, request)
+                                }
+                            }
                             setOnHighlightRequested { annotationPickerOpen = true }
                             val activeBridge = NoteBridge(note.id) { bridgeNoteId, newHtml ->
                                 if (bridgeNoteId == note.id) {
@@ -294,7 +392,7 @@ internal fun WriterNoteEditor(
                             }
                             bridge = activeBridge
                             addJavascriptInterface(activeBridge, "NotCanBridge")
-                            loadDataWithBaseURL(null, writerDocument(html, darkEditor), "text/html", "UTF-8", null)
+                            loadDataWithBaseURL("https://notcan.local/", writerDocument(html, darkEditor, LocalFontStore.fontFaceCss(context)), "text/html", "UTF-8", null)
                             webView = this
                         }
                     },
@@ -430,7 +528,7 @@ private fun sanitizeHtml(value: String): String = value
     .replace(Regex("(?is)<iframe.*?>.*?</iframe>"), "")
     .replace(Regex("(?i)\\son[a-z]+\\s*=\\s*(['\"]).*?\\1"), "")
 
-private fun writerDocument(initialBody: String, darkTheme: Boolean): String {
+private fun writerDocument(initialBody: String, darkTheme: Boolean, fontFaceCss: String): String {
     val textColor = if (darkTheme) "#F3F4F6" else "#20252C"
     val selectionText = if (darkTheme) "#FFFFFF" else "#172033"
     val selectionBg = if (darkTheme) "#355A8F" else "#B9D0FF"
@@ -438,6 +536,7 @@ private fun writerDocument(initialBody: String, darkTheme: Boolean): String {
 <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
 :root{--notcan-text:$textColor;--notcan-selection:$selectionBg;--notcan-selection-text:$selectionText}
+$fontFaceCss
 html,body{margin:0;padding:0;background:transparent;color:var(--notcan-text);font-family:sans-serif;font-size:17px;height:100%}
 #editor{box-sizing:border-box;min-height:100%;padding:12px 8px 120px;outline:none;line-height:1.55;caret-color:#3478F6;color:var(--notcan-text)}
 #editor p{margin:0 0 .55em}#editor h1{font-size:1.55em;margin:.5em 0 .35em}#editor h2{font-size:1.3em;margin:.45em 0 .3em}#editor ul,#editor ol{padding-left:1.6em}
@@ -458,10 +557,12 @@ function applyInlineStyle(prop,value,dataName){if(!restore())return;const s=wind
 function applyFontSize(pt){const n=Math.max(6,Math.min(72,parseInt(pt||'11',10)||11));applyInlineStyle('fontSize',n+'pt','data-notcan-font-size')}
 function applyFontFamily(family){const safe=(family||'Roboto, Arial, sans-serif').replace(/[<>;]/g,'');applyInlineStyle('fontFamily',safe,'data-notcan-font-family')}
 function blockFor(node){let e=node&&node.nodeType===1?node:node&&node.parentElement;while(e&&e!==editor){if(/^(P|DIV|H1|H2|H3|H4|H5|H6|LI|BLOCKQUOTE)$/.test(e.tagName))return e;e=e.parentElement}return null}
+function selectedBlocks(){if(!restore())return[];const s=window.getSelection();if(!s||!s.rangeCount)return[];const r=s.getRangeAt(0).cloneRange(),blocks=[];editor.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote').forEach(function(el){try{if(r.intersectsNode(el))blocks.push(el)}catch(e){}});if(!blocks.length){const b=blockFor(r.startContainer);if(b)blocks.push(b)}return Array.from(new Set(blocks))}
+function applyBlockMetric(prop,value){const blocks=selectedBlocks();if(!blocks.length)return;blocks.forEach(function(b){b.style[prop]=value});save();notify()}
 function applyAlignment(mode){if(!restore())return;const s=window.getSelection();if(!s||!s.rangeCount)return;const r=s.getRangeAt(0).cloneRange();const blocks=[];editor.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote').forEach(function(el){try{if(r.intersectsNode(el))blocks.push(el)}catch(e){}});if(!blocks.length){const b=blockFor(r.startContainer);if(b)blocks.push(b)}const align=mode==='full'?'justify':mode==='center'?'center':mode==='right'?'right':'left';Array.from(new Set(blocks)).forEach(function(b){b.style.textAlign=align;if(align==='justify')b.style.textJustify='inter-word';else b.style.removeProperty('text-justify')});save();notify()}
 window.notcanSetEditing=function(v){editor.contentEditable=v?'true':'false';if(v)editor.focus()};
 window.notcanSetTheme=function(dark){document.documentElement.style.setProperty('--notcan-text',dark?'#F3F4F6':'#20252C');document.documentElement.style.setProperty('--notcan-selection',dark?'#355A8F':'#B9D0FF');document.documentElement.style.setProperty('--notcan-selection-text',dark?'#FFFFFF':'#172033')};
-window.notcanCommand=function(c,v){if(c==='fontSizePt')applyFontSize(v);else if(c==='fontFamily')applyFontFamily(v);else if(c==='justifyFull')applyAlignment('full');else if(c==='justifyCenter')applyAlignment('center');else if(c==='justifyRight')applyAlignment('right');else if(c==='justifyLeft')applyAlignment('left');else withEditable(c,v)};
+window.notcanCommand=function(c,v){if(c==='fontSizePt')applyFontSize(v);else if(c==='fontFamily')applyFontFamily(v);else if(c==='fontWeight')applyInlineStyle('fontWeight',String(v||'400'),'data-notcan-font-weight');else if(c==='letterSpacing')applyInlineStyle('letterSpacing',String(v||'0')+'em','data-notcan-letter-spacing');else if(c==='lineHeight')applyBlockMetric('lineHeight',String(v||'1.15'));else if(c==='paragraphSpacing')applyBlockMetric('marginBottom',String(v||'0')+'pt');else if(c==='justifyFull')applyAlignment('full');else if(c==='justifyCenter')applyAlignment('center');else if(c==='justifyRight')applyAlignment('right');else if(c==='justifyLeft')applyAlignment('left');else withEditable(c,v)};
 window.notcanApplyAnnotation=function(style,color){if(style==='highlight')wrapAnnotation('highlight',color);else if(style==='underline')wrapAnnotation('underline',color);else if(style==='clearAnnotation')clearAnnotation()};
 document.addEventListener('selectionchange',function(){if(inside())save()});editor.addEventListener('keyup',save);editor.addEventListener('mouseup',save);editor.addEventListener('touchend',function(){setTimeout(save,0)});editor.addEventListener('input',function(){save();notify()});
 })();</script></body></html>

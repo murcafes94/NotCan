@@ -2,6 +2,9 @@ package com.notcan.app.ui.settings
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -67,6 +70,7 @@ import com.notcan.app.localai.WhisperModelManager
 import com.notcan.app.localai.WhisperModelSpec
 import com.notcan.app.localai.WhisperModelState
 import com.notcan.app.settings.NotCanPreferences
+import com.notcan.app.ui.home.LocalFontStore
 import com.notcan.app.ui.theme.NotCanBlue
 import com.notcan.app.ui.theme.NotCanGray
 import com.notcan.app.ui.theme.NotCanOffWhite
@@ -110,6 +114,17 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     var hasGroqKey by remember { mutableStateOf(runCatching { groqCredentials.hasApiKey() }.getOrDefault(false)) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var refreshTick by remember { mutableIntStateOf(0) }
+    var localFonts by remember(context) { mutableStateOf(LocalFontStore.list(context)) }
+    val localFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { LocalFontStore.importFont(context, uri) }
+                .onSuccess { entry ->
+                    localFonts = LocalFontStore.list(context)
+                    Toast.makeText(context, "Fuente ${entry.displayName} añadida", Toast.LENGTH_SHORT).show()
+                }
+                .onFailure { error -> Toast.makeText(context, error.message ?: "No se pudo importar la fuente", Toast.LENGTH_LONG).show() }
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -208,6 +223,40 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                         )
                     }
                     Text("Los eventos se guardan en el proveedor elegido y usan sus propias notificaciones. NotCan mantiene además su recordatorio académico.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Fuentes de apuntes", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Las fuentes importadas quedan disponibles sin conexión y solo ocupan su propio archivo TTF/OTF.",
+                    color = NotCanGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { localFontLauncher.launch(arrayOf("*/*")) }) { Text("Añadir fuente local") }
+                    if (localFonts.isNotEmpty()) {
+                        OutlinedButton(onClick = {
+                            LocalFontStore.removeAll(context)
+                            localFonts = emptyList()
+                        }) { Text("Quitar todas") }
+                    }
+                }
+                if (localFonts.isEmpty()) {
+                    Text("Sin fuentes importadas · las familias base siguen disponibles.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("${localFonts.size} fuente(s) local(es)", color = NotCanBlue, style = MaterialTheme.typography.bodySmall)
+                    localFonts.forEach { entry ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(entry.displayName, color = NotCanOffWhite, modifier = Modifier.weight(1f), maxLines = 1)
+                            TextButton(onClick = {
+                                LocalFontStore.remove(context, entry.id)
+                                localFonts = LocalFontStore.list(context)
+                            }) { Text("Quitar") }
+                        }
+                    }
                 }
             }
         }

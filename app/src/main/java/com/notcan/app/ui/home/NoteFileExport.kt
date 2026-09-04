@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.os.Build
 import android.text.Html
 import android.text.Layout
 import android.text.SpannableString
@@ -14,6 +15,7 @@ import android.text.TextPaint
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
+import android.text.style.MetricAffectingSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
@@ -38,8 +40,8 @@ internal object NoteFileExport {
         val dir = File(context.filesDir, "documents/exports").apply { mkdirs() }
         val file = File(dir, "$safeTitle.${format.extension}")
         when (format) {
-            Format.DOCX -> writeDocx(file, title, html)
-            Format.PDF -> writePdf(file, title, html)
+            Format.DOCX -> writeDocx(context, file, title, html)
+            Format.PDF -> writePdf(context, file, title, html)
             Format.TEXT -> file.writeText("${title.ifBlank { "Apuntes" }}\n\n${plainText(html)}", Charsets.UTF_8)
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
@@ -51,7 +53,7 @@ internal object NoteFileExport {
         context.startActivity(Intent.createChooser(intent, "Compartir apuntes como ${format.extension.uppercase()}"))
     }
 
-    private fun writeDocx(file: File, title: String, html: String) {
+    private fun writeDocx(context: Context, file: File, title: String, html: String) {
         val titleText = title.ifBlank { "Apuntes" }
         val blocks = htmlBlocks(html)
         val bodyAlreadyStartsWithTitle = blocks.firstOrNull()?.text?.trim()?.equals(titleText.trim(), ignoreCase = true) == true
@@ -62,7 +64,7 @@ internal object NoteFileExport {
             zip.putText("word/styles.xml", STYLES)
             val body = buildString {
                 if (!bodyAlreadyStartsWithTitle) {
-                    append(paragraphXml(titleText, "Title", emptyList(), ParagraphAlignment.LEFT))
+                    append(paragraphXml(context, titleText, "Title", emptyList(), ParagraphAlignment.LEFT, null, null))
                 }
                 blocks.forEach { block ->
                     val style = when (block.tag) {
@@ -70,7 +72,7 @@ internal object NoteFileExport {
                         "h2" -> "Heading2"
                         else -> null
                     }
-                    append(paragraphXml(block.text, style, block.runs, block.alignment))
+                    append(paragraphXml(context, block.text, style, block.runs, block.alignment, block.lineHeight, block.spacingAfterPt))
                 }
                 append("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1134\" w:right=\"1134\" w:bottom=\"1134\" w:left=\"1134\"/></w:sectPr>")
             }
@@ -83,10 +85,13 @@ internal object NoteFileExport {
     }
 
     private fun paragraphXml(
+        context: Context,
         text: String,
         style: String?,
         runs: List<RunStyle>,
-        alignment: ParagraphAlignment
+        alignment: ParagraphAlignment,
+        lineHeight: Float?,
+        spacingAfterPt: Float?
     ): String {
         val properties = buildString {
             style?.let { append("<w:pStyle w:val=\"$it\"/>") }
@@ -95,6 +100,12 @@ internal object NoteFileExport {
                 ParagraphAlignment.RIGHT -> append("<w:jc w:val=\"right\"/>")
                 ParagraphAlignment.JUSTIFY -> append("<w:jc w:val=\"both\"/>")
                 ParagraphAlignment.LEFT -> Unit
+            }
+            if (lineHeight != null || spacingAfterPt != null) {
+                append("<w:spacing")
+                lineHeight?.let { append(" w:line=\"${(it.coerceIn(0.8f, 3f) * 240f).roundToInt()}\" w:lineRule=\"auto\"") }
+                spacingAfterPt?.let { append(" w:after=\"${(it.coerceIn(0f, 72f) * 20f).roundToInt()}\"") }
+                append("/>")
             }
         }
         val pPr = if (properties.isNotEmpty()) "<w:pPr>$properties</w:pPr>" else ""
@@ -105,7 +116,7 @@ internal object NoteFileExport {
             val end = run.end.coerceIn(start, text.length)
             if (start == end) return@joinToString ""
             val props = buildString {
-                if (run.bold) append("<w:b/>")
+                if (run.bold || (run.fontWeight ?: 400) >= 600) append("<w:b/>")
                 if (run.italic) append("<w:i/>")
                 if (run.underline) append("<w:u w:val=\"single\"/>")
                 if (run.strike) append("<w:strike/>")
@@ -116,8 +127,12 @@ internal object NoteFileExport {
                     append("<w:sz w:val=\"$halfPoints\"/><w:szCs w:val=\"$halfPoints\"/>")
                 }
                 run.fontFamily?.takeIf { it.isNotBlank() }?.let { family ->
-                    val safe = xmlEscape(exportFontName(family))
+                    val safe = xmlEscape(exportFontName(context, family))
                     append("<w:rFonts w:ascii=\"$safe\" w:hAnsi=\"$safe\" w:cs=\"$safe\"/>")
+                }
+                run.letterSpacingEm?.let { em ->
+                    val pt = run.fontSizePt ?: 11f
+                    append("<w:spacing w:val=\"${(em.coerceIn(-0.2f, 0.5f) * pt * 20f).roundToInt()}\"/>")
                 }
             }
             val body = wordTextXml(text.substring(start, end))
@@ -134,7 +149,7 @@ internal object NoteFileExport {
         }.joinToString("")
     }
 
-    private fun writePdf(file: File, title: String, html: String) {
+    private fun writePdf(context: Context, file: File, title: String, html: String) {
         val document = PdfDocument()
         val pageWidth = 595
         val pageHeight = 842
@@ -174,7 +189,8 @@ internal object NoteFileExport {
             source: CharSequence,
             paint: TextPaint,
             alignment: ParagraphAlignment,
-            extraBottom: Float
+            extraBottom: Float,
+            lineHeight: Float = 1.08f
         ) {
             var remaining: CharSequence = source
             if (remaining.isEmpty()) remaining = " "
@@ -185,7 +201,7 @@ internal object NoteFileExport {
                     newPage()
                     available = (pageHeight - margin).toFloat() - y
                 }
-                val layout = staticLayout(remaining, paint, contentWidth, alignment)
+                val layout = staticLayout(remaining, paint, contentWidth, alignment, lineHeight)
                 if (layout.height <= available) {
                     drawLayout(layout)
                     y += extraBottom
@@ -199,7 +215,7 @@ internal object NoteFileExport {
                 }
                 val end = layout.getLineEnd(fittingLines - 1).coerceAtLeast(1)
                 val chunk = remaining.subSequence(0, end)
-                drawLayout(staticLayout(chunk, paint, contentWidth, alignment))
+                drawLayout(staticLayout(chunk, paint, contentWidth, alignment, lineHeight))
                 remaining = remaining.subSequence(end, remaining.length)
                 newPage()
             }
@@ -224,8 +240,8 @@ internal object NoteFileExport {
                     paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
                 }
             }
-            val richText = styledText(block)
-            drawFlowingText(richText, paint, block.alignment, if (block.tag.startsWith("h")) 10f else 7f)
+            val richText = styledText(context, block)
+            drawFlowingText(richText, paint, block.alignment, block.spacingAfterPt ?: if (block.tag.startsWith("h")) 10f else 7f, block.lineHeight ?: 1.08f)
         }
         page?.let { document.finishPage(it) }
         file.outputStream().use { document.writeTo(it) }
@@ -236,7 +252,8 @@ internal object NoteFileExport {
         text: CharSequence,
         paint: TextPaint,
         width: Int,
-        alignment: ParagraphAlignment
+        alignment: ParagraphAlignment,
+        lineHeight: Float
     ): StaticLayout {
         val builder = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
             .setAlignment(
@@ -247,31 +264,28 @@ internal object NoteFileExport {
                 }
             )
             .setIncludePad(false)
-            .setLineSpacing(2.5f, 1.08f)
+            .setLineSpacing(0f, lineHeight.coerceIn(0.8f, 3f))
         if (alignment == ParagraphAlignment.JUSTIFY) {
             builder.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD)
         }
         return builder.build()
     }
 
-    private fun styledText(block: HtmlBlock): CharSequence {
+    private fun styledText(context: Context, block: HtmlBlock): CharSequence {
         val text = SpannableString(block.text)
         block.runs.forEach { run ->
             val start = run.start.coerceIn(0, text.length)
             val end = run.end.coerceIn(start, text.length)
             if (start >= end) return@forEach
             val flags = android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-            when {
-                run.bold && run.italic -> text.setSpan(StyleSpan(Typeface.BOLD_ITALIC), start, end, flags)
-                run.bold -> text.setSpan(StyleSpan(Typeface.BOLD), start, end, flags)
-                run.italic -> text.setSpan(StyleSpan(Typeface.ITALIC), start, end, flags)
-            }
+            val requestedWeight = (run.fontWeight ?: if (run.bold) 700 else 400).coerceIn(100, 900)
+            val typeface = resolvePdfTypeface(context, run.fontFamily, requestedWeight, run.italic)
+            text.setSpan(FontRunSpan(typeface, run.letterSpacingEm), start, end, flags)
             if (run.underline) text.setSpan(UnderlineSpan(), start, end, flags)
             if (run.strike) text.setSpan(StrikethroughSpan(), start, end, flags)
             run.foreground?.let { text.setSpan(ForegroundColorSpan(it), start, end, flags) }
             run.background?.let { text.setSpan(BackgroundColorSpan(it), start, end, flags) }
             run.fontSizePt?.let { text.setSpan(AbsoluteSizeSpan(it.roundToInt().coerceIn(6, 72), false), start, end, flags) }
-            run.fontFamily?.let { text.setSpan(TypefaceSpan(pdfFontFamily(it)), start, end, flags) }
         }
         return text
     }
@@ -282,7 +296,9 @@ internal object NoteFileExport {
         val tag: String,
         val text: String,
         val runs: List<RunStyle>,
-        val alignment: ParagraphAlignment
+        val alignment: ParagraphAlignment,
+        val lineHeight: Float? = null,
+        val spacingAfterPt: Float? = null
     )
 
     private data class RunStyle(
@@ -295,7 +311,9 @@ internal object NoteFileExport {
         val foreground: Int? = null,
         val background: Int? = null,
         val fontSizePt: Float? = null,
-        val fontFamily: String? = null
+        val fontFamily: String? = null,
+        val fontWeight: Int? = null,
+        val letterSpacingEm: Float? = null
     )
 
     private data class InlineStyle(
@@ -306,7 +324,9 @@ internal object NoteFileExport {
         val foreground: Int? = null,
         val background: Int? = null,
         val fontSizePt: Float? = null,
-        val fontFamily: String? = null
+        val fontFamily: String? = null,
+        val fontWeight: Int? = null,
+        val letterSpacingEm: Float? = null
     )
 
     private data class ParsedInline(val text: String, val runs: List<RunStyle>)
@@ -327,7 +347,9 @@ internal object NoteFileExport {
                 },
                 text = markerText + parsed.text,
                 runs = parsed.runs.map { it.copy(start = it.start + markerText.length, end = it.end + markerText.length) },
-                alignment = parseAlignment(attrs)
+                alignment = parseAlignment(attrs),
+                lineHeight = parseLineHeight(attrs),
+                spacingAfterPt = parseSpacingAfterPt(attrs)
             )
         }.toList()
         if (found.isNotEmpty()) return found
@@ -361,6 +383,20 @@ internal object NoteFileExport {
         }
     }
 
+    private fun parseLineHeight(attrs: String): Float? {
+        val raw = cssProperties(attributeValue(attrs, "style").orEmpty())["line-height"]?.trim()?.lowercase(Locale.ROOT) ?: return null
+        return when {
+            raw.endsWith("%") -> raw.removeSuffix("%").toFloatOrNull()?.div(100f)
+            raw.endsWith("pt") || raw.endsWith("px") -> null
+            else -> raw.toFloatOrNull()
+        }?.coerceIn(0.8f, 3f)
+    }
+
+    private fun parseSpacingAfterPt(attrs: String): Float? {
+        val raw = cssProperties(attributeValue(attrs, "style").orEmpty())["margin-bottom"] ?: return null
+        return parseCssLengthPt(raw)?.coerceIn(0f, 72f)
+    }
+
     private fun parseInline(fragment: String): ParsedInline {
         val text = StringBuilder()
         val runs = mutableListOf<RunStyle>()
@@ -385,7 +421,9 @@ internal object NoteFileExport {
                     foreground = style.foreground,
                     background = style.background,
                     fontSizePt = style.fontSizePt,
-                    fontFamily = style.fontFamily
+                    fontFamily = style.fontFamily,
+                    fontWeight = style.fontWeight,
+                    letterSpacingEm = style.letterSpacingEm
                 )
             }
         }
@@ -404,7 +442,7 @@ internal object NoteFileExport {
                 val start = text.length
                 text.append('\n')
                 if (style != InlineStyle()) {
-                    runs += RunStyle(start, text.length, style.bold, style.italic, style.underline, style.strike, style.foreground, style.background, style.fontSizePt, style.fontFamily)
+                    runs += RunStyle(start, text.length, style.bold, style.italic, style.underline, style.strike, style.foreground, style.background, style.fontSizePt, style.fontFamily, style.fontWeight, style.letterSpacingEm)
                 }
                 return@forEach
             }
@@ -446,8 +484,16 @@ internal object NoteFileExport {
         css["font-size"]?.let { parseFontSizePt(it)?.let { size -> result = result.copy(fontSizePt = size) } }
         css["font-family"]?.let { family -> result = result.copy(fontFamily = sanitizeFontFamily(family)) }
         css["font-weight"]?.lowercase(Locale.ROOT)?.let { weight ->
-            if (weight == "bold" || weight.toIntOrNull()?.let { it >= 600 } == true) result = result.copy(bold = true)
+            val numeric = when (weight) {
+                "normal" -> 400
+                "bold" -> 700
+                "lighter" -> 300
+                "bolder" -> 700
+                else -> weight.toIntOrNull()
+            }?.coerceIn(100, 900)
+            if (numeric != null) result = result.copy(fontWeight = numeric, bold = result.bold || numeric >= 600)
         }
+        css["letter-spacing"]?.let { parseLetterSpacingEm(it)?.let { spacing -> result = result.copy(letterSpacingEm = spacing) } }
         css["font-style"]?.lowercase(Locale.ROOT)?.let { if (it == "italic" || it == "oblique") result = result.copy(italic = true) }
         css["text-decoration"]?.lowercase(Locale.ROOT)?.let { decoration ->
             if ("underline" in decoration) result = result.copy(underline = true)
@@ -481,6 +527,30 @@ internal object NoteFileExport {
         }.coerceIn(6f, 72f)
     }
 
+
+    private fun parseCssLengthPt(value: String): Float? {
+        val raw = value.trim().lowercase(Locale.ROOT)
+        val number = Regex("[-+]?[0-9]*\\.?[0-9]+").find(raw)?.value?.toFloatOrNull() ?: return null
+        return when {
+            raw.endsWith("px") -> number * 0.75f
+            raw.endsWith("em") || raw.endsWith("rem") -> number * 11f
+            else -> number
+        }
+    }
+
+    private fun parseLetterSpacingEm(value: String): Float? {
+        val raw = value.trim().lowercase(Locale.ROOT)
+        if (raw == "normal") return 0f
+        val number = Regex("[-+]?[0-9]*\\.?[0-9]+").find(raw)?.value?.toFloatOrNull() ?: return null
+        return when {
+            raw.endsWith("em") -> number
+            raw.endsWith("rem") -> number
+            raw.endsWith("pt") -> number / 11f
+            raw.endsWith("px") -> (number * 0.75f) / 11f
+            else -> number
+        }.coerceIn(-0.2f, 0.5f)
+    }
+
     private fun htmlFontSizePt(size: Int): Float = when (size.coerceIn(1, 7)) {
         1 -> 8f
         2 -> 10f
@@ -512,20 +582,49 @@ internal object NoteFileExport {
         .take(60)
         .ifBlank { "sans-serif" }
 
-    private fun exportFontName(value: String): String = when {
+    private fun exportFontName(context: Context, value: String): String = LocalFontStore.exportName(context, value) ?: when {
         value.contains("mono", true) || value.contains("courier", true) -> "Courier New"
         value.contains("georgia", true) -> "Georgia"
         value.contains("times", true) || value.equals("serif", true) -> "Times New Roman"
         value.contains("arial", true) -> "Arial"
-        value.contains("roboto", true) || value.contains("sans", true) -> "Arial"
+        value.contains("noto serif", true) -> "Noto Serif"
+        value.contains("noto sans", true) -> "Noto Sans"
+        value.contains("roboto", true) || value.contains("sans", true) -> "Roboto"
         else -> value
     }
 
-    private fun pdfFontFamily(value: String): String = when {
-        value.contains("mono", true) || value.contains("courier", true) -> "monospace"
-        value.contains("georgia", true) || value.contains("times", true) || value.equals("serif", true) -> "serif"
-        value.contains("cursive", true) -> "cursive"
+    private fun pdfSystemFamily(value: String?): String = when {
+        value?.contains("mono", true) == true || value?.contains("courier", true) == true -> "monospace"
+        value?.contains("georgia", true) == true || value?.contains("times", true) == true || value.equals("serif", true) -> "serif"
+        value?.contains("cursive", true) == true -> "cursive"
         else -> "sans-serif"
+    }
+
+    private fun resolvePdfTypeface(context: Context, family: String?, weight: Int, italic: Boolean): Typeface {
+        val base = LocalFontStore.resolveTypeface(context, family) ?: Typeface.create(pdfSystemFamily(family), Typeface.NORMAL)
+        return if (Build.VERSION.SDK_INT >= 28) {
+            Typeface.create(base, weight.coerceIn(100, 900), italic)
+        } else {
+            val style = when {
+                weight >= 600 && italic -> Typeface.BOLD_ITALIC
+                weight >= 600 -> Typeface.BOLD
+                italic -> Typeface.ITALIC
+                else -> Typeface.NORMAL
+            }
+            Typeface.create(base, style)
+        }
+    }
+
+    private class FontRunSpan(
+        private val typeface: Typeface,
+        private val letterSpacingEm: Float?
+    ) : MetricAffectingSpan() {
+        override fun updateMeasureState(textPaint: TextPaint) = apply(textPaint)
+        override fun updateDrawState(textPaint: TextPaint) = apply(textPaint)
+        private fun apply(paint: TextPaint) {
+            paint.typeface = typeface
+            letterSpacingEm?.let { paint.letterSpacing = it.coerceIn(-0.2f, 0.5f) }
+        }
     }
 
     private fun mergeAdjacentRuns(runs: List<RunStyle>): List<RunStyle> {
