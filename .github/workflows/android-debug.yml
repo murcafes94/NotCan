@@ -2,7 +2,7 @@ name: Android Debug Build
 
 on:
   push:
-    branches: [ "main", "feature/**", "feature-study-maps", "fix/**", "notcan-v0.7.7-mistral" ]
+    branches: [ "main", "feature/**", "fix/**" ]
   workflow_dispatch:
 
 jobs:
@@ -78,7 +78,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.20-gemma4-litert-apk
+          name: notcan-v0.8.25-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.20-gemma-litert-test"
+          TAG="v0.8.25-test"
           APK="app/build/outputs/apk/debug/app-debug.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.20-Gemma4-LiteRT.apk" \
+            "$APK#NotCan-v0.8.25.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.20 · Gemma 4 LiteRT local" \
-            --notes "Primera prueba de TuNot con Google LiteRT-LM y Gemma 4 E2B como motor generativo local avanzado. El modelo se descarga aparte (~2.6 GB), usa GPU cuando está disponible y cae a CPU si es necesario. La ruta automática queda Mistral online -> Gemma 4 LiteRT local -> Qwen2.5 local anterior -> Local básico. Gemma permanece totalmente local incluso con Internet; la búsqueda web no se conecta todavía a este motor durante esta fase de estabilidad."
+            --title "NotCan v0.8.25 · estudio, nube y TuNot" \
+            --notes "Build de prueba v0.8.25. Incluye TuNot local con Gemma 4 LiteRT estable, transcripción Groq/Whisper, documentos de clase con referencias persistentes de Drive/SAF, selección de calendario Google/Xiaomi/local, cierre manual seguro de ciclos, limpieza de modelos obsoletos y optimizaciones de estudio, almacenamiento y recordatorios. Los documentos PDF/DOCX/EPUB vinculados se indexan localmente para TuNot sin conservar una segunda copia permanente del binario cuando el proveedor admite URI persistente."
