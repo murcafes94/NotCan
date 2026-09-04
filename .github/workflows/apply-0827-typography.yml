@@ -22,6 +22,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Fix typography migration helper
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('ci/apply_0827_typography.py')
+          s = p.read_text()
+          old = "e = replace_once(e, insert_after_font_size, font_helpers, 'font metric helpers')"
+          new = """font_metric_addition = font_helpers[len(insert_after_font_size):]\nmarker = '    private fun htmlFontSizePt'\nif marker not in e:\n    raise RuntimeError('Missing target: font metric helper marker')\ne = e.replace(marker, font_metric_addition + '\\n' + marker, 1)"""
+          if old not in s:
+              raise SystemExit('Expected migration line not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
       - name: Apply typography patch
         run: python3 ci/apply_0827_typography.py
       - name: Build debug APK
