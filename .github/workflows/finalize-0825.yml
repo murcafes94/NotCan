@@ -1,0 +1,64 @@
+name: Finalize v0.8.25
+
+on:
+  push:
+    branches: [ "finalize-0825" ]
+  workflow_dispatch:
+
+jobs:
+  finalize-build:
+    if: ${{ !contains(github.event.head_commit.message, '[0825 final]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: finalize-0825
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Apply final cloud RAG pass
+        run: python3 ci/finalize_0825_cloud_rag.py
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+
+      - name: Verify persistent test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          EXPECTED="ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586"
+          ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          echo "NotCan test signing SHA-256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Commit validated runtime changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/notcan/app/sources/ClassSourceStore.kt \
+                  app/src/main/java/com/notcan/app/ui/NotCanViewModel.kt
+          if git diff --cached --quiet; then
+            echo "No runtime changes to commit"
+          else
+            git commit -m "feat(android): index linked class documents for TuNot without binary duplication [0825 final]"
+            git push origin HEAD:finalize-0825
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notcan-v0.8.25-final
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
