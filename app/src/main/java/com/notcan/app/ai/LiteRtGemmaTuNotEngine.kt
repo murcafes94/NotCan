@@ -278,8 +278,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private fun cleanModelText(raw: String): String {
         if (raw.isBlank() || looksLikeStudyArtifact(raw)) return raw.trim()
         return raw
-            .replace(Regex("""\$\s*\\text\{([^{}]+)}\s*\$""")) { it.groupValues[1] }
-            .replace(Regex("""\\text\{([^{}]+)}""")) { it.groupValues[1] }
+            .replace(Regex("""\$\s*\\text\{([^{}]+)\}\s*\$""")) { it.groupValues[1] }
+            .replace(Regex("""\\text\{([^{}]+)\}""")) { it.groupValues[1] }
             .replace(Regex("""\\\(([^)\n]+)\\\)""")) { it.groupValues[1].trim() }
             .replace(Regex("""\\\[([^\]\n]+)\\\]""")) { it.groupValues[1].trim() }
             .replace(Regex("""\$\s*([^$\n]{1,120})\s*\$""")) { it.groupValues[1].trim() }
