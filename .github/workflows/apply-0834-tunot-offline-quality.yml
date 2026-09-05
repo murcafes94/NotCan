@@ -1,0 +1,299 @@
+name: Apply 0.8.34 TuNot offline quality
+
+on:
+  push:
+    branches: [ "feature/tunot-offline-quality-0834" ]
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[0834 applied]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/tunot-offline-quality-0834
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Patch, compile and commit v0.8.34
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # --- 1) Motor routing: Local básico only when it actually has local material. ---
+          service = Path('app/src/main/java/com/notcan/app/ai/NotCanAiService.kt')
+          s = service.read_text()
+          old = '''        val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
+
+        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank() && vocabularyContext.isBlank()) {'''
+          new = '''        val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
+        val hasLocalStudyMaterial = plainNotes.isNotBlank() || plainTranscript.isNotBlank() || vocabularyContext.isNotBlank()
+
+        if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank() && vocabularyContext.isBlank()) {'''
+          assert old in s, 'No se encontró el ancla de material local'
+          s = s.replace(old, new, 1)
+
+          old = '''        when (preferences.aiEnginePreference) {
+            "Gemma 4 local" -> return localFallback(allowGemma = true)
+            "Local básico" -> return localFallback(allowGemma = false)
+        }'''
+          new = '''        when (preferences.aiEnginePreference) {
+            "Gemma 4 local" -> return localFallback(allowGemma = true)
+            "Local básico" -> {
+                // El motor extractivo necesita fuentes. Si no hay ninguna y no estamos en
+                // Solo mis fuentes, Gemma es el respaldo local útil aunque no haya Internet.
+                val shouldEscalateToGemma = !strictSources && !hasLocalStudyMaterial && localGemma.isAvailable()
+                return localFallback(allowGemma = shouldEscalateToGemma)
+            }
+        }'''
+          assert old in s, 'No se encontró el selector de motor'
+          s = s.replace(old, new, 1)
+          service.write_text(s)
+
+          # --- 2) Gemma: contexto focal más pequeño + límite real de salida en streaming. ---
+          engine = Path('app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt')
+          e = engine.read_text()
+
+          old = '''            if (vocabularyContext.isNotBlank()) {
+                appendLine()
+                appendLine("--- VOCABULARIO ACADÉMICO DE NOTCAN ---")'''
+          new = '''            if (vocabularyContext.isNotBlank() && (!isSimpleDefinition(intentQuestion) || strictSources)) {
+                appendLine()
+                appendLine("--- VOCABULARIO ACADÉMICO DE NOTCAN ---")'''
+          assert old in e, 'No se encontró el bloque de vocabulario'
+          e = e.replace(old, new, 1)
+
+          old = '''        val generationTimeoutMs = generationTimeoutMs(intentQuestion)
+        val engineWasWarm = holder != null'''
+          new = '''        val generationTimeoutMs = generationTimeoutMs(intentQuestion)
+        val maxOutputChars = outputCharBudget(intentQuestion)
+        val engineWasWarm = holder != null'''
+          assert old in e, 'No se encontró generationTimeoutMs'
+          e = e.replace(old, new, 1)
+
+          old = 'generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)'
+          new = 'generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)'
+          assert old in e, 'No se encontró generate GPU'
+          e = e.replace(old, new, 1)
+          old = 'generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)'
+          new = 'generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)'
+          assert old in e, 'No se encontró generate CPU'
+          e = e.replace(old, new, 1)
+
+          old = '''        conversationConfig: ConversationConfig,
+        timeoutMs: Long,
+        onPartial: ((text: String, backendLabel: String) -> Unit)?'''
+          new = '''        conversationConfig: ConversationConfig,
+        timeoutMs: Long,
+        maxOutputChars: Int,
+        onPartial: ((text: String, backendLabel: String) -> Unit)?'''
+          assert old in e, 'No se encontró la firma de generate'
+          e = e.replace(old, new, 1)
+
+          old = '''                    firstMessage?.toString()?.takeIf { it.isNotEmpty() }?.let { delta ->
+                        if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
+                        output.append(delta)
+                        onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
+                    }
+
+                    for (message in messages) {
+                        val delta = message.toString()
+                        if (delta.isNotEmpty()) {
+                            if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
+                            output.append(delta)
+                            onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
+                        }
+                    }'''
+          new = '''                    var stopRequested = false
+                    fun appendDelta(delta: String) {
+                        if (delta.isEmpty() || stopRequested) return
+                        if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
+                        output.append(delta)
+                        onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
+                        if (shouldStopGeneration(output, maxOutputChars)) stopRequested = true
+                    }
+
+                    firstMessage?.toString()?.let(::appendDelta)
+                    if (stopRequested) {
+                        messages.cancel()
+                    } else {
+                        for (message in messages) {
+                            appendDelta(message.toString())
+                            if (stopRequested) {
+                                messages.cancel()
+                                break
+                            }
+                        }
+                    }'''
+          assert old in e, 'No se encontró el bucle de streaming'
+          e = e.replace(old, new, 1)
+
+          old = '        val text = cleanModelText(output.toString()).trim()'
+          new = '        val text = finalizeBoundedOutput(output.toString(), maxOutputChars)'
+          assert old in e, 'No se encontró la limpieza final'
+          e = e.replace(old, new, 1)
+
+          old = '''        val tokens = queryTokens(question)
+        val artifactRequest = isStudyArtifactRequest(question)
+        val broadRequest = isBroadSourceRequest(question)'''
+          new = '''        val tokens = queryTokens(question)
+        val artifactRequest = isStudyArtifactRequest(question)
+        val simpleDefinition = isSimpleDefinition(question)
+        val broadRequest = isBroadSourceRequest(question)'''
+          assert old in e, 'No se encontró el selector RAG'
+          e = e.replace(old, new, 1)
+
+          old = '''            tokens.isNotEmpty() -> scored
+                .filter { it.score > 0 }
+                .sortedByDescending { it.score }
+                .take(FOCUSED_SELECTED_CHUNKS)'''
+          new = '''            tokens.isNotEmpty() -> scored
+                .filter { it.score > 0 }
+                .sortedByDescending { it.score }
+                .take(if (simpleDefinition && !strictSources) SIMPLE_DEFINITION_SELECTED_CHUNKS else FOCUSED_SELECTED_CHUNKS)'''
+          assert old in e, 'No se encontró selección focal RAG'
+          e = e.replace(old, new, 1)
+
+          old = '''        val sourceCharLimit = when {
+            artifactRequest -> MAX_ARTIFACT_SOURCE_CHARS
+            broadRequest -> MAX_BROAD_SOURCE_CHARS'''
+          new = '''        val sourceCharLimit = when {
+            artifactRequest -> MAX_ARTIFACT_SOURCE_CHARS
+            simpleDefinition && !strictSources -> MAX_SIMPLE_DEFINITION_SOURCE_CHARS
+            broadRequest -> MAX_BROAD_SOURCE_CHARS'''
+          assert old in e, 'No se encontró límite RAG'
+          e = e.replace(old, new, 1)
+
+          anchor = '''    private fun responseLengthInstruction(question: String): String {
+'''
+          helper = '''    private fun isSimpleDefinition(question: String): Boolean {
+        val n = normalize(question)
+        return n.length <= 110 && listOf(
+            "que es ", "que significa ", "define ", "definicion de ", "explica el ", "explica la "
+        ).any(n::startsWith)
+    }
+
+    private fun outputCharBudget(question: String): Int {
+        if (isStudyArtifactRequest(question)) return Int.MAX_VALUE
+        val n = normalize(question)
+        val explicitlyBrief = isResponseTransformRequest(question) || listOf(
+            "brevemente", "respuesta breve", "responde breve", "una frase", "en una frase",
+            "solo una frase", "muy corto", "muy breve"
+        ).any(n::contains)
+        if (explicitlyBrief) return 420
+
+        val explicitlyDetailed = listOf(
+            "profundiza", "profundizar", "detalladamente", "con detalle", "desarrolla",
+            "desarrollalo", "explicacion completa", "explicacion profunda", "amplia", "a fondo"
+        ).any(n::contains)
+        if (explicitlyDetailed) return 5_200
+        if (isBroadSourceRequest(question)) return 6_500
+        if (isSourceOverviewRequest(question)) return 4_200
+        if (isSimpleDefinition(question)) return 760
+
+        return when (preferences.aiDetail.lowercase()) {
+            "breve" -> 900
+            "profundo" -> 4_200
+            else -> 1_800
+        }
+    }
+
+    private fun shouldStopGeneration(output: StringBuilder, softLimit: Int): Boolean {
+        if (softLimit == Int.MAX_VALUE || output.length < softLimit) return false
+        val tail = output.takeLast(140).trimEnd()
+        val last = tail.lastOrNull()
+        val sentenceBoundary = last == '.' || last == '!' || last == '?'
+        return sentenceBoundary || output.length >= softLimit + OUTPUT_HARD_MARGIN_CHARS
+    }
+
+    private fun finalizeBoundedOutput(raw: String, softLimit: Int): String {
+        val cleaned = cleanModelText(raw).trim()
+        if (softLimit == Int.MAX_VALUE || cleaned.length <= softLimit) return cleaned
+        val last = cleaned.lastOrNull()
+        if (last == '.' || last == '!' || last == '?') return cleaned
+
+        val candidate = cleaned.take((softLimit + OUTPUT_HARD_MARGIN_CHARS).coerceAtMost(cleaned.length))
+        val sentenceEnd = maxOf(candidate.lastIndexOf('.'), candidate.lastIndexOf('!'), candidate.lastIndexOf('?'))
+        return if (sentenceEnd >= softLimit / 2) candidate.substring(0, sentenceEnd + 1).trim() else candidate.trim()
+    }
+
+'''
+          assert anchor in e, 'No se encontró ancla para helpers de longitud'
+          e = e.replace(anchor, helper + anchor, 1)
+
+          old = '''        val simpleDefinition = n.length <= 100 && listOf("que es ", "define ", "explica el ", "explica la ").any(n::startsWith)
+        if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde en 1–2 párrafos breves (aprox. 60–140 palabras), sin apartados numerados salvo que se pidan. Define primero el término y añade solo la distinción o contexto esencial; evita convertir una pregunta puntual en un ensayo."'''
+          new = '''        if (isSimpleDefinition(question)) return "Extensión: responde en 1–2 párrafos breves (aprox. 50–110 palabras), sin apartados numerados salvo que se pidan. Define primero el término y añade solo la distinción o contexto esencial. Aunque el nivel general sea Profundo, no conviertas una definición puntual en un ensayo si el estudiante no pidió profundizar."'''
+          assert old in e, 'No se encontró regla de definición simple'
+          e = e.replace(old, new, 1)
+
+          old = '''        appendLine("Adapta la extensión a la dificultad de la pregunta y al nivel de detalle elegido por el estudiante; no recortes una explicación académica útil solo por ser larga.")'''
+          new = '''        appendLine("Adapta la extensión a lo que se pregunta. Las definiciones y preguntas puntuales deben ser breves por defecto, incluso si el nivel general es Profundo; amplía solo cuando el estudiante lo pida. Las tareas de desarrollo, síntesis o estudio amplio sí pueden ser extensas.")'''
+          assert old in e, 'No se encontró instrucción general de extensión'
+          e = e.replace(old, new, 1)
+
+          old = '''        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")'''
+          new = '''        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")
+        appendLine("En teología trinitaria católica no describas al Padre, al Hijo y al Espíritu Santo como tres modos, manifestaciones o formas en que se presenta una sola persona. Formula con precisión: una única esencia o naturaleza divina (ousia) y tres Personas o hipóstasis realmente distintas y consustanciales; la distinción personal no divide la esencia divina.")
+        appendLine("Cuando expliques hipóstasis, distingue sus usos filosófico/patrístico, trinitario y cristológico. En cristología, Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")'''
+          assert old in e, 'No se encontró instrucción teológica'
+          e = e.replace(old, new, 1)
+
+          old = '''        private const val MAX_OVERVIEW_SOURCE_CHARS = 4_200
+        private const val MAX_FOCUSED_SOURCE_CHARS = 1_600'''
+          new = '''        private const val MAX_OVERVIEW_SOURCE_CHARS = 4_200
+        private const val MAX_SIMPLE_DEFINITION_SOURCE_CHARS = 700
+        private const val MAX_FOCUSED_SOURCE_CHARS = 1_600'''
+          assert old in e, 'No se encontró constante de contexto focal'
+          e = e.replace(old, new, 1)
+
+          old = '''        private const val OVERVIEW_SELECTED_CHUNKS = 4
+        private const val FOCUSED_SELECTED_CHUNKS = 2'''
+          new = '''        private const val OVERVIEW_SELECTED_CHUNKS = 4
+        private const val SIMPLE_DEFINITION_SELECTED_CHUNKS = 1
+        private const val FOCUSED_SELECTED_CHUNKS = 2'''
+          assert old in e, 'No se encontró constante de chunks focales'
+          e = e.replace(old, new, 1)
+
+          old = '''        private const val MIN_USEFUL_PARTIAL_CHARS = 180
+        private const val KEY_CAPABILITIES_FINGERPRINT'''
+          new = '''        private const val MIN_USEFUL_PARTIAL_CHARS = 180
+        private const val OUTPUT_HARD_MARGIN_CHARS = 240
+        private const val KEY_CAPABILITIES_FINGERPRINT'''
+          assert old in e, 'No se encontró constante de parcial'
+          e = e.replace(old, new, 1)
+
+          engine.write_text(e)
+
+          # --- 3) Versión ---
+          gradle = Path('app/build.gradle.kts')
+          g = gradle.read_text()
+          assert 'versionCode = 57' in g and 'versionName = "0.8.33.1"' in g
+          g = g.replace('versionCode = 57', 'versionCode = 58', 1)
+          g = g.replace('versionName = "0.8.33.1"', 'versionName = "0.8.34"', 1)
+          gradle.write_text(g)
+          PY
+
+          gradle :app:compileReleaseKotlin -PnotcanArm64Only=true --stacktrace
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/NotCanAiService.kt app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt
+          git commit -m "feat(tunot): prefer Gemma offline and bound concise answers [0834 applied]"
+          git push origin HEAD:feature/tunot-offline-quality-0834
