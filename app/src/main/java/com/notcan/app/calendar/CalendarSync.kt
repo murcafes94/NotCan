@@ -21,12 +21,19 @@ object CalendarSync {
         val isPrimary: Boolean
     ) {
         val isGoogle: Boolean get() = accountType.equals("com.google", ignoreCase = true)
+        val isXiaomi: Boolean
+            get() = accountType.contains("xiaomi", ignoreCase = true) ||
+                accountType.contains("miui", ignoreCase = true)
+
         val label: String
             get() = when {
                 isGoogle && accountName.isNotBlank() -> "Google · $accountName"
-                accountName.isNotBlank() && displayName != accountName -> "$displayName · $accountName"
-                displayName.isNotBlank() -> displayName
-                else -> "Calendario del dispositivo"
+                isXiaomi && displayName.isNotBlank() -> "Xiaomi · $displayName"
+                isXiaomi && accountName.isNotBlank() -> "Xiaomi · $accountName"
+                accountName.isNotBlank() && displayName.isNotBlank() && displayName != accountName -> "$displayName · $accountName"
+                displayName.isNotBlank() -> "Dispositivo · $displayName"
+                accountName.isNotBlank() -> accountName
+                else -> "Dispositivo · Calendario local"
             }
     }
 
@@ -42,7 +49,7 @@ object CalendarSync {
             CalendarContract.Calendars.VISIBLE,
             CalendarContract.Calendars.IS_PRIMARY
         )
-        val result = mutableListOf<CalendarTarget>()
+        val raw = mutableListOf<CalendarTarget>()
         context.contentResolver.query(
             CalendarContract.Calendars.CONTENT_URI,
             projection,
@@ -56,21 +63,60 @@ object CalendarSync {
             val typeCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_TYPE)
             val primaryCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.IS_PRIMARY)
             while (cursor.moveToNext()) {
-                result += CalendarTarget(
+                raw += CalendarTarget(
                     id = cursor.getLong(idCol),
-                    displayName = cursor.getString(nameCol).orEmpty(),
-                    accountName = cursor.getString(accountCol).orEmpty(),
-                    accountType = cursor.getString(typeCol).orEmpty(),
+                    displayName = cleanProviderText(cursor.getString(nameCol).orEmpty()),
+                    accountName = cleanProviderText(cursor.getString(accountCol).orEmpty()),
+                    accountType = cursor.getString(typeCol).orEmpty().trim(),
                     isPrimary = cursor.getInt(primaryCol) == 1
                 )
             }
         }
-        return result.sortedWith(
-            compareByDescending<CalendarTarget> { it.isGoogle }
-                .thenByDescending { it.isPrimary }
-                .thenBy { it.accountName.lowercase() }
-                .thenBy { it.displayName.lowercase() }
-        )
+
+        // Android exposes every writable calendar row. A Google account can therefore appear
+        // several times (primary calendar, birthdays, shared calendars, etc.). In Settings we
+        // select the account/provider, so expose one stable writable target per account and use
+        // its real calendar id when creating events. Prefer the provider's primary calendar.
+        return raw
+            .groupBy(::accountIdentity)
+            .values
+            .mapNotNull { group ->
+                group.sortedWith(
+                    compareByDescending<CalendarTarget> { it.isPrimary }
+                        .thenByDescending { it.displayName.equals(it.accountName, ignoreCase = true) }
+                        .thenBy { it.displayName.length }
+                        .thenBy { it.id }
+                ).firstOrNull()
+            }
+            .sortedWith(
+                compareByDescending<CalendarTarget> { it.isGoogle }
+                    .thenByDescending { it.isPrimary }
+                    .thenBy { it.accountName.lowercase() }
+                    .thenBy { it.displayName.lowercase() }
+            )
+    }
+
+    private fun accountIdentity(target: CalendarTarget): String {
+        val type = target.accountType.trim().lowercase().ifBlank { "local" }
+        val account = target.accountName.trim().lowercase()
+        if (account.isNotBlank()) return "$type|$account"
+
+        // Local providers sometimes publish placeholder names rather than a real account.
+        // Collapse those rows by provider so Settings shows one human-readable local target.
+        val display = target.displayName.trim().lowercase()
+        return if (type != "local") "$type|local" else "local|${display.ifBlank { "device" }}"
+    }
+
+    private fun cleanProviderText(raw: String): String {
+        val value = raw.trim()
+        if (value.isBlank()) return ""
+        return when (value.lowercase()) {
+            "calendar_displayname_local",
+            "account_name_local",
+            "calendar_display_name_local",
+            "calendar_account_name_local" -> ""
+            else -> value
+        }
     }
 
     fun preferredTarget(context: Context, preferredId: Long? = null): CalendarTarget? {
