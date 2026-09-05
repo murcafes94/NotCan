@@ -1,6 +1,8 @@
 package com.notcan.app.ai
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.text.Html
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.settings.NotCanPreferences
@@ -30,7 +32,7 @@ class NotCanAiService(private val context: Context) {
     suspend fun warmLocalGemmaIfSelected(): String? {
         val preference = preferences.aiEnginePreference
         val shouldWarm = preference == "Gemma 4 local" ||
-            (preference == "Automático" && !isConfigured())
+            (preference == "Automático" && (!isConfigured() || !hasValidatedInternet()))
         if (!shouldWarm || !localGemma.isAvailable()) return null
         return localGemma.warmUp()
     }
@@ -67,8 +69,9 @@ class NotCanAiService(private val context: Context) {
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
+        val internetAvailable = hasValidatedInternet()
 
-        val wantsWeb = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
+        val wantsWeb = internetAvailable && !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
         val webResults = if (wantsWeb) {
             runCatching { webResearch.research(cleanQuestion, limit = 5, readTop = 3) }.getOrDefault(emptyList())
         } else emptyList()
@@ -91,6 +94,8 @@ class NotCanAiService(private val context: Context) {
         )
 
         suspend fun localFallback(allowGemma: Boolean = true): String {
+            val connectivityLabel = if (internetAvailable) "online" else "offline"
+            val webUsageSuffix = if (webContext.isNotBlank()) " · web" else ""
             if (allowGemma && localGemma.isAvailable()) {
                 var lastGemmaPartial = ""
                 var lastGemmaBackend = ""
@@ -108,17 +113,17 @@ class NotCanAiService(private val context: Context) {
                         onPartial = { partialText, backendLabel ->
                             lastGemmaPartial = partialText
                             lastGemmaBackend = backendLabel
-                            onPartial?.invoke(markEngine("Gemma 4 local · $backendLabel", partialText))
+                            onPartial?.invoke(markEngine("Gemma 4 local · $backendLabel · $connectivityLabel$webUsageSuffix", partialText))
                         }
                     )
                     preferences.lastLocalAiError = ""
-                    return markEngine("Gemma 4 local · ${answer.backendLabel}", answer.text)
+                    return markEngine("Gemma 4 local · ${answer.backendLabel} · $connectivityLabel$webUsageSuffix", answer.text)
                 } catch (t: Throwable) {
                     val errorText = t.message ?: t.javaClass.simpleName
                     if (lastGemmaPartial.trim().length >= MIN_USABLE_GEMMA_PARTIAL_CHARS) {
                         preferences.lastLocalAiError = "Gemma 4 (respuesta parcial conservada): $errorText"
                         return markEngine(
-                            "Gemma 4 local · ${lastGemmaBackend.ifBlank { "parcial" }}",
+                            "Gemma 4 local · ${lastGemmaBackend.ifBlank { "parcial" }} · $connectivityLabel$webUsageSuffix",
                             lastGemmaPartial.trim()
                         )
                     }
@@ -132,7 +137,7 @@ class NotCanAiService(private val context: Context) {
                 transcript = plainTranscript,
                 question = cleanQuestion
             )
-            return markEngine("Local básico", basic)
+            return markEngine("Local básico · $connectivityLabel", basic)
         }
 
         when (preferences.aiEnginePreference) {
@@ -145,7 +150,9 @@ class NotCanAiService(private val context: Context) {
             }
         }
 
-        if (!isConfigured()) return localFallback()
+        // En Automático, no intentes una llamada Mistral cuando Android no tiene Internet validado.
+        // Si hay Internet y Mistral está configurado, Mistral sigue siendo el motor online preferido.
+        if (!isConfigured() || !internetAvailable) return localFallback()
 
         val sourceText = buildString {
             subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("MATERIA: $it") }
@@ -310,10 +317,19 @@ class NotCanAiService(private val context: Context) {
         }
 
         return try {
-            markEngine("Mistral", sendToMistral(prompt))
+            markEngine("Mistral · online", sendToMistral(prompt))
         } catch (_: Throwable) {
             localFallback()
         }
+    }
+
+    private fun hasValidatedInternet(): Boolean {
+        val manager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun markEngine(engine: String, text: String): String =

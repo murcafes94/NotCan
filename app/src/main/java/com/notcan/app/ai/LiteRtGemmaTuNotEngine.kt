@@ -161,7 +161,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }
 
         val conversationConfig = ConversationConfig(
-            systemInstruction = Contents.of(buildSystemInstruction(strictSources, pedagogicalMode)),
+            systemInstruction = Contents.of(buildAdaptiveSystemInstruction(strictSources, pedagogicalMode, intentQuestion)),
             samplerConfig = SamplerConfig(
                 topK = TOP_K,
                 topP = TOP_P,
@@ -586,6 +586,45 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             .map { index -> ((last * index) / (limit - 1)).toInt() }
             .distinct()
             .map(chunks::get)
+    }
+
+    private fun isTheologicalPrecisionQuery(question: String): Boolean {
+        val n = normalize(question)
+        return listOf(
+            "hipostasis", "hypostasis", "ousia", "trinidad", "trinitario", "trinitaria",
+            "persona divina", "naturaleza divina", "cristologia", "cristologico", "cristologica",
+            "encarnacion", "verbo", "consubstancial", "consustancial"
+        ).any(n::contains)
+    }
+
+    private fun buildAdaptiveSystemInstruction(
+        strictSources: Boolean,
+        pedagogicalMode: Boolean,
+        question: String
+    ): String {
+        if (!isSimpleDefinition(question)) return buildSystemInstruction(strictSources, pedagogicalMode)
+
+        return buildString {
+            appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
+            appendLine("Responde en español claro, natural y preciso. Para una definición puntual responde en 1–2 párrafos breves y detente.")
+            appendLine("No inventes citas, páginas, autores, fechas ni referencias. No muestres razonamiento interno.")
+            appendLine("Usa Markdown simple y no uses LaTeX salvo que el estudiante lo pida.")
+            if (preferences.aiInstructions.isNotBlank()) {
+                appendLine("Preferencias del estudiante: ${preferences.aiInstructions}")
+            }
+            if (isTheologicalPrecisionQuery(question)) {
+                appendLine("En teología católica usa terminología patrística, trinitaria y cristológica con precisión.")
+                appendLine("En la formulación trinitaria madura no presentes hipóstasis como sinónimo de ousia: una única ousia o naturaleza divina y tres hipóstasis o Personas realmente distintas y consustanciales.")
+                appendLine("Si mencionas que hypostasis y ousia tuvieron usos históricos solapados, indícalo explícitamente como una cuestión histórica de terminología y no como equivalencia doctrinal trinitaria.")
+                appendLine("En cristología: Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")
+            }
+            if (pedagogicalMode) {
+                appendLine("Explica de manera pedagógica sin convertir una definición breve en un ensayo.")
+            }
+            if (strictSources) {
+                appendLine("Está activado Solo mis fuentes: no añadas conocimiento externo al material suministrado.")
+            }
+        }.trim()
     }
 
     private fun buildSystemInstruction(strictSources: Boolean, pedagogicalMode: Boolean): String = buildString {

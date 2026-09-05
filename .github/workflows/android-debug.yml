@@ -85,7 +85,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.34-offline-quality-apk
+          name: notcan-v0.8.35-online-adaptive-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -96,12 +96,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.34-test"
+          TAG="v0.8.35-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.34.apk" \
+            "$APK#NotCan-v0.8.35.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.34 · TuNot offline más breve y preciso" \
-            --notes "Build v0.8.34. Cuando Local básico no tiene fuentes y Gemma está instalado, TuNot usa Gemma como respaldo offline útil. Las definiciones simples tienen un presupuesto real de salida en streaming para evitar respuestas de ensayo, el RAG focal envía menos contexto y se refuerza la terminología trinitaria y cristológica para evitar formulaciones modalistas. Mantiene GPU LiteRT-LM 0.11.0, caché persistente, liberación de RAM, Groq/Whisper y Baseline/Startup Profiles."
+            --title "NotCan v0.8.35 · TuNot online adaptativo" \
+            --notes "Build v0.8.35. TuNot detecta Internet validado antes de elegir motor: Automático usa Mistral cuando está configurado y hay conexión; evita intentos online cuando no hay red y muestra online/offline en la etiqueta del motor. Gemma puede indicar además cuándo usó fuentes web. Las definiciones estables ya no disparan búsqueda web automática innecesaria, reduciendo contexto y latencia. El prompt local es adaptativo para preguntas simples y refuerza la distinción hipóstasis/ousia en teología trinitaria. Mantiene GPU LiteRT-LM, caché persistente, RAG local, liberación de RAM, Groq/Whisper y Baseline/Startup Profiles."
