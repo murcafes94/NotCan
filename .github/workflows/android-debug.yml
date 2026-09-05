@@ -1,4 +1,4 @@
-name: Android Debug Build
+name: Android Optimized Test Build
 
 on:
   push:
@@ -61,25 +61,25 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug -PnotcanArm64Only=true --stacktrace
+      - name: Build optimized release APK
+        run: gradle :app:assembleRelease -PnotcanArm64Only=true --stacktrace
 
       - name: Verify persistent test signature
         shell: bash
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APK="app/build/outputs/apk/release/app-release.apk"
           EXPECTED="ff8909efca133071c208fc1e85a167983115aae2c5de2c84b65f1a2f63f5f586"
           ACTUAL="$(keytool -printcert -jarfile "$APK" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           echo "NotCan test signing SHA-256: $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Upload debug APK artifact
+      - name: Upload optimized APK artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.27-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: notcan-v0.8.28-optimized-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
 
@@ -89,12 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.27-test"
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          TAG="v0.8.28-test"
+          APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.27.apk" \
+            "$APK#NotCan-v0.8.28.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.27 · tipografía local y espaciado" \
-            --notes "Build de prueba v0.8.27. Añade fuentes TTF/OTF importadas localmente y disponibles offline, control de calibre/peso tipográfico, interlineado, espacio después del párrafo y espaciado entre letras. PDF usa la fuente local disponible y DOCX conserva el nombre y métricas compatibles. Incluye la exportación fiel de v0.8.26 y mantiene TuNot, transcripción, Drive/SAF, calendarios y recordatorios."
+            --title "NotCan v0.8.28 · rendimiento y caché controlada" \
+            --notes "Build optimizada v0.8.28. Cambia la distribución de prueba a variante release no depurable con la misma firma persistente, limita automáticamente la caché temporal sin tocar modelos, audios ni documentos, añade un panel de rendimiento/almacenamiento con limpieza segura y reduce el sondeo de Configuración a 30 s cuando no hay descargas (1.5 s durante descargas). Mantiene Gemma 4 sobre LiteRT-LM 0.11.0 y todas las funciones de v0.8.27."
