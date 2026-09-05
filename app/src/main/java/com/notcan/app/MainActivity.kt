@@ -202,7 +202,10 @@ class MainActivity : ComponentActivity() {
                     darkTheme = darkTheme,
                     onToggleTheme = { darkTheme = !darkTheme; preferences.darkTheme = darkTheme },
                     onToggleDoNotDisturb = ::toggleDoNotDisturb,
-                    onPageChanged = { rootPage = it },
+                    onPageChanged = { page ->
+                        rootPage = page
+                        if (page == 5) studyViewModel.warmLocalAiIfUseful()
+                    },
                     onOpenSubjects = { studyViewModel.openSubjects(); subjectNavigationRequest++ },
                     onOpenClasses = { classNavigationRequest++ },
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },

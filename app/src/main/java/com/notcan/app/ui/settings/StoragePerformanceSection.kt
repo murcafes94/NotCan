@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.notcan.app.localai.GemmaRuntimeCache
 import com.notcan.app.performance.PerformanceMetricsStore
 import com.notcan.app.storage.StorageMaintenance
 import com.notcan.app.ui.theme.NotCanBlue
@@ -52,6 +53,8 @@ internal fun StoragePerformanceSection() {
     var snapshot by remember { mutableStateOf<StorageMaintenance.CacheSnapshot?>(null) }
     var metrics by remember { mutableStateOf<PerformanceMetricsStore.Snapshot?>(null) }
     var runtime by remember { mutableStateOf<PerformanceMetricsStore.RuntimeSnapshot?>(null) }
+    var gemmaAccelerationBytes by remember { mutableStateOf(0L) }
+    var gemmaAccelerationFiles by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -66,6 +69,8 @@ internal fun StoragePerformanceSection() {
         snapshot = data.first
         metrics = data.second
         runtime = data.third
+        gemmaAccelerationBytes = withContext(Dispatchers.IO) { GemmaRuntimeCache.sizeBytes(context) }
+        gemmaAccelerationFiles = withContext(Dispatchers.IO) { GemmaRuntimeCache.fileCount(context) }
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -103,6 +108,19 @@ internal fun StoragePerformanceSection() {
                     } else {
                         "NotCan mantiene una caché acotada para evitar que los temporales crezcan sin límite."
                     },
+                    color = NotCanGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (gemmaAccelerationBytes > 0L) {
+                Text(
+                    "Aceleración local de Gemma: ${formatBytes(gemmaAccelerationBytes)} · $gemmaAccelerationFiles archivo(s) persistentes",
+                    color = NotCanBlue,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Se conserva fuera de la caché temporal porque LiteRT la reutiliza para evitar recompilar el motor en cada sesión.",
                     color = NotCanGray,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -160,8 +178,14 @@ internal fun StoragePerformanceSection() {
                 MetricLine("Abrir materia / datos listos", formatTimeMetric(m.subjectOpenMs))
 
                 if (m.gemmaLoadMs > 0L || m.gemmaTotalMs > 0L) {
-                    val backend = m.gemmaBackend.ifBlank { "motor local" }
-                    MetricLine("Gemma · carga del motor", "${formatTimeMetric(m.gemmaLoadMs)} · $backend")
+                    val loadBackend = m.gemmaLoadBackend.ifBlank { m.gemmaBackend.ifBlank { "motor local" } }
+                    MetricLine("Gemma · carga del motor", "${formatTimeMetric(m.gemmaLoadMs)} · $loadBackend")
+                    if (m.gemmaTotalMs > 0L && m.gemmaBackend.isNotBlank()) {
+                        MetricLine("Gemma · backend de respuesta", m.gemmaBackend)
+                    }
+                    if (m.gemmaFallbackReason.isNotBlank()) {
+                        MetricLine("Gemma · último cambio de backend", m.gemmaFallbackReason)
+                    }
                     MetricLine("Gemma · primer token", formatTimeMetric(m.gemmaFirstTokenMs))
                     MetricLine("Gemma · respuesta completa", formatTimeMetric(m.gemmaTotalMs))
                     if (m.estimatedTokensPerSecond > 0.0) {
@@ -221,7 +245,7 @@ internal fun StoragePerformanceSection() {
             }
 
             Text(
-                "La limpieza manual conserva archivos recientes para no interrumpir una transcripción o una tarea en curso. Gemma, Whisper, Moonshine, grabaciones, documentos y base de datos quedan fuera de esta limpieza.",
+                "La limpieza manual conserva archivos recientes y no borra la aceleración persistente de Gemma, modelos, grabaciones, documentos ni base de datos. El motor local libera su RAM tras 10 min sin uso.",
                 color = NotCanGray,
                 style = MaterialTheme.typography.bodySmall
             )

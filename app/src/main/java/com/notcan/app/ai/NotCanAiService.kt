@@ -27,6 +27,11 @@ class NotCanAiService(private val context: Context) {
         preferences.mistralConversationId = ""
     }
 
+    suspend fun warmLocalGemmaIfSelected(): String? {
+        if (preferences.aiEnginePreference != "Gemma 4 local") return null
+        return localGemma.warmUp()
+    }
+
     suspend fun studyAssistant(
         subjectName: String?,
         notes: String,

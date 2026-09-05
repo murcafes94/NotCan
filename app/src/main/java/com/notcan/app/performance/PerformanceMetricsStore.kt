@@ -18,7 +18,9 @@ class PerformanceMetricsStore(context: Context) {
         val startupMs: Long,
         val subjectOpenMs: Long,
         val gemmaLoadMs: Long,
+        val gemmaLoadBackend: String,
         val gemmaBackend: String,
+        val gemmaFallbackReason: String,
         val gemmaFirstTokenMs: Long,
         val gemmaTotalMs: Long,
         val gemmaOutputChars: Int,
@@ -58,7 +60,9 @@ class PerformanceMetricsStore(context: Context) {
         startupMs = prefs.getLong(KEY_STARTUP_MS, 0L),
         subjectOpenMs = prefs.getLong(KEY_SUBJECT_OPEN_MS, 0L),
         gemmaLoadMs = prefs.getLong(KEY_GEMMA_LOAD_MS, 0L),
+        gemmaLoadBackend = prefs.getString(KEY_GEMMA_LOAD_BACKEND, "").orEmpty(),
         gemmaBackend = prefs.getString(KEY_GEMMA_BACKEND, "").orEmpty(),
+        gemmaFallbackReason = prefs.getString(KEY_GEMMA_FALLBACK_REASON, "").orEmpty(),
         gemmaFirstTokenMs = prefs.getLong(KEY_GEMMA_FIRST_TOKEN_MS, 0L),
         gemmaTotalMs = prefs.getLong(KEY_GEMMA_TOTAL_MS, 0L),
         gemmaOutputChars = prefs.getInt(KEY_GEMMA_OUTPUT_CHARS, 0),
@@ -104,7 +108,7 @@ class PerformanceMetricsStore(context: Context) {
 
     fun recordGemmaLoad(ms: Long, backend: String) = edit {
         putLong(KEY_GEMMA_LOAD_MS, ms.coerceAtLeast(0L))
-        putString(KEY_GEMMA_BACKEND, backend)
+        putString(KEY_GEMMA_LOAD_BACKEND, backend)
     }
 
     fun recordGemmaGeneration(
@@ -119,6 +123,10 @@ class PerformanceMetricsStore(context: Context) {
         putLong(KEY_GEMMA_TOTAL_MS, totalMs.coerceAtLeast(0L))
         putInt(KEY_GEMMA_OUTPUT_CHARS, outputChars.coerceAtLeast(0))
         putInt(KEY_GEMMA_PROMPT_CHARS, promptChars.coerceAtLeast(0))
+    }
+
+    fun recordGemmaFallback(reason: String) = edit {
+        putString(KEY_GEMMA_FALLBACK_REASON, reason.take(180))
     }
 
     fun recordTranscription(provider: String, processingMs: Long, audioMs: Long) = edit {
@@ -160,7 +168,9 @@ class PerformanceMetricsStore(context: Context) {
         private const val KEY_STARTUP_MS = "startup_ms"
         private const val KEY_SUBJECT_OPEN_MS = "subject_open_ms"
         private const val KEY_GEMMA_LOAD_MS = "gemma_load_ms"
+        private const val KEY_GEMMA_LOAD_BACKEND = "gemma_load_backend"
         private const val KEY_GEMMA_BACKEND = "gemma_backend"
+        private const val KEY_GEMMA_FALLBACK_REASON = "gemma_fallback_reason"
         private const val KEY_GEMMA_FIRST_TOKEN_MS = "gemma_first_token_ms"
         private const val KEY_GEMMA_TOTAL_MS = "gemma_total_ms"
         private const val KEY_GEMMA_OUTPUT_CHARS = "gemma_output_chars"

@@ -166,6 +166,11 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         _selectedNoteId.value = null
     }
 
+    fun warmLocalAiIfUseful() {
+        if (_aiBusy.value) return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { aiService.warmLocalGemmaIfSelected() } }
+    }
+
     fun selectSubject(id: String) {
         pendingSubjectOpenStartedAt = android.os.SystemClock.elapsedRealtime()
         _selectedSubjectId.value = id

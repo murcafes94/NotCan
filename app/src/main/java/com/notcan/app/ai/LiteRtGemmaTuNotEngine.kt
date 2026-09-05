@@ -13,10 +13,16 @@ import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.notcan.app.localai.GemmaLiteRtModelManager
 import com.notcan.app.localai.GemmaLiteRtModelState
+import com.notcan.app.localai.GemmaRuntimeCache
 import com.notcan.app.settings.NotCanPreferences
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +42,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private val preferences = NotCanPreferences(appContext)
     private val mutex = Mutex()
     private val performanceMetrics = com.notcan.app.performance.PerformanceMetricsStore(appContext)
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var idleReleaseJob: Job? = null
 
     private data class EngineHolder(val engine: Engine, val backendLabel: String)
     private data class SourceChunk(val label: String, val text: String, val score: Int = 0)
@@ -66,6 +74,22 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         modelManager.state() == GemmaLiteRtModelState.INSTALLED
     }.getOrDefault(false)
 
+    suspend fun warmUp(): String? = mutex.withLock {
+        if (!isAvailable()) return@withLock null
+        idleReleaseJob?.cancel()
+        val engineWasWarm = holder != null
+        val startedAt = SystemClock.elapsedRealtime()
+        val ready = ensureEngineReady()
+        if (!engineWasWarm) {
+            performanceMetrics.recordGemmaLoad(
+                (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L),
+                ready.backendLabel
+            )
+        }
+        scheduleIdleRelease()
+        ready.backendLabel
+    }
+
     suspend fun answer(
         subjectName: String?,
         notes: String,
@@ -79,6 +103,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         onPartial: ((text: String, backendLabel: String) -> Unit)? = null
     ): Answer = mutex.withLock {
         check(isAvailable()) { "Gemma 4 LiteRT-LM no está instalado" }
+        idleReleaseJob?.cancel()
 
         val subjectKey = subjectName.orEmpty()
         val followUpContext = lastAnswerText
@@ -161,6 +186,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 resetEngine()
                 Answer(recovered, "${t.backendLabel} · respuesta recuperada")
             } else if (primaryHolder.backendLabel == "GPU" && t.generatedChars == 0) {
+                performanceMetrics.recordGemmaFallback("GPU sin primer token en ${GPU_FIRST_TOKEN_TIMEOUT_MS / 1_000L} s")
                 resetEngine()
                 val cpuHolder = ensureCpuEngineReady("CPU respaldo")
                 generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)
@@ -175,6 +201,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
         lastAnswerText = answer.text
         lastAnswerSubject = subjectKey
+        scheduleIdleRelease()
         answer
     }
 
@@ -393,6 +420,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         if (explicitlyDetailed) return "Extensión: desarrolla todo lo necesario con profundidad, estructura y ejemplos cuando ayuden. No recortes una explicación útil por ser larga."
 
         if (isBroadSourceRequest(question)) return "Extensión: desarrolla el recurso o resumen con la amplitud necesaria para cubrir bien el material, evitando solo la repetición."
+        val simpleDefinition = n.length <= 100 && listOf("que es ", "define ", "explica el ", "explica la ").any(n::startsWith)
+        if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde con una explicación clara y completa en 2–4 párrafos breves; evita convertir una pregunta puntual en un ensayo."
         if (isSourceOverviewRequest(question)) return "Extensión: ofrece una explicación completa y proporcionada a la fuente; no la reduzcas artificialmente."
 
         return when (preferences.aiDetail.lowercase()) {
@@ -508,6 +537,14 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }
     }.trim()
 
+    private fun scheduleIdleRelease() {
+        idleReleaseJob?.cancel()
+        idleReleaseJob = engineScope.launch {
+            delay(ENGINE_IDLE_RELEASE_MS)
+            mutex.withLock { resetEngine() }
+        }
+    }
+
     private suspend fun resetEngine() {
         withContext(NonCancellable + Dispatchers.IO) {
             val old = holder
@@ -540,7 +577,10 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
             gpuAttempt.fold(
                 onSuccess = { EngineHolder(it, "GPU").also { ready -> holder = ready } },
-                onFailure = { ensureCpuEngineReady("CPU respaldo") }
+                onFailure = { error ->
+                    performanceMetrics.recordGemmaFallback("GPU no pudo iniciar: ${error.javaClass.simpleName}")
+                    ensureCpuEngineReady("CPU respaldo")
+                }
             )
         }
     }
@@ -566,7 +606,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             modelPath = modelPath,
             backend = backend,
             maxNumTokens = MAX_ENGINE_TOKENS,
-            cacheDir = appContext.cacheDir.absolutePath
+            cacheDir = GemmaRuntimeCache.directory(appContext).absolutePath
         )
     )
 
@@ -574,23 +614,24 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         const val MODEL_LABEL = "Gemma 4 E2B · LiteRT-LM"
         private const val MAX_FOLLOW_UP_CHARS = 2_400
         private const val MAX_WEB_CONTEXT_CHARS = 6_000
-        private const val MAX_VOCAB_CONTEXT_CHARS = 2_200
+        private const val MAX_VOCAB_CONTEXT_CHARS = 1_000
         private const val MAX_BROAD_SOURCE_CHARS = 8_500
         private const val MAX_ARTIFACT_SOURCE_CHARS = 5_200
         private const val MAX_OVERVIEW_SOURCE_CHARS = 5_500
-        private const val MAX_FOCUSED_SOURCE_CHARS = 3_400
+        private const val MAX_FOCUSED_SOURCE_CHARS = 2_400
         private const val SOURCE_CHUNK_CHARS = 1_000
         private const val SOURCE_CHUNK_OVERLAP = 160
         private const val BROAD_SELECTED_CHUNKS = 7
         private const val ARTIFACT_SELECTED_CHUNKS = 5
         private const val OVERVIEW_SELECTED_CHUNKS = 5
-        private const val FOCUSED_SELECTED_CHUNKS = 3
+        private const val FOCUSED_SELECTED_CHUNKS = 2
         private const val MAX_ENGINE_TOKENS = 4_096
         private const val TOP_K = 30
         private const val TOP_P = 0.80
         private const val TEMPERATURE = 0.30
         private const val STRUCTURED_TEMPERATURE = 0.12
         private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 30_000L
+        private const val ENGINE_IDLE_RELEASE_MS = 10L * 60L * 1_000L
         private const val MIN_USEFUL_PARTIAL_CHARS = 180
 
         private val SOURCE_STOP_WORDS = setOf(
