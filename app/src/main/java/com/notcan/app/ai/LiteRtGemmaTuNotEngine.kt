@@ -140,7 +140,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 appendLine(sourceContext)
                 appendLine("--- FIN DEL MATERIAL ---")
             }
-            if (vocabularyContext.isNotBlank()) {
+            if (vocabularyContext.isNotBlank() && (!isSimpleDefinition(intentQuestion) || strictSources)) {
                 appendLine()
                 appendLine("--- VOCABULARIO ACADÉMICO DE NOTCAN ---")
                 appendLine(vocabularyContext.take(MAX_VOCAB_CONTEXT_CHARS))
@@ -170,6 +170,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         )
 
         val generationTimeoutMs = generationTimeoutMs(intentQuestion)
+        val maxOutputChars = outputCharBudget(intentQuestion)
         val engineWasWarm = holder != null
         val engineLoadStartedAt = SystemClock.elapsedRealtime()
         val primaryHolder = ensureEngineReady()
@@ -180,7 +181,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             )
         }
         val answer = try {
-            generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)
+            generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)
         } catch (t: GenerationException) {
             val recovered = recoverUsefulPartial(t.partialText)
             if (recovered != null) {
@@ -190,7 +191,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 performanceMetrics.recordGemmaFallback("GPU sin primer token en ${GPU_FIRST_TOKEN_TIMEOUT_MS / 1_000L} s")
                 resetEngine()
                 val cpuHolder = ensureCpuEngineReady("CPU respaldo")
-                generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)
+                generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)
             } else {
                 resetEngine()
                 throw t
@@ -211,6 +212,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         prompt: String,
         conversationConfig: ConversationConfig,
         timeoutMs: Long,
+        maxOutputChars: Int,
         onPartial: ((text: String, backendLabel: String) -> Unit)?
     ): Answer = coroutineScope {
         val output = StringBuilder()
@@ -228,18 +230,25 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                         messages.receiveCatching().getOrNull()
                     }
 
-                    firstMessage?.toString()?.takeIf { it.isNotEmpty() }?.let { delta ->
+                    var stopRequested = false
+                    fun appendDelta(delta: String) {
+                        if (delta.isEmpty() || stopRequested) return
                         if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
                         output.append(delta)
                         onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
+                        if (shouldStopGeneration(output, maxOutputChars)) stopRequested = true
                     }
 
-                    for (message in messages) {
-                        val delta = message.toString()
-                        if (delta.isNotEmpty()) {
-                            if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
-                            output.append(delta)
-                            onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
+                    firstMessage?.toString()?.let(::appendDelta)
+                    if (stopRequested) {
+                        messages.cancel()
+                    } else {
+                        for (message in messages) {
+                            appendDelta(message.toString())
+                            if (stopRequested) {
+                                messages.cancel()
+                                break
+                            }
                         }
                     }
                 }
@@ -254,7 +263,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             )
         }
 
-        val text = cleanModelText(output.toString()).trim()
+        val text = finalizeBoundedOutput(output.toString(), maxOutputChars)
         if (text.isBlank()) {
             throw GenerationException(
                 backendLabel = engineHolder.backendLabel,
@@ -306,6 +315,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
         val tokens = queryTokens(question)
         val artifactRequest = isStudyArtifactRequest(question)
+        val simpleDefinition = isSimpleDefinition(question)
         val broadRequest = isBroadSourceRequest(question)
         val sourceOverviewRequest = isSourceOverviewRequest(question)
         val scored = chunks.map { chunk ->
@@ -322,7 +332,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             tokens.isNotEmpty() -> scored
                 .filter { it.score > 0 }
                 .sortedByDescending { it.score }
-                .take(FOCUSED_SELECTED_CHUNKS)
+                .take(if (simpleDefinition && !strictSources) SIMPLE_DEFINITION_SELECTED_CHUNKS else FOCUSED_SELECTED_CHUNKS)
             else -> emptyList()
         }.ifEmpty {
             // A strict-source question may be a paraphrase with no exact lexical hit.
@@ -333,6 +343,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         if (selected.isEmpty()) return ""
         val sourceCharLimit = when {
             artifactRequest -> MAX_ARTIFACT_SOURCE_CHARS
+            simpleDefinition && !strictSources -> MAX_SIMPLE_DEFINITION_SOURCE_CHARS
             broadRequest -> MAX_BROAD_SOURCE_CHARS
             sourceOverviewRequest -> MAX_OVERVIEW_SOURCE_CHARS
             else -> MAX_FOCUSED_SOURCE_CHARS
@@ -417,6 +428,57 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         .trim()
         .replace(Regex("\\s+"), " ")
 
+    private fun isSimpleDefinition(question: String): Boolean {
+        val n = normalize(question)
+        return n.length <= 110 && listOf(
+            "que es ", "que significa ", "define ", "definicion de ", "explica el ", "explica la "
+        ).any(n::startsWith)
+    }
+
+    private fun outputCharBudget(question: String): Int {
+        if (isStudyArtifactRequest(question)) return Int.MAX_VALUE
+        val n = normalize(question)
+        val explicitlyBrief = isResponseTransformRequest(question) || listOf(
+            "brevemente", "respuesta breve", "responde breve", "una frase", "en una frase",
+            "solo una frase", "muy corto", "muy breve"
+        ).any(n::contains)
+        if (explicitlyBrief) return 420
+
+        val explicitlyDetailed = listOf(
+            "profundiza", "profundizar", "detalladamente", "con detalle", "desarrolla",
+            "desarrollalo", "explicacion completa", "explicacion profunda", "amplia", "a fondo"
+        ).any(n::contains)
+        if (explicitlyDetailed) return 5_200
+        if (isBroadSourceRequest(question)) return 6_500
+        if (isSourceOverviewRequest(question)) return 4_200
+        if (isSimpleDefinition(question)) return 760
+
+        return when (preferences.aiDetail.lowercase()) {
+            "breve" -> 900
+            "profundo" -> 4_200
+            else -> 1_800
+        }
+    }
+
+    private fun shouldStopGeneration(output: StringBuilder, softLimit: Int): Boolean {
+        if (softLimit == Int.MAX_VALUE || output.length < softLimit) return false
+        val tail = output.takeLast(140).trimEnd()
+        val last = tail.lastOrNull()
+        val sentenceBoundary = last == '.' || last == '!' || last == '?'
+        return sentenceBoundary || output.length >= softLimit + OUTPUT_HARD_MARGIN_CHARS
+    }
+
+    private fun finalizeBoundedOutput(raw: String, softLimit: Int): String {
+        val cleaned = cleanModelText(raw).trim()
+        if (softLimit == Int.MAX_VALUE || cleaned.length <= softLimit) return cleaned
+        val last = cleaned.lastOrNull()
+        if (last == '.' || last == '!' || last == '?') return cleaned
+
+        val candidate = cleaned.take((softLimit + OUTPUT_HARD_MARGIN_CHARS).coerceAtMost(cleaned.length))
+        val sentenceEnd = maxOf(candidate.lastIndexOf('.'), candidate.lastIndexOf('!'), candidate.lastIndexOf('?'))
+        return if (sentenceEnd >= softLimit / 2) candidate.substring(0, sentenceEnd + 1).trim() else candidate.trim()
+    }
+
     private fun responseLengthInstruction(question: String): String {
         val n = normalize(question)
         val explicitlyBrief = isResponseTransformRequest(question) || listOf(
@@ -432,8 +494,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         if (explicitlyDetailed) return "Extensión: desarrolla todo lo necesario con profundidad, estructura y ejemplos cuando ayuden. No recortes una explicación útil por ser larga."
 
         if (isBroadSourceRequest(question)) return "Extensión: desarrolla el recurso o resumen con la amplitud necesaria para cubrir bien el material, evitando solo la repetición."
-        val simpleDefinition = n.length <= 100 && listOf("que es ", "define ", "explica el ", "explica la ").any(n::startsWith)
-        if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde en 1–2 párrafos breves (aprox. 60–140 palabras), sin apartados numerados salvo que se pidan. Define primero el término y añade solo la distinción o contexto esencial; evita convertir una pregunta puntual en un ensayo."
+        if (isSimpleDefinition(question)) return "Extensión: responde en 1–2 párrafos breves (aprox. 50–110 palabras), sin apartados numerados salvo que se pidan. Define primero el término y añade solo la distinción o contexto esencial. Aunque el nivel general sea Profundo, no conviertas una definición puntual en un ensayo si el estudiante no pidió profundizar."
         if (isSourceOverviewRequest(question)) return "Extensión: ofrece una explicación completa y proporcionada a la fuente; no la reduzcas artificialmente."
 
         return when (preferences.aiDetail.lowercase()) {
@@ -530,7 +591,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private fun buildSystemInstruction(strictSources: Boolean, pedagogicalMode: Boolean): String = buildString {
         appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
         appendLine("Responde en español claro, natural, preciso y útil para estudiar.")
-        appendLine("Adapta la extensión a la dificultad de la pregunta y al nivel de detalle elegido por el estudiante; no recortes una explicación académica útil solo por ser larga.")
+        appendLine("Adapta la extensión a lo que se pregunta. Las definiciones y preguntas puntuales deben ser breves por defecto, incluso si el nivel general es Profundo; amplía solo cuando el estudiante lo pida. Las tareas de desarrollo, síntesis o estudio amplio sí pueden ser extensas.")
         appendLine("Responde siempre a la pregunta actual; no repitas una respuesta anterior si ya no corresponde al tema preguntado.")
         appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
         if (preferences.aiInstructions.isNotBlank()) {
@@ -541,6 +602,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         appendLine("No muestres cadena de pensamiento ni razonamiento interno; entrega directamente la respuesta útil.")
         appendLine("En teología católica distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.")
         appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")
+        appendLine("En teología trinitaria católica no describas al Padre, al Hijo y al Espíritu Santo como tres modos, manifestaciones o formas en que se presenta una sola persona. Formula con precisión: una única esencia o naturaleza divina (ousia) y tres Personas o hipóstasis realmente distintas y consustanciales; la distinción personal no divide la esencia divina.")
+        appendLine("Cuando expliques hipóstasis, distingue sus usos filosófico/patrístico, trinitario y cristológico. En cristología, Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")
         if (pedagogicalMode) {
             appendLine("Actúa como pedagogo académico: ayuda a comprender, planificar, priorizar, practicar recuperación activa y elegir métodos de estudio concretos.")
             appendLine("No actúes como psicólogo ni hagas diagnósticos clínicos; mantente en el terreno del aprendizaje y la organización académica.")
@@ -653,12 +716,14 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val MAX_BROAD_SOURCE_CHARS = 6_500
         private const val MAX_ARTIFACT_SOURCE_CHARS = 4_800
         private const val MAX_OVERVIEW_SOURCE_CHARS = 4_200
+        private const val MAX_SIMPLE_DEFINITION_SOURCE_CHARS = 700
         private const val MAX_FOCUSED_SOURCE_CHARS = 1_600
         private const val SOURCE_CHUNK_CHARS = 800
         private const val SOURCE_CHUNK_OVERLAP = 120
         private const val BROAD_SELECTED_CHUNKS = 6
         private const val ARTIFACT_SELECTED_CHUNKS = 5
         private const val OVERVIEW_SELECTED_CHUNKS = 4
+        private const val SIMPLE_DEFINITION_SELECTED_CHUNKS = 1
         private const val FOCUSED_SELECTED_CHUNKS = 2
         private const val MAX_ENGINE_TOKENS = 4_096
         private const val TOP_K = 30
@@ -668,6 +733,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 30_000L
         private const val ENGINE_IDLE_RELEASE_MS = 10L * 60L * 1_000L
         private const val MIN_USEFUL_PARTIAL_CHARS = 180
+        private const val OUTPUT_HARD_MARGIN_CHARS = 240
         private const val KEY_CAPABILITIES_FINGERPRINT = "capabilities_fingerprint"
         private const val KEY_SPECULATIVE_DECODING_SUPPORTED = "speculative_decoding_supported"
 
