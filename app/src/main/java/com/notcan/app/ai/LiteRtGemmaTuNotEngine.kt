@@ -35,6 +35,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private val modelManager = GemmaLiteRtModelManager(appContext)
     private val preferences = NotCanPreferences(appContext)
     private val mutex = Mutex()
+    private val performanceMetrics = com.notcan.app.performance.PerformanceMetricsStore(appContext)
 
     private data class EngineHolder(val engine: Engine, val backendLabel: String)
     private data class SourceChunk(val label: String, val text: String, val score: Int = 0)
@@ -143,7 +144,15 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         )
 
         val generationTimeoutMs = generationTimeoutMs(intentQuestion)
+        val engineWasWarm = holder != null
+        val engineLoadStartedAt = SystemClock.elapsedRealtime()
         val primaryHolder = ensureEngineReady()
+        if (!engineWasWarm) {
+            performanceMetrics.recordGemmaLoad(
+                (SystemClock.elapsedRealtime() - engineLoadStartedAt).coerceAtLeast(0L),
+                primaryHolder.backendLabel
+            )
+        }
         val answer = try {
             generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)
         } catch (t: GenerationException) {
@@ -178,6 +187,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     ): Answer = coroutineScope {
         val output = StringBuilder()
         val generationStartedAt = SystemClock.elapsedRealtime()
+        var firstTokenMs = 0L
         try {
             withTimeout(timeoutMs) {
                 engineHolder.engine.createConversation(conversationConfig).use { conversation ->
@@ -191,6 +201,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                     }
 
                     firstMessage?.toString()?.takeIf { it.isNotEmpty() }?.let { delta ->
+                        if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
                         output.append(delta)
                         onPartial?.invoke(output.toString(), engineHolder.backendLabel)
                     }
@@ -198,6 +209,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                     for (message in messages) {
                         val delta = message.toString()
                         if (delta.isNotEmpty()) {
+                            if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
                             output.append(delta)
                             onPartial?.invoke(output.toString(), engineHolder.backendLabel)
                         }
@@ -224,6 +236,14 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                 cause = IllegalStateException("Gemma 4 no produjo texto utilizable")
             )
         }
+        val totalMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
+        performanceMetrics.recordGemmaGeneration(
+            backend = engineHolder.backendLabel,
+            firstTokenMs = firstTokenMs.takeIf { it > 0L } ?: totalMs,
+            totalMs = totalMs,
+            outputChars = text.length,
+            promptChars = prompt.length
+        )
         Answer(text = text, backendLabel = engineHolder.backendLabel)
     }
 

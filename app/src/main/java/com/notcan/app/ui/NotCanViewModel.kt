@@ -47,6 +47,8 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
     private val sourceStore = ClassSourceStore(application)
     private val whisperModelManager = WhisperModelManager(application)
     private val localWhisper = LocalWhisperEngine(application)
+    private val performanceMetrics = com.notcan.app.performance.PerformanceMetricsStore(application)
+    @Volatile private var pendingSubjectOpenStartedAt = 0L
 
     private val _selectedCycleId = MutableStateFlow<String?>(null)
     val selectedCycleId: StateFlow<String?> = _selectedCycleId.asStateFlow()
@@ -116,6 +118,11 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             classes.collect { list ->
+                val pendingOpen = pendingSubjectOpenStartedAt
+                if (pendingOpen > 0L && _selectedSubjectId.value != null) {
+                    performanceMetrics.recordSubjectOpen((android.os.SystemClock.elapsedRealtime() - pendingOpen).coerceAtLeast(0L))
+                    pendingSubjectOpenStartedAt = 0L
+                }
                 val selected = _selectedClassId.value
                 if (selected != null && list.none { it.id == selected }) {
                     _selectedClassId.value = null
@@ -159,7 +166,12 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         _selectedNoteId.value = null
     }
 
-    fun selectSubject(id: String) { _selectedSubjectId.value = id; _selectedClassId.value = null; _selectedNoteId.value = null }
+    fun selectSubject(id: String) {
+        pendingSubjectOpenStartedAt = android.os.SystemClock.elapsedRealtime()
+        _selectedSubjectId.value = id
+        _selectedClassId.value = null
+        _selectedNoteId.value = null
+    }
     fun selectClass(id: String) { _selectedClassId.value = id; _selectedNoteId.value = null }
     fun selectNote(id: String) { _selectedNoteId.value = id }
 

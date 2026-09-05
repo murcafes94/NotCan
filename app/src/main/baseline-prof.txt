@@ -10,3 +10,4 @@ Lcom/notcan/app/ui/tasks/TasksScreenKt;
 Lcom/notcan/app/ui/grades/GradesScreenKt;
 Lcom/notcan/app/data/local/NotCanDatabase;
 Lcom/notcan/app/ui/NotCanViewModel;
+Lcom/notcan/app/performance/PerformanceMetricsStore;

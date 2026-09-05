@@ -39,6 +39,7 @@ class BackgroundTranscriptionWorker(
         val displayName = inputData.getString(KEY_DISPLAY_NAME) ?: "clase"
         val audio = File(path)
         if (!audio.exists()) return Result.failure(workDataOf(KEY_ERROR to "El audio local ya no existe"))
+        val performanceStartedAt = android.os.SystemClock.elapsedRealtime()
 
         createChannel()
         setForeground(foregroundInfo("Preparando $displayName…"))
@@ -228,6 +229,12 @@ class BackgroundTranscriptionWorker(
                     .forEach { dao.insertDetectedCue(it) }
             }
 
+            val audioDurationMs = transcription.segments.maxOfOrNull { it.endMs } ?: 0L
+            com.notcan.app.performance.PerformanceMetricsStore(applicationContext).recordTranscription(
+                provider = provider,
+                processingMs = (android.os.SystemClock.elapsedRealtime() - performanceStartedAt).coerceAtLeast(0L),
+                audioMs = audioDurationMs
+            )
             notifyFinished(displayName, academicTerms.isNotEmpty(), provider)
             Result.success(
                 workDataOf(

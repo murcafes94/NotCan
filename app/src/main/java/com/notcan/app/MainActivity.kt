@@ -109,6 +109,11 @@ class MainActivity : ComponentActivity() {
             var subjectNavigationRequest by remember { mutableIntStateOf(0) }
             var classNavigationRequest by remember { mutableIntStateOf(0) }
             var rootPage by remember { mutableIntStateOf(0) }
+            val performanceMetrics = remember { com.notcan.app.performance.PerformanceMetricsStore(applicationContext) }
+            LaunchedEffect(Unit) {
+                val startupMs = (android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()).coerceAtLeast(0L)
+                performanceMetrics.recordStartup(startupMs)
+            }
             NotCanTheme(darkTheme = darkTheme) {
                 val recordingState = RecordingService.state.collectAsStateWithLifecycle().value
                 val cycles = studyViewModel.cycles.collectAsStateWithLifecycle().value

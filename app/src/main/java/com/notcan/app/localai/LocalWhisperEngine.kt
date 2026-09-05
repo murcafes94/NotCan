@@ -18,6 +18,7 @@ data class WhisperTranscriptionResult(
 
 class LocalWhisperEngine(private val context: Context) {
     private val modelManager = WhisperModelManager(context)
+    private val performanceMetrics = com.notcan.app.performance.PerformanceMetricsStore(context.applicationContext)
 
     /**
      * Compatibilidad con los consumidores existentes: devuelve solamente el texto.
@@ -34,15 +35,24 @@ class LocalWhisperEngine(private val context: Context) {
 
         val tempDir = File(context.cacheDir, "whisper").apply { mkdirs() }
         val wav = File(tempDir, "${audio.nameWithoutExtension}_${System.currentTimeMillis()}.wav")
+        var convertMs = 0L
+        var modelLoadMs = 0L
+        var inferenceMs = 0L
         try {
+            val convertStartedAt = android.os.SystemClock.elapsedRealtime()
             AudioToWavConverter.convert(audio, wav)
+            convertMs = (android.os.SystemClock.elapsedRealtime() - convertStartedAt).coerceAtLeast(0L)
+            val modelLoadStartedAt = android.os.SystemClock.elapsedRealtime()
             val model = Whisper.loadModel(context, modelFile.absolutePath)
+            modelLoadMs = (android.os.SystemClock.elapsedRealtime() - modelLoadStartedAt).coerceAtLeast(0L)
             return try {
+                val inferenceStartedAt = android.os.SystemClock.elapsedRealtime()
                 val result = Whisper.transcribe(
                     model,
                     wav.absolutePath,
                     WhisperConfig(language = "es")
                 )
+                inferenceMs = (android.os.SystemClock.elapsedRealtime() - inferenceStartedAt).coerceAtLeast(0L)
                 val text = result.text.trim().ifBlank {
                     "No se detectó voz suficiente para generar una transcripción."
                 }
@@ -58,6 +68,7 @@ class LocalWhisperEngine(private val context: Context) {
                 }
                 WhisperTranscriptionResult(text = text, segments = segments)
             } finally {
+                performanceMetrics.recordLocalWhisperStages(convertMs, modelLoadMs, inferenceMs)
                 Whisper.releaseModel(model)
             }
         } finally {
