@@ -6,7 +6,7 @@ on:
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[0834 applied]') }}
+    if: "${{ !contains(github.event.head_commit.message, '[0834 applied]') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -36,7 +36,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # --- 1) Motor routing: Local básico only when it actually has local material. ---
           service = Path('app/src/main/java/com/notcan/app/ai/NotCanAiService.kt')
           s = service.read_text()
           old = '''        val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
@@ -48,7 +47,6 @@ jobs:
         if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank() && vocabularyContext.isBlank()) {'''
           assert old in s, 'No se encontró el ancla de material local'
           s = s.replace(old, new, 1)
-
           old = '''        when (preferences.aiEnginePreference) {
             "Gemma 4 local" -> return localFallback(allowGemma = true)
             "Local básico" -> return localFallback(allowGemma = false)
@@ -56,8 +54,8 @@ jobs:
           new = '''        when (preferences.aiEnginePreference) {
             "Gemma 4 local" -> return localFallback(allowGemma = true)
             "Local básico" -> {
-                // El motor extractivo necesita fuentes. Si no hay ninguna y no estamos en
-                // Solo mis fuentes, Gemma es el respaldo local útil aunque no haya Internet.
+                // El motor extractivo necesita fuentes. Sin fuentes y fuera de Solo mis fuentes,
+                // Gemma es el respaldo local útil aunque no haya Internet.
                 val shouldEscalateToGemma = !strictSources && !hasLocalStudyMaterial && localGemma.isAvailable()
                 return localFallback(allowGemma = shouldEscalateToGemma)
             }
@@ -66,10 +64,8 @@ jobs:
           s = s.replace(old, new, 1)
           service.write_text(s)
 
-          # --- 2) Gemma: contexto focal más pequeño + límite real de salida en streaming. ---
           engine = Path('app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt')
           e = engine.read_text()
-
           old = '''            if (vocabularyContext.isNotBlank()) {
                 appendLine()
                 appendLine("--- VOCABULARIO ACADÉMICO DE NOTCAN ---")'''
@@ -86,15 +82,10 @@ jobs:
         val engineWasWarm = holder != null'''
           assert old in e, 'No se encontró generationTimeoutMs'
           e = e.replace(old, new, 1)
-
-          old = 'generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)'
-          new = 'generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)'
-          assert old in e, 'No se encontró generate GPU'
-          e = e.replace(old, new, 1)
-          old = 'generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)'
-          new = 'generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)'
-          assert old in e, 'No se encontró generate CPU'
-          e = e.replace(old, new, 1)
+          assert 'generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)' in e
+          e = e.replace('generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)', 'generate(primaryHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)', 1)
+          assert 'generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)' in e
+          e = e.replace('generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, onPartial)', 'generate(cpuHolder, prompt, conversationConfig, generationTimeoutMs, maxOutputChars, onPartial)', 1)
 
           old = '''        conversationConfig: ConversationConfig,
         timeoutMs: Long,
@@ -143,11 +134,8 @@ jobs:
                     }'''
           assert old in e, 'No se encontró el bucle de streaming'
           e = e.replace(old, new, 1)
-
-          old = '        val text = cleanModelText(output.toString()).trim()'
-          new = '        val text = finalizeBoundedOutput(output.toString(), maxOutputChars)'
-          assert old in e, 'No se encontró la limpieza final'
-          e = e.replace(old, new, 1)
+          assert '        val text = cleanModelText(output.toString()).trim()' in e
+          e = e.replace('        val text = cleanModelText(output.toString()).trim()', '        val text = finalizeBoundedOutput(output.toString(), maxOutputChars)', 1)
 
           old = '''        val tokens = queryTokens(question)
         val artifactRequest = isStudyArtifactRequest(question)
@@ -158,7 +146,6 @@ jobs:
         val broadRequest = isBroadSourceRequest(question)'''
           assert old in e, 'No se encontró el selector RAG'
           e = e.replace(old, new, 1)
-
           old = '''            tokens.isNotEmpty() -> scored
                 .filter { it.score > 0 }
                 .sortedByDescending { it.score }
@@ -169,7 +156,6 @@ jobs:
                 .take(if (simpleDefinition && !strictSources) SIMPLE_DEFINITION_SELECTED_CHUNKS else FOCUSED_SELECTED_CHUNKS)'''
           assert old in e, 'No se encontró selección focal RAG'
           e = e.replace(old, new, 1)
-
           old = '''        val sourceCharLimit = when {
             artifactRequest -> MAX_ARTIFACT_SOURCE_CHARS
             broadRequest -> MAX_BROAD_SOURCE_CHARS'''
@@ -197,7 +183,6 @@ jobs:
             "solo una frase", "muy corto", "muy breve"
         ).any(n::contains)
         if (explicitlyBrief) return 420
-
         val explicitlyDetailed = listOf(
             "profundiza", "profundizar", "detalladamente", "con detalle", "desarrolla",
             "desarrollalo", "explicacion completa", "explicacion profunda", "amplia", "a fondo"
@@ -206,7 +191,6 @@ jobs:
         if (isBroadSourceRequest(question)) return 6_500
         if (isSourceOverviewRequest(question)) return 4_200
         if (isSimpleDefinition(question)) return 760
-
         return when (preferences.aiDetail.lowercase()) {
             "breve" -> 900
             "profundo" -> 4_200
@@ -227,7 +211,6 @@ jobs:
         if (softLimit == Int.MAX_VALUE || cleaned.length <= softLimit) return cleaned
         val last = cleaned.lastOrNull()
         if (last == '.' || last == '!' || last == '?') return cleaned
-
         val candidate = cleaned.take((softLimit + OUTPUT_HARD_MARGIN_CHARS).coerceAtMost(cleaned.length))
         val sentenceEnd = maxOf(candidate.lastIndexOf('.'), candidate.lastIndexOf('!'), candidate.lastIndexOf('?'))
         return if (sentenceEnd >= softLimit / 2) candidate.substring(0, sentenceEnd + 1).trim() else candidate.trim()
@@ -243,12 +226,12 @@ jobs:
           assert old in e, 'No se encontró regla de definición simple'
           e = e.replace(old, new, 1)
 
-          old = '''        appendLine("Adapta la extensión a la dificultad de la pregunta y al nivel de detalle elegido por el estudiante; no recortes una explicación académica útil solo por ser larga.")'''
-          new = '''        appendLine("Adapta la extensión a lo que se pregunta. Las definiciones y preguntas puntuales deben ser breves por defecto, incluso si el nivel general es Profundo; amplía solo cuando el estudiante lo pida. Las tareas de desarrollo, síntesis o estudio amplio sí pueden ser extensas.")'''
+          old = '        appendLine("Adapta la extensión a la dificultad de la pregunta y al nivel de detalle elegido por el estudiante; no recortes una explicación académica útil solo por ser larga.")'
+          new = '        appendLine("Adapta la extensión a lo que se pregunta. Las definiciones y preguntas puntuales deben ser breves por defecto, incluso si el nivel general es Profundo; amplía solo cuando el estudiante lo pida. Las tareas de desarrollo, síntesis o estudio amplio sí pueden ser extensas.")'
           assert old in e, 'No se encontró instrucción general de extensión'
           e = e.replace(old, new, 1)
 
-          old = '''        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")'''
+          old = '        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")'
           new = '''        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")
         appendLine("En teología trinitaria católica no describas al Padre, al Hijo y al Espíritu Santo como tres modos, manifestaciones o formas en que se presenta una sola persona. Formula con precisión: una única esencia o naturaleza divina (ousia) y tres Personas o hipóstasis realmente distintas y consustanciales; la distinción personal no divide la esencia divina.")
         appendLine("Cuando expliques hipóstasis, distingue sus usos filosófico/patrístico, trinitario y cristológico. En cristología, Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")'''
@@ -260,28 +243,24 @@ jobs:
           new = '''        private const val MAX_OVERVIEW_SOURCE_CHARS = 4_200
         private const val MAX_SIMPLE_DEFINITION_SOURCE_CHARS = 700
         private const val MAX_FOCUSED_SOURCE_CHARS = 1_600'''
-          assert old in e, 'No se encontró constante de contexto focal'
+          assert old in e
           e = e.replace(old, new, 1)
-
           old = '''        private const val OVERVIEW_SELECTED_CHUNKS = 4
         private const val FOCUSED_SELECTED_CHUNKS = 2'''
           new = '''        private const val OVERVIEW_SELECTED_CHUNKS = 4
         private const val SIMPLE_DEFINITION_SELECTED_CHUNKS = 1
         private const val FOCUSED_SELECTED_CHUNKS = 2'''
-          assert old in e, 'No se encontró constante de chunks focales'
+          assert old in e
           e = e.replace(old, new, 1)
-
           old = '''        private const val MIN_USEFUL_PARTIAL_CHARS = 180
         private const val KEY_CAPABILITIES_FINGERPRINT'''
           new = '''        private const val MIN_USEFUL_PARTIAL_CHARS = 180
         private const val OUTPUT_HARD_MARGIN_CHARS = 240
         private const val KEY_CAPABILITIES_FINGERPRINT'''
-          assert old in e, 'No se encontró constante de parcial'
+          assert old in e
           e = e.replace(old, new, 1)
-
           engine.write_text(e)
 
-          # --- 3) Versión ---
           gradle = Path('app/build.gradle.kts')
           g = gradle.read_text()
           assert 'versionCode = 57' in g and 'versionName = "0.8.33.1"' in g
