@@ -314,6 +314,21 @@ class WebResearchService(context: Context) {
             )
             if (localOnlyHints.any { it in q }) return false
 
+            // Una definición estable y breve no necesita pagar latencia ni miles de caracteres
+            // de contexto web. La búsqueda forzada sigue funcionando mediante BUSCAR_WEB_NOTCAN.
+            val freshnessOrVerificationHints = listOf(
+                "hoy", "actual", "actualmente", "ultimo", "último", "reciente", "2026",
+                "noticia", "noticias", "fuente oficial", "fuentes oficiales", "cita textual",
+                "texto oficial", "documento oficial", "vatican", "vaticano", "web", "internet",
+                "busca", "buscar", "verifica", "verificar", "comprueba", "confirma"
+            )
+            val needsFreshOrVerifiedWeb = freshnessOrVerificationHints.any { it in q }
+            val stableDefinition = q.length <= 140 && listOf(
+                "que es ", "qué es ", "que significa ", "qué significa ", "define ",
+                "definicion de ", "definición de "
+            ).any(q::startsWith)
+            if (stableDefinition && !needsFreshOrVerifiedWeb) return false
+
             return true
         }
 
