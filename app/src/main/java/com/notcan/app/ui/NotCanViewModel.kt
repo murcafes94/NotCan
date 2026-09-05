@@ -26,6 +26,7 @@ import com.notcan.app.sources.ClassSourceStore
 import com.notcan.app.ui.home.NoteDocxImporter
 import com.notcan.app.sync.SupabaseSyncManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -449,6 +450,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         _aiError.value = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val localWarmUp = async { runCatching { aiService.warmLocalGemmaIfSelected() } }
                 val baseNotes = notePages.value.joinToString("\n\n") { "${it.title}\n${it.body}" }
                 val subjectName = subjects.value.firstOrNull { it.id == _selectedSubjectId.value }?.name
                 val notesText = if (question.contains(NotCanAiService.PEDAGOGY_MARKER)) {
@@ -474,6 +476,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                         append(externalSources)
                     }
                 }
+                localWarmUp.await()
                 val finalResult = aiService.studyAssistant(
                     subjectName = subjectName,
                     notes = notesText,
