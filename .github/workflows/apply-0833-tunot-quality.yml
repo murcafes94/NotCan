@@ -1,0 +1,101 @@
+name: Apply 0.8.33 TuNot quality tuning
+
+on:
+  push:
+    branches: [ "feature/tunot-quality-0833" ]
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[0833 applied]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/tunot-quality-0833
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Apply TuNot quality patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          engine = Path('app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt')
+          text = engine.read_text()
+
+          old = 'if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde con una explicación clara y completa en 2–4 párrafos breves; evita convertir una pregunta puntual en un ensayo."'
+          new = 'if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde en 1–2 párrafos breves (aprox. 60–140 palabras), sin apartados numerados salvo que se pidan. Define primero el término y añade solo la distinción o contexto esencial; evita convertir una pregunta puntual en un ensayo."'
+          assert old in text, 'No se encontró la regla de definición simple'
+          text = text.replace(old, new, 1)
+
+          old = 'appendLine("No inventes citas, páginas, autores, fechas ni referencias.")\n        appendLine("No muestres cadena de pensamiento ni razonamiento interno; entrega directamente la respuesta útil.")\n        appendLine("En teología católica distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.")'
+          new = 'appendLine("No inventes citas, páginas, autores, fechas ni referencias.")\n        appendLine("Usa Markdown simple compatible con la interfaz. No uses LaTeX, delimitadores $...$, \\\\(...\\\\), \\\\[...\\\\] ni comandos como \\\\text{} salvo que el estudiante pida expresamente notación matemática; escribe términos y símbolos en texto normal siempre que sea posible.")\n        appendLine("No muestres cadena de pensamiento ni razonamiento interno; entrega directamente la respuesta útil.")\n        appendLine("En teología católica distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.")\n        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")'
+          assert old in text, 'No se encontró el bloque de instrucciones del sistema'
+          text = text.replace(old, new, 1)
+
+          text = text.replace('onPartial?.invoke(output.toString(), engineHolder.backendLabel)', 'onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)')
+          assert 'val text = output.toString().trim()' in text, 'No se encontró el texto final de generación'
+          text = text.replace('val text = output.toString().trim()', 'val text = cleanModelText(output.toString()).trim()', 1)
+
+          marker = '''    /**\n     * Builds a small local RAG context instead of blindly taking the tail of every source.\n'''
+          assert marker in text, 'No se encontró el punto de inserción del limpiador'
+          cleaner = r'''    private fun cleanModelText(raw: String): String {
+        if (raw.isBlank() || looksLikeStudyArtifact(raw)) return raw.trim()
+        return raw
+            .replace(Regex("""\$\s*\\text\{([^{}]+)}\s*\$""")) { it.groupValues[1] }
+            .replace(Regex("""\\text\{([^{}]+)}""")) { it.groupValues[1] }
+            .replace(Regex("""\\\(([^)\n]+)\\\)""")) { it.groupValues[1].trim() }
+            .replace(Regex("""\\\[([^\]\n]+)\\\]""")) { it.groupValues[1].trim() }
+            .replace(Regex("""\$\s*([^$\n]{1,120})\s*\$""")) { it.groupValues[1].trim() }
+            .trim()
+    }
+
+'''
+          text = text.replace(marker, cleaner + marker, 1)
+          engine.write_text(text)
+
+          gradle = Path('app/build.gradle.kts')
+          g = gradle.read_text()
+          assert 'versionCode = 55' in g and 'versionName = "0.8.32"' in g
+          g = g.replace('versionCode = 55', 'versionCode = 56', 1).replace('versionName = "0.8.32"', 'versionName = "0.8.33"', 1)
+          gradle.write_text(g)
+
+          workflow = Path('.github/workflows/android-debug.yml')
+          w = workflow.read_text()
+          w = w.replace('notcan-v0.8.32-gemma-latency-apk', 'notcan-v0.8.33-tunot-quality-apk')
+          w = w.replace('v0.8.32-test', 'v0.8.33-test')
+          w = w.replace('NotCan-v0.8.32.apk', 'NotCan-v0.8.33.apk')
+          w = w.replace('NotCan v0.8.32 · TuNot con menor latencia', 'NotCan v0.8.33 · TuNot más preciso y proporcionado')
+          old_notes = 'Build v0.8.32. Reduce el contexto local de consultas focalizadas sin recortar los modos de estudio amplios, reutiliza la detección de capacidades de Gemma entre arranques, precalienta Gemma también en modo Automático cuando no hay Mistral configurado y solapa la carga del motor con la preparación de apuntes y fuentes. Conserva GPU LiteRT-LM, caché persistente, liberación de RAM tras inactividad, Groq/Whisper y Baseline/Startup Profiles.'
+          new_notes = 'Build v0.8.33. Mantiene las optimizaciones de latencia de v0.8.32 y mejora la calidad de TuNot: las definiciones simples son más proporcionadas, se evita LaTeX crudo en la interfaz, se limpia formato residual del modelo y se refuerzan distinciones teológicas patrísticas, trinitarias y cristológicas. Conserva GPU LiteRT-LM, caché persistente, liberación de RAM tras inactividad, RAG local, Groq/Whisper y Baseline/Startup Profiles.'
+          assert old_notes in w
+          w = w.replace(old_notes, new_notes, 1)
+          workflow.write_text(w)
+          PY
+
+      - name: Compile Android
+        run: gradle :app:compileReleaseKotlin -PnotcanArm64Only=true --stacktrace
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt .github/workflows/android-debug.yml
+          git commit -m "feat(tunot): improve concise answers and output formatting [0833 applied]"
+          git push origin HEAD:feature/tunot-quality-0833
