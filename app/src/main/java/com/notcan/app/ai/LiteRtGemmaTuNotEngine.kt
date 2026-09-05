@@ -231,7 +231,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                     firstMessage?.toString()?.takeIf { it.isNotEmpty() }?.let { delta ->
                         if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
                         output.append(delta)
-                        onPartial?.invoke(output.toString(), engineHolder.backendLabel)
+                        onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
                     }
 
                     for (message in messages) {
@@ -239,7 +239,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
                         if (delta.isNotEmpty()) {
                             if (firstTokenMs == 0L) firstTokenMs = (SystemClock.elapsedRealtime() - generationStartedAt).coerceAtLeast(0L)
                             output.append(delta)
-                            onPartial?.invoke(output.toString(), engineHolder.backendLabel)
+                            onPartial?.invoke(cleanModelText(output.toString()), engineHolder.backendLabel)
                         }
                     }
                 }
@@ -254,7 +254,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             )
         }
 
-        val text = output.toString().trim()
+        val text = cleanModelText(output.toString()).trim()
         if (text.isBlank()) {
             throw GenerationException(
                 backendLabel = engineHolder.backendLabel,
@@ -273,6 +273,17 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             promptChars = prompt.length
         )
         Answer(text = text, backendLabel = engineHolder.backendLabel)
+    }
+
+    private fun cleanModelText(raw: String): String {
+        if (raw.isBlank() || looksLikeStudyArtifact(raw)) return raw.trim()
+        return raw
+            .replace(Regex("""\$\s*\\text\{([^{}]+)}\s*\$""")) { it.groupValues[1] }
+            .replace(Regex("""\\text\{([^{}]+)}""")) { it.groupValues[1] }
+            .replace(Regex("""\\\(([^)\n]+)\\\)""")) { it.groupValues[1].trim() }
+            .replace(Regex("""\\\[([^\]\n]+)\\\]""")) { it.groupValues[1].trim() }
+            .replace(Regex("""\$\s*([^$\n]{1,120})\s*\$""")) { it.groupValues[1].trim() }
+            .trim()
     }
 
     /**
@@ -422,7 +433,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
         if (isBroadSourceRequest(question)) return "Extensión: desarrolla el recurso o resumen con la amplitud necesaria para cubrir bien el material, evitando solo la repetición."
         val simpleDefinition = n.length <= 100 && listOf("que es ", "define ", "explica el ", "explica la ").any(n::startsWith)
-        if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde con una explicación clara y completa en 2–4 párrafos breves; evita convertir una pregunta puntual en un ensayo."
+        if (simpleDefinition && !preferences.aiDetail.equals("Profundo", ignoreCase = true)) return "Extensión: responde en 1–2 párrafos breves (aprox. 60–140 palabras), sin apartados numerados salvo que se pidan. Define primero el término y añade solo la distinción o contexto esencial; evita convertir una pregunta puntual en un ensayo."
         if (isSourceOverviewRequest(question)) return "Extensión: ofrece una explicación completa y proporcionada a la fuente; no la reduzcas artificialmente."
 
         return when (preferences.aiDetail.lowercase()) {
@@ -526,8 +537,10 @@ class LiteRtGemmaTuNotEngine(context: Context) {
             appendLine("Preferencias del estudiante: ${preferences.aiInstructions}")
         }
         appendLine("No inventes citas, páginas, autores, fechas ni referencias.")
+        appendLine("Usa Markdown simple compatible con la interfaz. No uses LaTeX, delimitadores $...$, \\(...\\), \\[...\\] ni comandos como \\text{} salvo que el estudiante pida expresamente notación matemática; escribe términos y símbolos en texto normal siempre que sea posible.")
         appendLine("No muestres cadena de pensamiento ni razonamiento interno; entrega directamente la respuesta útil.")
         appendLine("En teología católica distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.")
+        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")
         if (pedagogicalMode) {
             appendLine("Actúa como pedagogo académico: ayuda a comprender, planificar, priorizar, practicar recuperación activa y elegir métodos de estudio concretos.")
             appendLine("No actúes como psicólogo ni hagas diagnósticos clínicos; mantente en el terreno del aprendizaje y la organización académica.")
