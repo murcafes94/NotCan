@@ -85,7 +85,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.29-performance-apk
+          name: notcan-v0.8.30-performance-metrics-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -96,12 +96,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.29-test"
+          TAG="v0.8.30-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.29.apk" \
+            "$APK#NotCan-v0.8.30.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.29 · arranque, navegación y calendarios" \
-            --notes "Build v0.8.29. Agrupa calendarios por cuenta y prioriza el calendario principal editable, elimina nombres placeholder de proveedores locales, incorpora Baseline/Startup Profiles y reduce observadores de datos pesados cuando Materias/TuNot no están visibles. Mantiene la caché controlada de v0.8.28 y Gemma 4 sobre LiteRT-LM 0.11.0."
+            --title "NotCan v0.8.30 · métricas de rendimiento reales" \
+            --notes "Build v0.8.30. Añade mediciones locales de arranque, apertura de materias, carga de Gemma, primer token, tiempo total y velocidad estimada, RAM PSS/heap, estado térmico Android y tiempos de transcripción. Whisper local separa conversión, carga del modelo e inferencia para localizar cuellos de botella. No envía telemetría ni contenido fuera del dispositivo. Mantiene Baseline/Startup Profiles, caché controlada y Gemma 4 sobre LiteRT-LM 0.11.0."
