@@ -57,20 +57,22 @@ jobs:
           assert 'val text = output.toString().trim()' in text, 'No se encontró el texto final de generación'
           text = text.replace('val text = output.toString().trim()', 'val text = cleanModelText(output.toString()).trim()', 1)
 
-          marker = '''    /**\n     * Builds a small local RAG context instead of blindly taking the tail of every source.\n'''
+          marker = '    /**\n     * Builds a small local RAG context instead of blindly taking the tail of every source.\n'
           assert marker in text, 'No se encontró el punto de inserción del limpiador'
-          cleaner = r'''    private fun cleanModelText(raw: String): String {
-        if (raw.isBlank() || looksLikeStudyArtifact(raw)) return raw.trim()
-        return raw
-            .replace(Regex("""\$\s*\\text\{([^{}]+)}\s*\$""")) { it.groupValues[1] }
-            .replace(Regex("""\\text\{([^{}]+)}""")) { it.groupValues[1] }
-            .replace(Regex("""\\\(([^)\n]+)\\\)""")) { it.groupValues[1].trim() }
-            .replace(Regex("""\\\[([^\]\n]+)\\\]""")) { it.groupValues[1].trim() }
-            .replace(Regex("""\$\s*([^$\n]{1,120})\s*\$""")) { it.groupValues[1].trim() }
-            .trim()
-    }
-
-'''
+          cleaner_lines = [
+              '    private fun cleanModelText(raw: String): String {',
+              '        if (raw.isBlank() || looksLikeStudyArtifact(raw)) return raw.trim()',
+              '        return raw',
+              '            .replace(Regex("""\\$\\s*\\\\text\\{([^{}]+)}\\s*\\$""")) { it.groupValues[1] }',
+              '            .replace(Regex("""\\\\text\\{([^{}]+)}""")) { it.groupValues[1] }',
+              '            .replace(Regex("""\\\\\\(([^)\\n]+)\\\\\\)""")) { it.groupValues[1].trim() }',
+              '            .replace(Regex("""\\\\\\[([^\\]\\n]+)\\\\\\]""")) { it.groupValues[1].trim() }',
+              '            .replace(Regex("""\\$\\s*([^$\\n]{1,120})\\s*\\$""")) { it.groupValues[1].trim() }',
+              '            .trim()',
+              '    }',
+              ''
+          ]
+          cleaner = '\n'.join(cleaner_lines) + '\n'
           text = text.replace(marker, cleaner + marker, 1)
           engine.write_text(text)
 
