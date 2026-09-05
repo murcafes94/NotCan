@@ -6,7 +6,6 @@ on:
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[0833 applied]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -29,9 +28,15 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Apply TuNot quality patch
+      - name: Apply, compile and commit TuNot quality tuning
         shell: bash
         run: |
+          set -euo pipefail
+          if git log -1 --pretty=%B | grep -q '\[0833 applied\]'; then
+            echo "v0.8.33 patch already applied; nothing to do."
+            exit 0
+          fi
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -88,12 +93,8 @@ jobs:
           workflow.write_text(w)
           PY
 
-      - name: Compile Android
-        run: gradle :app:compileReleaseKotlin -PnotcanArm64Only=true --stacktrace
+          gradle :app:compileReleaseKotlin -PnotcanArm64Only=true --stacktrace
 
-      - name: Commit validated changes
-        shell: bash
-        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt .github/workflows/android-debug.yml
