@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        lifecycleScope.launch(Dispatchers.IO) { StorageMaintenance.cleanupObsoleteAi(this@MainActivity) }
+        lifecycleScope.launch(Dispatchers.IO) { StorageMaintenance.runStartupMaintenance(this@MainActivity) }
 
         setContent {
             var darkTheme by remember { mutableStateOf(preferences.darkTheme) }

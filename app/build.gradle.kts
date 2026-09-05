@@ -48,7 +48,7 @@ val prepareTestKeystore by tasks.registering {
 tasks.matching { it.name == "preDebugBuild" || it.name == "preReleaseBuild" }.configureEach {
     dependsOn(fetchSherpaAar)
 }
-tasks.matching { it.name == "preDebugBuild" }.configureEach {
+tasks.matching { it.name == "preDebugBuild" || it.name == "preReleaseBuild" }.configureEach {
     dependsOn(prepareTestKeystore)
 }
 
@@ -60,8 +60,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.8.27"
+        versionCode = 51
+        versionName = "0.8.28"
         if (notcanArm64Only) {
             ndk { abiFilters += listOf("arm64-v8a") }
         }
@@ -87,6 +87,7 @@ android {
             signingConfig = signingConfigs.getByName("notcanTest")
         }
         release {
+            signingConfig = signingConfigs.getByName("notcanTest")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

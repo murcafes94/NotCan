@@ -79,8 +79,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Configuración defensiva: ninguna consulta al gestor de descargas debe poder cerrar
@@ -128,7 +130,12 @@ fun SettingsScreen(preferences: NotCanPreferences) {
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(8_000)
+            val downloading = withContext(Dispatchers.IO) {
+                runCatching { whisperManager.state() == WhisperModelState.DOWNLOADING }.getOrDefault(false) ||
+                    runCatching { liveManager.state() == LiveTranscriptionModelState.DOWNLOADING }.getOrDefault(false) ||
+                    runCatching { gemmaManager.state() == GemmaLiteRtModelState.DOWNLOADING }.getOrDefault(false)
+            }
+            delay(if (downloading) 1_500 else 30_000)
             refreshTick++
         }
     }
@@ -226,6 +233,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                 }
             }
         }
+
+        StoragePerformanceSection()
 
         Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
