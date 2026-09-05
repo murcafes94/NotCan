@@ -85,7 +85,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.31-adaptive-performance-apk
+          name: notcan-v0.8.32-gemma-latency-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -96,12 +96,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.31-test"
+          TAG="v0.8.32-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.31.apk" \
+            "$APK#NotCan-v0.8.32.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.31 · Gemma más eficiente" \
-            --notes "Build v0.8.31. Conserva los artefactos de aceleración de LiteRT fuera de la caché temporal, precarga Gemma al abrir TuNot cuando está seleccionado, reduce el contexto de preguntas focalizadas y libera el motor tras 10 minutos sin uso. Las métricas distinguen backend de carga y respuesta para detectar fallback GPU/CPU. Mantiene Groq/Whisper, Baseline/Startup Profiles y LiteRT-LM 0.11.0."
+            --title "NotCan v0.8.32 · TuNot con menor latencia" \
+            --notes "Build v0.8.32. Reduce el contexto local de consultas focalizadas sin recortar los modos de estudio amplios, reutiliza la detección de capacidades de Gemma entre arranques, precalienta Gemma también en modo Automático cuando no hay Mistral configurado y solapa la carga del motor con la preparación de apuntes y fuentes. Conserva GPU LiteRT-LM, caché persistente, liberación de RAM tras inactividad, Groq/Whisper y Baseline/Startup Profiles."

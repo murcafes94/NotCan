@@ -28,7 +28,10 @@ class NotCanAiService(private val context: Context) {
     }
 
     suspend fun warmLocalGemmaIfSelected(): String? {
-        if (preferences.aiEnginePreference != "Gemma 4 local") return null
+        val preference = preferences.aiEnginePreference
+        val shouldWarm = preference == "Gemma 4 local" ||
+            (preference == "Automático" && !isConfigured())
+        if (!shouldWarm || !localGemma.isAvailable()) return null
         return localGemma.warmUp()
     }
 

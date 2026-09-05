@@ -40,6 +40,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private val appContext = context.applicationContext
     private val modelManager = GemmaLiteRtModelManager(appContext)
     private val preferences = NotCanPreferences(appContext)
+    private val runtimePrefs = appContext.getSharedPreferences("notcan_gemma_runtime", Context.MODE_PRIVATE)
     private val mutex = Mutex()
     private val performanceMetrics = com.notcan.app.performance.PerformanceMetricsStore(appContext)
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -427,7 +428,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         return when (preferences.aiDetail.lowercase()) {
             "breve" -> "Extensión preferida: breve y directa. Resuelve la pregunta con pocas frases o párrafos, salvo que el usuario pida más."
             "profundo" -> "Extensión preferida: profunda. Desarrolla conceptos, relaciones, matices y ejemplos hasta que el tema quede bien explicado, sin repetición innecesaria."
-            else -> "Extensión preferida: equilibrada. Usa toda la extensión necesaria para explicar bien; sé breve en preguntas simples y desarrolla las complejas."
+            else -> "Extensión preferida: equilibrada. En una pregunta normal responde en 2–5 párrafos breves y detente cuando quede resuelta; amplía solo si la complejidad o la petición lo exige."
         }
     }
 
@@ -553,6 +554,32 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }
     }
 
+    private fun speculativeDecodingSupported(modelPath: String): Boolean {
+        val model = modelManager.modelFile()
+        val fingerprint = "${model.length()}:${model.lastModified()}"
+        val cachedFingerprint = runtimePrefs.getString(KEY_CAPABILITIES_FINGERPRINT, null)
+        if (
+            cachedFingerprint == fingerprint &&
+            runtimePrefs.contains(KEY_SPECULATIVE_DECODING_SUPPORTED)
+        ) {
+            return runtimePrefs.getBoolean(KEY_SPECULATIVE_DECODING_SUPPORTED, false)
+        }
+
+        var supported = false
+        val probeSucceeded = runCatching {
+            Capabilities(modelPath).use { capabilities ->
+                supported = capabilities.hasSpeculativeDecodingSupport()
+            }
+        }.isSuccess
+        if (probeSucceeded) {
+            runtimePrefs.edit()
+                .putString(KEY_CAPABILITIES_FINGERPRINT, fingerprint)
+                .putBoolean(KEY_SPECULATIVE_DECODING_SUPPORTED, supported)
+                .apply()
+        }
+        return supported
+    }
+
     @OptIn(ExperimentalApi::class)
     private suspend fun ensureEngineReady(): EngineHolder {
         holder?.let { return it }
@@ -561,12 +588,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
 
             val modelPath = modelManager.modelFile().absolutePath
             val gpuAttempt = runCatching {
-                var canUseSpeculative = false
-                runCatching {
-                    Capabilities(modelPath).use { capabilities ->
-                        canUseSpeculative = capabilities.hasSpeculativeDecodingSupport()
-                    }
-                }
+                val canUseSpeculative = speculativeDecodingSupported(modelPath)
                 ExperimentalFlags.enableSpeculativeDecoding = canUseSpeculative
                 try {
                     createEngine(modelPath, Backend.GPU()).also { it.initialize() }
@@ -613,17 +635,17 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     companion object {
         const val MODEL_LABEL = "Gemma 4 E2B · LiteRT-LM"
         private const val MAX_FOLLOW_UP_CHARS = 2_400
-        private const val MAX_WEB_CONTEXT_CHARS = 6_000
-        private const val MAX_VOCAB_CONTEXT_CHARS = 1_000
-        private const val MAX_BROAD_SOURCE_CHARS = 8_500
-        private const val MAX_ARTIFACT_SOURCE_CHARS = 5_200
-        private const val MAX_OVERVIEW_SOURCE_CHARS = 5_500
-        private const val MAX_FOCUSED_SOURCE_CHARS = 2_400
-        private const val SOURCE_CHUNK_CHARS = 1_000
-        private const val SOURCE_CHUNK_OVERLAP = 160
-        private const val BROAD_SELECTED_CHUNKS = 7
+        private const val MAX_WEB_CONTEXT_CHARS = 4_200
+        private const val MAX_VOCAB_CONTEXT_CHARS = 700
+        private const val MAX_BROAD_SOURCE_CHARS = 6_500
+        private const val MAX_ARTIFACT_SOURCE_CHARS = 4_800
+        private const val MAX_OVERVIEW_SOURCE_CHARS = 4_200
+        private const val MAX_FOCUSED_SOURCE_CHARS = 1_600
+        private const val SOURCE_CHUNK_CHARS = 800
+        private const val SOURCE_CHUNK_OVERLAP = 120
+        private const val BROAD_SELECTED_CHUNKS = 6
         private const val ARTIFACT_SELECTED_CHUNKS = 5
-        private const val OVERVIEW_SELECTED_CHUNKS = 5
+        private const val OVERVIEW_SELECTED_CHUNKS = 4
         private const val FOCUSED_SELECTED_CHUNKS = 2
         private const val MAX_ENGINE_TOKENS = 4_096
         private const val TOP_K = 30
@@ -633,6 +655,8 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         private const val GPU_FIRST_TOKEN_TIMEOUT_MS = 30_000L
         private const val ENGINE_IDLE_RELEASE_MS = 10L * 60L * 1_000L
         private const val MIN_USEFUL_PARTIAL_CHARS = 180
+        private const val KEY_CAPABILITIES_FINGERPRINT = "capabilities_fingerprint"
+        private const val KEY_SPECULATIVE_DECODING_SUPPORTED = "speculative_decoding_supported"
 
         private val SOURCE_STOP_WORDS = setOf(
             "para", "como", "una", "uno", "unos", "unas", "que", "con", "por", "del", "las", "los",
