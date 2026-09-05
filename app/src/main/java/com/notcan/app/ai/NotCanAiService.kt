@@ -74,6 +74,7 @@ class NotCanAiService(private val context: Context) {
         } else emptyList()
         val webContext = webResearch.formatForPrompt(webResults)
         val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
+        val hasLocalStudyMaterial = plainNotes.isNotBlank() || plainTranscript.isNotBlank() || vocabularyContext.isNotBlank()
 
         if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank() && vocabularyContext.isBlank()) {
             return "No hay apuntes, transcripciones ni vocabulario académico disponibles para responder en modo Solo mis fuentes."
@@ -136,7 +137,12 @@ class NotCanAiService(private val context: Context) {
 
         when (preferences.aiEnginePreference) {
             "Gemma 4 local" -> return localFallback(allowGemma = true)
-            "Local básico" -> return localFallback(allowGemma = false)
+            "Local básico" -> {
+                // El motor extractivo necesita fuentes. Sin fuentes y fuera de Solo mis fuentes,
+                // Gemma es el respaldo local útil aunque no haya Internet.
+                val shouldEscalateToGemma = !strictSources && !hasLocalStudyMaterial && localGemma.isAvailable()
+                return localFallback(allowGemma = shouldEscalateToGemma)
+            }
         }
 
         if (!isConfigured()) return localFallback()
