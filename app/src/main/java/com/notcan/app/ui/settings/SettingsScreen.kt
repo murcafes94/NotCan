@@ -171,6 +171,13 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             ?: calendarTargets.firstOrNull { it.isPrimary }?.id
             ?: calendarTargets.firstOrNull()?.id
     }
+    LaunchedEffect(calendarTargets, selectedCalendarId) {
+        if (calendarTargets.isNotEmpty() && calendarTargets.none { it.id == selectedCalendarId }) {
+            val fallback = automaticCalendarId ?: return@LaunchedEffect
+            selectedCalendarId = fallback
+            preferences.calendarId = fallback
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -229,7 +236,7 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                             label = { Text(target.label) }
                         )
                     }
-                    Text("Los eventos se guardan en el proveedor elegido y usan sus propias notificaciones. NotCan mantiene además su recordatorio académico.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    Text("Se muestra una entrada por cuenta. NotCan usa su calendario principal editable para evitar duplicados y mantiene además su recordatorio académico.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

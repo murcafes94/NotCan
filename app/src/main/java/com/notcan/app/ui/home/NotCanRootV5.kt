@@ -105,6 +105,7 @@ fun NotCanRootV5(
     darkTheme: Boolean = true,
     onToggleTheme: () -> Unit = {},
     onToggleDoNotDisturb: () -> Unit = {},
+    onPageChanged: (Int) -> Unit = {},
     onOpenSubjects: () -> Unit = {},
     onOpenClasses: () -> Unit = {},
     onOpenPlannedClass: (PlannedClassOccurrence) -> Unit,
@@ -135,6 +136,8 @@ fun NotCanRootV5(
         page = 0
         navExpanded = false
     }
+
+    LaunchedEffect(page) { onPageChanged(page) }
 
     LaunchedEffect(Unit) {
         while (true) {

@@ -108,18 +108,20 @@ class MainActivity : ComponentActivity() {
             var darkTheme by remember { mutableStateOf(preferences.darkTheme) }
             var subjectNavigationRequest by remember { mutableIntStateOf(0) }
             var classNavigationRequest by remember { mutableIntStateOf(0) }
+            var rootPage by remember { mutableIntStateOf(0) }
             NotCanTheme(darkTheme = darkTheme) {
                 val recordingState = RecordingService.state.collectAsStateWithLifecycle().value
                 val cycles = studyViewModel.cycles.collectAsStateWithLifecycle().value
                 val subjects = studyViewModel.subjects.collectAsStateWithLifecycle().value
                 val schedules = studyViewModel.schedules.collectAsStateWithLifecycle().value
                 val classes = studyViewModel.classes.collectAsStateWithLifecycle().value
-                val audioRecordings = studyViewModel.audioRecordings.collectAsStateWithLifecycle().value
-                val importantMoments = studyViewModel.importantMoments.collectAsStateWithLifecycle().value
-                val notePages = studyViewModel.notePages.collectAsStateWithLifecycle().value
-                val documents = studyViewModel.documents.collectAsStateWithLifecycle().value
-                val pdfInkStrokes = studyViewModel.pdfInkStrokes.collectAsStateWithLifecycle().value
-                val transcripts = studyViewModel.transcripts.collectAsStateWithLifecycle().value
+                val workspaceDataActive = rootPage == 1 || rootPage == 5
+                val audioRecordings = if (workspaceDataActive) studyViewModel.audioRecordings.collectAsStateWithLifecycle().value else emptyList()
+                val importantMoments = if (rootPage == 1) studyViewModel.importantMoments.collectAsStateWithLifecycle().value else emptyList()
+                val notePages = if (workspaceDataActive) studyViewModel.notePages.collectAsStateWithLifecycle().value else emptyList()
+                val documents = if (workspaceDataActive) studyViewModel.documents.collectAsStateWithLifecycle().value else emptyList()
+                val pdfInkStrokes = if (rootPage == 1) studyViewModel.pdfInkStrokes.collectAsStateWithLifecycle().value else emptyList()
+                val transcripts = if (workspaceDataActive) studyViewModel.transcripts.collectAsStateWithLifecycle().value else emptyList()
                 val selectedCycleId = studyViewModel.selectedCycleId.collectAsStateWithLifecycle().value
                 val selectedSubjectId = studyViewModel.selectedSubjectId.collectAsStateWithLifecycle().value
                 val selectedClassId = studyViewModel.selectedClassId.collectAsStateWithLifecycle().value
@@ -130,8 +132,8 @@ class MainActivity : ComponentActivity() {
                 val whisperModelState = studyViewModel.whisperModelState.collectAsStateWithLifecycle().value
                 val whisperModelProgress = studyViewModel.whisperModelProgress.collectAsStateWithLifecycle().value
                 val localWhisperError = studyViewModel.localWhisperError.collectAsStateWithLifecycle().value
-                val gradeItems = extrasViewModel.gradeItems.collectAsStateWithLifecycle().value
-                val detectedCues = extrasViewModel.detectedCues.collectAsStateWithLifecycle().value
+                val gradeItems = if (rootPage == 4) extrasViewModel.gradeItems.collectAsStateWithLifecycle().value else emptyList()
+                val detectedCues = if (workspaceDataActive) extrasViewModel.detectedCues.collectAsStateWithLifecycle().value else emptyList()
                 val taskItems = extrasViewModel.taskItems.collectAsStateWithLifecycle().value
 
                 LaunchedEffect(selectedCycleId, selectedSubjectId, selectedClassId) {
@@ -195,6 +197,7 @@ class MainActivity : ComponentActivity() {
                     darkTheme = darkTheme,
                     onToggleTheme = { darkTheme = !darkTheme; preferences.darkTheme = darkTheme },
                     onToggleDoNotDisturb = ::toggleDoNotDisturb,
+                    onPageChanged = { rootPage = it },
                     onOpenSubjects = { studyViewModel.openSubjects(); subjectNavigationRequest++ },
                     onOpenClasses = { classNavigationRequest++ },
                     onOpenPlannedClass = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },

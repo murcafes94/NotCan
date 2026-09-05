@@ -1,0 +1,5 @@
+Lcom/notcan/app/MainActivity;
+Lcom/notcan/app/ui/home/NotCanRootV5Kt;
+Lcom/notcan/app/ui/home/NotCanHomeScreenKt;
+Lcom/notcan/app/data/local/NotCanDatabase;
+Lcom/notcan/app/ui/NotCanViewModel;
