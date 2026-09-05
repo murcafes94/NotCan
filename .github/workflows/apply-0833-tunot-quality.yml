@@ -81,24 +81,12 @@ jobs:
           assert 'versionCode = 55' in g and 'versionName = "0.8.32"' in g
           g = g.replace('versionCode = 55', 'versionCode = 56', 1).replace('versionName = "0.8.32"', 'versionName = "0.8.33"', 1)
           gradle.write_text(g)
-
-          workflow = Path('.github/workflows/android-debug.yml')
-          w = workflow.read_text()
-          w = w.replace('notcan-v0.8.32-gemma-latency-apk', 'notcan-v0.8.33-tunot-quality-apk')
-          w = w.replace('v0.8.32-test', 'v0.8.33-test')
-          w = w.replace('NotCan-v0.8.32.apk', 'NotCan-v0.8.33.apk')
-          w = w.replace('NotCan v0.8.32 · TuNot con menor latencia', 'NotCan v0.8.33 · TuNot más preciso y proporcionado')
-          old_notes = 'Build v0.8.32. Reduce el contexto local de consultas focalizadas sin recortar los modos de estudio amplios, reutiliza la detección de capacidades de Gemma entre arranques, precalienta Gemma también en modo Automático cuando no hay Mistral configurado y solapa la carga del motor con la preparación de apuntes y fuentes. Conserva GPU LiteRT-LM, caché persistente, liberación de RAM tras inactividad, Groq/Whisper y Baseline/Startup Profiles.'
-          new_notes = 'Build v0.8.33. Mantiene las optimizaciones de latencia de v0.8.32 y mejora la calidad de TuNot: las definiciones simples son más proporcionadas, se evita LaTeX crudo en la interfaz, se limpia formato residual del modelo y se refuerzan distinciones teológicas patrísticas, trinitarias y cristológicas. Conserva GPU LiteRT-LM, caché persistente, liberación de RAM tras inactividad, RAG local, Groq/Whisper y Baseline/Startup Profiles.'
-          assert old_notes in w
-          w = w.replace(old_notes, new_notes, 1)
-          workflow.write_text(w)
           PY
 
           gradle :app:compileReleaseKotlin -PnotcanArm64Only=true --stacktrace
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt .github/workflows/android-debug.yml
+          git add app/build.gradle.kts app/src/main/java/com/notcan/app/ai/LiteRtGemmaTuNotEngine.kt
           git commit -m "feat(tunot): improve concise answers and output formatting [0833 applied]"
           git push origin HEAD:feature/tunot-quality-0833
