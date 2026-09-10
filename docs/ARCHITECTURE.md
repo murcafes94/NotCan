@@ -35,3 +35,15 @@ Se mantendrán dos conjuntos independientes:
 2. material de estudio y metadatos.
 
 La sincronización futura con PC será por entidades versionadas, no mediante una base SQLite compartida directamente.
+
+## TuNot Harness nativo
+
+Desde 0.8.36, la orquestación de TuNot se separa progresivamente del servicio monolítico mediante `ai/harness/TuNotHarness.kt`.
+
+- **ModelRegistry**: Mistral, Gemma 4 local y Local básico se describen como motores intercambiables.
+- **ToolRegistry**: apuntes, transcripciones, vocabulario y búsqueda web son herramientas registradas; calendario, calificaciones y documentos quedan preparados para conectarse sin reescribir el router.
+- **Policies**: conectividad, Solo mis fuentes, precisión académica católica y privacidad local forman parte explícita del plan de ejecución.
+- **ExecutionPlan**: el harness decide motor primario, fallback, herramientas permitidas y perfil de prompt según conectividad, fuentes y tipo de solicitud.
+
+La implementación es nativa Kotlin/Android y no incorpora runtimes Node/Electron al APK. El objetivo es conservar la inferencia LiteRT/GPU y permitir crecimiento modular.
+
