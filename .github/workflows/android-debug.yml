@@ -85,7 +85,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.35-online-adaptive-apk
+          name: notcan-v0.8.36-tunot-harness-phone-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -96,12 +96,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.35-test"
+          TAG="v0.8.36-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.35.apk" \
+            "$APK#NotCan-v0.8.36.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.35 · TuNot online adaptativo" \
-            --notes "Build v0.8.35. TuNot detecta Internet validado antes de elegir motor: Automático usa Mistral cuando está configurado y hay conexión; evita intentos online cuando no hay red y muestra online/offline en la etiqueta del motor. Gemma puede indicar además cuándo usó fuentes web. Las definiciones estables ya no disparan búsqueda web automática innecesaria, reduciendo contexto y latencia. El prompt local es adaptativo para preguntas simples y refuerza la distinción hipóstasis/ousia en teología trinitaria. Mantiene GPU LiteRT-LM, caché persistente, RAG local, liberación de RAM, Groq/Whisper y Baseline/Startup Profiles."
+            --title "NotCan v0.8.36 · TuNot Harness y ajustes en teléfono" \
+            --notes "Build v0.8.36. Primera fase del TuNot Harness nativo en Kotlin: registro de motores y herramientas, políticas explícitas, plan de ejecución y routing centralizado para Mistral, Gemma y Local básico sin añadir runtimes pesados al APK. En teléfonos, Configuración queda accesible desde la barra superior y desde Inicio/Accesos rápidos, manteniendo la barra inferior compacta. Conserva GPU LiteRT-LM, conectividad validada, RAG local, búsqueda web, caché persistente, liberación de RAM y Baseline/Startup Profiles."

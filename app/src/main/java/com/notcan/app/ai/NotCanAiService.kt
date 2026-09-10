@@ -1,8 +1,9 @@
 package com.notcan.app.ai
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import com.notcan.app.ai.harness.TuNotEngine
+import com.notcan.app.ai.harness.TuNotHarness
+import com.notcan.app.ai.harness.TuNotTool
 import android.text.Html
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.settings.NotCanPreferences
@@ -22,6 +23,7 @@ class NotCanAiService(private val context: Context) {
     private val credentials = MistralCredentialsStore(appContext)
     private val webResearch = WebResearchService(appContext)
     private val localGemma = LiteRtGemmaTuNotEngine(appContext)
+    private val harness = TuNotHarness(appContext)
 
     fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
 
@@ -30,10 +32,13 @@ class NotCanAiService(private val context: Context) {
     }
 
     suspend fun warmLocalGemmaIfSelected(): String? {
-        val preference = preferences.aiEnginePreference
-        val shouldWarm = preference == "Gemma 4 local" ||
-            (preference == "Automático" && (!isConfigured() || !hasValidatedInternet()))
-        if (!shouldWarm || !localGemma.isAvailable()) return null
+        val available = localGemma.isAvailable()
+        val shouldWarm = harness.shouldWarmGemma(
+            preference = preferences.aiEnginePreference,
+            mistralConfigured = isConfigured(),
+            gemmaAvailable = available
+        )
+        if (!shouldWarm || !available) return null
         return localGemma.warmUp()
     }
 
@@ -69,15 +74,25 @@ class NotCanAiService(private val context: Context) {
 
         val plainNotes = sourcePlainText(notes)
         val plainTranscript = sourcePlainText(transcript)
-        val internetAvailable = hasValidatedInternet()
-
-        val wantsWeb = internetAvailable && !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
+        val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
+        val webRequested = !strictSources && (forcedWeb || (autoWeb && WebResearchService.shouldAutoSearch(cleanQuestion)))
+        val executionPlan = harness.plan(
+            preference = preferences.aiEnginePreference,
+            mistralConfigured = isConfigured(),
+            gemmaAvailable = localGemma.isAvailable(),
+            hasNotes = plainNotes.isNotBlank(),
+            hasTranscript = plainTranscript.isNotBlank(),
+            hasVocabulary = vocabularyContext.isNotBlank(),
+            strictSources = strictSources,
+            question = cleanQuestion,
+            webRequested = webRequested,
+            artifactRequest = mapRequest || flashcardRequest || quizRequest
+        )
+        val wantsWeb = TuNotTool.WEB_RESEARCH in executionPlan.enabledTools
         val webResults = if (wantsWeb) {
             runCatching { webResearch.research(cleanQuestion, limit = 5, readTop = 3) }.getOrDefault(emptyList())
         } else emptyList()
         val webContext = webResearch.formatForPrompt(webResults)
-        val vocabularyContext = runCatching { loadVocabularyContext(subjectName, vocabularyRequested) }.getOrDefault("")
-        val hasLocalStudyMaterial = plainNotes.isNotBlank() || plainTranscript.isNotBlank() || vocabularyContext.isNotBlank()
 
         if (strictSources && plainNotes.isBlank() && plainTranscript.isBlank() && vocabularyContext.isBlank()) {
             return "No hay apuntes, transcripciones ni vocabulario académico disponibles para responder en modo Solo mis fuentes."
@@ -94,7 +109,7 @@ class NotCanAiService(private val context: Context) {
         )
 
         suspend fun localFallback(allowGemma: Boolean = true): String {
-            val connectivityLabel = if (internetAvailable) "online" else "offline"
+            val connectivityLabel = executionPlan.connectivityLabel
             val webUsageSuffix = if (webContext.isNotBlank()) " · web" else ""
             if (allowGemma && localGemma.isAvailable()) {
                 var lastGemmaPartial = ""
@@ -140,19 +155,11 @@ class NotCanAiService(private val context: Context) {
             return markEngine("Local básico · $connectivityLabel", basic)
         }
 
-        when (preferences.aiEnginePreference) {
-            "Gemma 4 local" -> return localFallback(allowGemma = true)
-            "Local básico" -> {
-                // El motor extractivo necesita fuentes. Sin fuentes y fuera de Solo mis fuentes,
-                // Gemma es el respaldo local útil aunque no haya Internet.
-                val shouldEscalateToGemma = !strictSources && !hasLocalStudyMaterial && localGemma.isAvailable()
-                return localFallback(allowGemma = shouldEscalateToGemma)
-            }
+        when (executionPlan.primaryEngine) {
+            TuNotEngine.GEMMA -> return localFallback(allowGemma = true)
+            TuNotEngine.LOCAL_BASIC -> return localFallback(allowGemma = false)
+            TuNotEngine.MISTRAL -> Unit
         }
-
-        // En Automático, no intentes una llamada Mistral cuando Android no tiene Internet validado.
-        // Si hay Internet y Mistral está configurado, Mistral sigue siendo el motor online preferido.
-        if (!isConfigured() || !internetAvailable) return localFallback()
 
         val sourceText = buildString {
             subjectName?.takeIf { it.isNotBlank() }?.let { appendLine("MATERIA: $it") }
@@ -319,17 +326,8 @@ class NotCanAiService(private val context: Context) {
         return try {
             markEngine("Mistral · online", sendToMistral(prompt))
         } catch (_: Throwable) {
-            localFallback()
+            localFallback(allowGemma = TuNotEngine.GEMMA in executionPlan.fallbackChain)
         }
-    }
-
-    private fun hasValidatedInternet(): Boolean {
-        val manager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
-        val network = manager.activeNetwork ?: return false
-        val capabilities = manager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun markEngine(engine: String, text: String): String =

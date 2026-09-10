@@ -215,6 +215,8 @@ fun NotCanRootV5(
                             onMenuExpanded = { menuExpanded = it },
                             subjectContextActive = subjectContextActive,
                             onOpenClasses = { page = 1; onOpenClasses() },
+                            showSettingsShortcut = false,
+                            onOpenSettings = { page = 6; navExpanded = false },
                             darkTheme = darkTheme,
                             onToggleTheme = onToggleTheme,
                             onToggleDoNotDisturb = onToggleDoNotDisturb
@@ -254,6 +256,8 @@ fun NotCanRootV5(
                         onMenuExpanded = { menuExpanded = it },
                         subjectContextActive = subjectContextActive,
                         onOpenClasses = { page = 1; onOpenClasses() },
+                        showSettingsShortcut = true,
+                        onOpenSettings = { page = 6 },
                         darkTheme = darkTheme,
                         onToggleTheme = onToggleTheme,
                         onToggleDoNotDisturb = onToggleDoNotDisturb
@@ -380,6 +384,9 @@ private fun HomeDashboard(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(cycle?.name ?: "Tu espacio académico en NotCan", color = NotCanGray)
+                }
+                IconButton(onClick = { onNavigate(6) }) {
+                    Icon(NotCanIcons.Settings, "Configuración", tint = NotCanBlue)
                 }
                 Surface(
                     color = if (recordingActive) NotCanBlue.copy(alpha = 0.18f) else NotCanSurface,
@@ -516,6 +523,7 @@ private fun HomeDashboard(
                 TextButton(onClick = { onNavigate(3) }) { Text("Calendario") }
                 TextButton(onClick = { onNavigate(4) }) { Text("Calificaciones") }
                 TextButton(onClick = { onNavigate(5) }) { Text("TuNot") }
+                TextButton(onClick = { onNavigate(6) }) { Text("Ajustes") }
             }
         }
     }
@@ -572,6 +580,8 @@ private fun NotCanTopBar(
     onMenuExpanded: (Boolean) -> Unit,
     subjectContextActive: Boolean,
     onOpenClasses: () -> Unit,
+    showSettingsShortcut: Boolean,
+    onOpenSettings: () -> Unit,
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
     onToggleDoNotDisturb: () -> Unit
@@ -595,8 +605,18 @@ private fun NotCanTopBar(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(title, color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                Text(
+                    title,
+                    color = NotCanOffWhite,
+                    style = if (showSettingsShortcut) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                    maxLines = 1
+                )
                 if (page == 5) Text("Tutor académico", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+            }
+            if (showSettingsShortcut && page != 6) {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(NotCanIcons.Settings, "Configuración", tint = NotCanBlue)
+                }
             }
             IconButton(onClick = onToggleDoNotDisturb) {
                 Icon(Icons.Default.NotificationsOff, "No molestar", tint = NotCanGray)
