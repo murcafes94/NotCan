@@ -6,13 +6,27 @@ package com.notcan.app.ai.harness
  */
 object TuNotPrivacyGuard {
     private val email = Regex("(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b")
-    private val phone = Regex("(?<!\\d)(?:\\+?\\d[\\d .()_-]{7,}\\d)(?!\\d)")
-    private val longIdentifier = Regex("(?<!\\d)\\d{10,18}(?!\\d)")
+    private val phone = Regex("(?<!\\d)(?:\\+\\d{1,3}[ .-]?)?(?:\\(?\\d{2,4}\\)?[ .-])\\d{3,4}[ .-]\\d{3,4}(?!\\d)")
+    private val longIdentifier = Regex("(?<![\\d/])\\d{10,18}(?![\\d/])")
+    private val url = Regex("https?://[^\\s)\\]}>]+", RegexOption.IGNORE_CASE)
 
-    fun sanitizeForRemote(text: String): String = text
-        .replace(email, "[EMAIL]")
-        .replace(phone, "[TELÉFONO]")
-        .replace(longIdentifier, "[IDENTIFICADOR]")
+    fun sanitizeForRemote(text: String): String {
+        if (text.isBlank()) return text
+        val protectedUrls = mutableListOf<String>()
+        var safe = url.replace(text) { match ->
+            val index = protectedUrls.size
+            protectedUrls += match.value
+            "__NOTCAN_URL_${index}__"
+        }
+        safe = safe
+            .replace(email, "[EMAIL]")
+            .replace(phone, "[TELÉFONO]")
+            .replace(longIdentifier, "[IDENTIFICADOR]")
+        protectedUrls.forEachIndexed { index, value ->
+            safe = safe.replace("__NOTCAN_URL_${index}__", value)
+        }
+        return safe
+    }
 }
 
 /**
