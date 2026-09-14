@@ -105,6 +105,8 @@ fun SettingsScreen(preferences: NotCanPreferences) {
     var assistantName by remember { mutableStateOf(preferences.assistantName) }
     var instructions by remember { mutableStateOf(preferences.aiInstructions) }
     var detail by remember { mutableStateOf(preferences.aiDetail) }
+    var academicProfile by remember { mutableStateOf(preferences.academicProfile) }
+    var protectRemotePii by remember { mutableStateOf(preferences.protectPersonalDataRemote) }
     var aiEngine by remember { mutableStateOf(preferences.aiEnginePreference) }
     var autoTranscribe by remember { mutableStateOf(preferences.autoTranscribeAfterRecording) }
     var preferOnlineTranscription by remember { mutableStateOf(preferences.preferOnlineTranscription) }
@@ -274,6 +276,47 @@ fun SettingsScreen(preferences: NotCanPreferences) {
                         }
                     }
                 }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = NotCanBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Perfil académico", color = NotCanOffWhite, fontWeight = FontWeight.SemiBold)
+                        Text("TuNot adapta lenguaje, profundidad y criterios según tu etapa de estudio.", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    listOf("Colegio", "Universidad").forEach { option ->
+                        FilterChip(
+                            selected = academicProfile == option,
+                            onClick = { academicProfile = option; preferences.academicProfile = option },
+                            label = { Text(option) }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    listOf("Seminario", "Personalizado").forEach { option ->
+                        FilterChip(
+                            selected = academicProfile == option,
+                            onClick = { academicProfile = option; preferences.academicProfile = option },
+                            label = { Text(option) }
+                        )
+                    }
+                }
+                Text(
+                    when (academicProfile) {
+                        "Colegio" -> "Explicaciones guiadas, ejemplos y lenguaje accesible."
+                        "Seminario" -> "Nivel superior con especialización teológica y filosófica cuando la materia lo requiera."
+                        "Personalizado" -> "TuNot se guía principalmente por la materia y tus instrucciones propias."
+                        else -> "Rigor universitario, análisis, investigación y metodología académica."
+                    },
+                    color = NotCanGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
 
@@ -565,6 +608,12 @@ fun SettingsScreen(preferences: NotCanPreferences) {
             }
         }
 
+        SettingsSwitch(
+            title = "Privacidad al usar IA online",
+            subtitle = "Antes de enviar contenido a un proveedor remoto, NotCan oculta correos, teléfonos e identificadores largos detectados con alta confianza.",
+            checked = protectRemotePii,
+            onCheckedChange = { protectRemotePii = it; preferences.protectPersonalDataRemote = it }
+        )
         SettingsSwitch(
             title = "Transcribir al terminar",
             subtitle = "Al detener la grabación, usa Groq online si está configurado; sin Internet intenta Whisper local.",

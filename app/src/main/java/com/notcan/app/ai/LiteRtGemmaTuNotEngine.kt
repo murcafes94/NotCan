@@ -11,6 +11,8 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.notcan.app.ai.harness.AcademicContextResolver
+import com.notcan.app.ai.harness.SubjectDomain
 import com.notcan.app.localai.GemmaLiteRtModelManager
 import com.notcan.app.localai.GemmaLiteRtModelState
 import com.notcan.app.localai.GemmaRuntimeCache
@@ -161,7 +163,7 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }
 
         val conversationConfig = ConversationConfig(
-            systemInstruction = Contents.of(buildAdaptiveSystemInstruction(strictSources, pedagogicalMode, intentQuestion)),
+            systemInstruction = Contents.of(buildAdaptiveSystemInstruction(strictSources, pedagogicalMode, intentQuestion, subjectName)),
             samplerConfig = SamplerConfig(
                 topK = TOP_K,
                 topP = TOP_P,
@@ -600,20 +602,23 @@ class LiteRtGemmaTuNotEngine(context: Context) {
     private fun buildAdaptiveSystemInstruction(
         strictSources: Boolean,
         pedagogicalMode: Boolean,
-        question: String
+        question: String,
+        subjectName: String?
     ): String {
-        if (!isSimpleDefinition(question)) return buildSystemInstruction(strictSources, pedagogicalMode)
+        val academicContext = AcademicContextResolver.resolve(preferences.academicProfile, subjectName, question)
+        if (!isSimpleDefinition(question)) return buildSystemInstruction(strictSources, pedagogicalMode, academicContext)
 
         return buildString {
-            appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
+            appendLine("Eres TuNot, tutor académico adaptable de NotCan ejecutándose completamente en el dispositivo.")
+            appendLine(academicContext.promptBlock())
             appendLine("Responde en español claro, natural y preciso. Para una definición puntual responde en 1–2 párrafos breves y detente.")
             appendLine("No inventes citas, páginas, autores, fechas ni referencias. No muestres razonamiento interno.")
             appendLine("Usa Markdown simple y no uses LaTeX salvo que el estudiante lo pida.")
             if (preferences.aiInstructions.isNotBlank()) {
                 appendLine("Preferencias del estudiante: ${preferences.aiInstructions}")
             }
-            if (isTheologicalPrecisionQuery(question)) {
-                appendLine("En teología católica usa terminología patrística, trinitaria y cristológica con precisión.")
+            if (academicContext.domain == SubjectDomain.THEOLOGY || isTheologicalPrecisionQuery(question)) {
+                appendLine("En cuestiones teológicas identifica el marco o tradición cuando sea relevante y usa terminología patrística, trinitaria y cristológica con precisión.")
                 appendLine("En la formulación trinitaria madura no presentes hipóstasis como sinónimo de ousia: una única ousia o naturaleza divina y tres hipóstasis o Personas realmente distintas y consustanciales.")
                 appendLine("Si mencionas que hypostasis y ousia tuvieron usos históricos solapados, indícalo explícitamente como una cuestión histórica de terminología y no como equivalencia doctrinal trinitaria.")
                 appendLine("En cristología: Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")
@@ -627,8 +632,13 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         }.trim()
     }
 
-    private fun buildSystemInstruction(strictSources: Boolean, pedagogicalMode: Boolean): String = buildString {
-        appendLine("Eres TuNot, tutor académico de NotCan ejecutándose completamente en el dispositivo.")
+    private fun buildSystemInstruction(
+        strictSources: Boolean,
+        pedagogicalMode: Boolean,
+        academicContext: com.notcan.app.ai.harness.TuNotAcademicContext
+    ): String = buildString {
+        appendLine("Eres TuNot, tutor académico adaptable de NotCan ejecutándose completamente en el dispositivo.")
+        appendLine(academicContext.promptBlock())
         appendLine("Responde en español claro, natural, preciso y útil para estudiar.")
         appendLine("Adapta la extensión a lo que se pregunta. Las definiciones y preguntas puntuales deben ser breves por defecto, incluso si el nivel general es Profundo; amplía solo cuando el estudiante lo pida. Las tareas de desarrollo, síntesis o estudio amplio sí pueden ser extensas.")
         appendLine("Responde siempre a la pregunta actual; no repitas una respuesta anterior si ya no corresponde al tema preguntado.")
@@ -639,10 +649,12 @@ class LiteRtGemmaTuNotEngine(context: Context) {
         appendLine("No inventes citas, páginas, autores, fechas ni referencias.")
         appendLine("Usa Markdown simple compatible con la interfaz. No uses LaTeX, delimitadores $...$, \\(...\\), \\[...\\] ni comandos como \\text{} salvo que el estudiante pida expresamente notación matemática; escribe términos y símbolos en texto normal siempre que sea posible.")
         appendLine("No muestres cadena de pensamiento ni razonamiento interno; entrega directamente la respuesta útil.")
-        appendLine("En teología católica distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica.")
-        appendLine("En terminología patrística, trinitaria y cristológica conserva con rigor las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis o persona con esencia o naturaleza. Si una equivalencia es discutida o depende del autor/época, indícalo con prudencia.")
-        appendLine("En teología trinitaria católica no describas al Padre, al Hijo y al Espíritu Santo como tres modos, manifestaciones o formas en que se presenta una sola persona. Formula con precisión: una única esencia o naturaleza divina (ousia) y tres Personas o hipóstasis realmente distintas y consustanciales; la distinción personal no divide la esencia divina.")
-        appendLine("Cuando expliques hipóstasis, distingue sus usos filosófico/patrístico, trinitario y cristológico. En cristología, Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")
+        if (academicContext.domain == SubjectDomain.THEOLOGY) {
+            appendLine("En teología distingue enseñanza oficial, disciplina, opinión teológica e interpretación académica cuando corresponda al marco de la pregunta.")
+            appendLine("En terminología patrística, trinitaria y cristológica conserva las distinciones entre naturaleza/esencia (ousia, physis), hipóstasis/persona y prosopon; no identifiques sin más hipóstasis con esencia o naturaleza.")
+            appendLine("En teología trinitaria católica no describas al Padre, al Hijo y al Espíritu Santo como tres modos o manifestaciones de una sola persona: una única esencia divina y tres Personas o hipóstasis realmente distintas y consustanciales.")
+            appendLine("Cuando expliques hipóstasis, distingue sus usos filosófico/patrístico, trinitario y cristológico. En cristología católica, Jesucristo es una sola Persona o hipóstasis, la del Verbo, en dos naturalezas, divina y humana, sin confusión ni división.")
+        }
         if (pedagogicalMode) {
             appendLine("Actúa como pedagogo académico: ayuda a comprender, planificar, priorizar, practicar recuperación activa y elegir métodos de estudio concretos.")
             appendLine("No actúes como psicólogo ni hagas diagnósticos clínicos; mantente en el terreno del aprendizaje y la organización académica.")

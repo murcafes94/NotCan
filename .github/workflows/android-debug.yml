@@ -49,6 +49,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -85,7 +86,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v0.8.36-tunot-harness-phone-apk
+          name: notcan-v1.0.0-academic-platform-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -96,12 +97,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v0.8.36-test"
+          TAG="v1.0.0-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v0.8.36.apk" \
+            "$APK#NotCan-v1.0.0.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan v0.8.36 · TuNot Harness y ajustes en teléfono" \
-            --notes "Build v0.8.36. Primera fase del TuNot Harness nativo en Kotlin: registro de motores y herramientas, políticas explícitas, plan de ejecución y routing centralizado para Mistral, Gemma y Local básico sin añadir runtimes pesados al APK. En teléfonos, Configuración queda accesible desde la barra superior y desde Inicio/Accesos rápidos, manteniendo la barra inferior compacta. Conserva GPU LiteRT-LM, conectividad validada, RAG local, búsqueda web, caché persistente, liberación de RAM y Baseline/Startup Profiles."
+            --title "NotCan 1.0 · Plataforma académica adaptable" \
+            --notes "NotCan 1.0 amplía TuNot de un asistente centrado en seminario a una plataforma académica adaptable para Colegio, Universidad, Seminario y uso Personalizado. El TuNot Harness detecta dominios de estudio y aplica instrucciones específicas; el routing conserva Mistral, Gemma 4 local y Local básico con fallbacks. Se añade protección de datos antes de IA remota, control de URLs recuperadas para reducir citas inventadas y una base de evaluación de calidad inspirada en sistemas Arena sin ejecutar un segundo LLM en cada respuesta. Mantiene LiteRT-LM por GPU/CPU, RAG local, búsqueda web, transcripción Groq/Whisper, acceso de Configuración en teléfonos, caché persistente y Baseline/Startup Profiles."

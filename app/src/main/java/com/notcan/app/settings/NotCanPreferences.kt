@@ -6,15 +6,25 @@ class NotCanPreferences(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     var assistantName: String
-        get() = prefs.getString(KEY_ASSISTANT_NAME, "Asistente NotCan") ?: "Asistente NotCan"
-        set(value) = prefs.edit().putString(KEY_ASSISTANT_NAME, value.trim().ifBlank { "Asistente NotCan" }).apply()
+        get() = prefs.getString(KEY_ASSISTANT_NAME, "TuNot") ?: "TuNot"
+        set(value) = prefs.edit().putString(KEY_ASSISTANT_NAME, value.trim().ifBlank { "TuNot" }).apply()
 
     var aiInstructions: String
         get() = prefs.getString(
             KEY_AI_INSTRUCTIONS,
-            "Responde en español claro, natural y académico. Adapta la profundidad a lo que pregunte el usuario y prioriza comprender, relacionar y explicar antes que repetir información. No limites la respuesta a apuntes, transcripciones o archivos salvo que se active 'Solo mis fuentes' o el usuario lo pida expresamente; usa el material de clase como apoyo cuando sea pertinente. Puedes complementar con conocimiento general fiable cuando ayude a responder mejor. En teología distingue con precisión doctrina, disciplina, opinión teológica e interpretación académica. Si faltan datos o existe incertidumbre, indícalo. No inventes citas, autores, páginas ni referencias."
+            "Responde en español claro, natural y académico. Adapta la profundidad al nivel, la materia y la pregunta. Prioriza comprender, relacionar y explicar antes que repetir información. No limites la respuesta a apuntes, transcripciones o archivos salvo que se active 'Solo mis fuentes' o el usuario lo pida expresamente; usa el material de clase como apoyo cuando sea pertinente. Puedes complementar con conocimiento general fiable cuando ayude a responder mejor. Si faltan datos o existe incertidumbre, indícalo. No inventes citas, autores, páginas ni referencias."
         ) ?: ""
         set(value) = prefs.edit().putString(KEY_AI_INSTRUCTIONS, value.trim()).apply()
+
+    /** Nivel pedagógico base de TuNot. El dominio concreto se detecta por materia y pregunta. */
+    var academicProfile: String
+        get() = prefs.getString(KEY_ACADEMIC_PROFILE, "Universidad") ?: "Universidad"
+        set(value) = prefs.edit().putString(KEY_ACADEMIC_PROFILE, value).apply()
+
+    /** Redacta patrones personales de alta confianza antes de enviar prompts a proveedores remotos. */
+    var protectPersonalDataRemote: Boolean
+        get() = prefs.getBoolean(KEY_PROTECT_REMOTE_PII, true)
+        set(value) = prefs.edit().putBoolean(KEY_PROTECT_REMOTE_PII, value).apply()
 
     var aiDetail: String
         get() = prefs.getString(KEY_AI_DETAIL, "Equilibrado") ?: "Equilibrado"
@@ -69,6 +79,8 @@ class NotCanPreferences(context: Context) {
         private const val PREFS_NAME = "notcan_preferences"
         private const val KEY_ASSISTANT_NAME = "assistant_name"
         private const val KEY_AI_INSTRUCTIONS = "ai_instructions"
+        private const val KEY_ACADEMIC_PROFILE = "academic_profile"
+        private const val KEY_PROTECT_REMOTE_PII = "protect_remote_pii"
         private const val KEY_AI_DETAIL = "ai_detail"
         private const val KEY_AI_ENGINE = "ai_engine_preference"
         private const val KEY_LAST_LFM_ERROR = "last_lfm_error" // migration only

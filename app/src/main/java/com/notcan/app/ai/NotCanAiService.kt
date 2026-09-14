@@ -1,8 +1,11 @@
 package com.notcan.app.ai
 
 import android.content.Context
+import com.notcan.app.ai.harness.TuNotCitationGuard
 import com.notcan.app.ai.harness.TuNotEngine
 import com.notcan.app.ai.harness.TuNotHarness
+import com.notcan.app.ai.harness.TuNotPolicy
+import com.notcan.app.ai.harness.TuNotPrivacyGuard
 import com.notcan.app.ai.harness.TuNotTool
 import android.text.Html
 import com.notcan.app.data.local.NotCanDatabase
@@ -86,7 +89,9 @@ class NotCanAiService(private val context: Context) {
             strictSources = strictSources,
             question = cleanQuestion,
             webRequested = webRequested,
-            artifactRequest = mapRequest || flashcardRequest || quizRequest
+            artifactRequest = mapRequest || flashcardRequest || quizRequest,
+            academicProfile = preferences.academicProfile,
+            subjectName = subjectName
         )
         val wantsWeb = TuNotTool.WEB_RESEARCH in executionPlan.enabledTools
         val webResults = if (wantsWeb) {
@@ -174,20 +179,21 @@ class NotCanAiService(private val context: Context) {
         }.takeLast(MAX_SOURCE_CHARS)
 
         val prompt = buildString {
-            appendLine("CONTEXTO DE NOTCAN")
-            appendLine("TuNot es un tutor académico católico orientado principalmente a teología, filosofía, Sagrada Escritura y derecho canónico.")
-            appendLine("Su objetivo es ayudar a estudiar con rigor, fidelidad doctrinal y claridad pedagógica; no debe responder como un asistente religioso genérico.")
+            appendLine("CONTEXTO DE NOTCAN 1.0")
+            appendLine("TuNot es un tutor académico adaptable para colegio, universidad, seminario y estudio personalizado.")
+            appendLine(executionPlan.academicContext.promptBlock())
             appendLine("Nivel de detalle preferido: ${preferences.aiDetail}.")
             if (preferences.aiInstructions.isNotBlank()) appendLine("Preferencias del usuario: ${preferences.aiInstructions}")
             appendLine("No muestres cadena de pensamiento, reflexiones internas ni monólogos. Entrega directamente el resultado útil.")
             appendLine("No inventes citas, páginas, autores, fechas, referencias ni afirmaciones ausentes de las fuentes.")
             appendLine("Si el usuario indica que puede haber un error, no inventes una corrección: corrige solo cuando tengas fundamento suficiente.")
-            appendLine("Cuando una cuestión sea doctrinal, distingue con precisión entre: enseñanza oficial de la Iglesia, disciplina eclesiástica vigente, opinión teológica e interpretación académica.")
-            appendLine("Si existe tensión entre una formulación secundaria y una fuente oficial de la Iglesia, da prioridad a la fuente oficial.")
+            if (TuNotPolicy.CATHOLIC_ACADEMIC in executionPlan.policies) {
+                appendLine("Cuando una cuestión sea doctrinal católica, distingue entre enseñanza oficial, disciplina vigente, opinión teológica e interpretación académica.")
+                appendLine("Si existe tensión entre una formulación secundaria y una fuente oficial de la Iglesia, da prioridad a la fuente oficial.")
+                appendLine(TuNotCatholicSourcePolicy.promptPolicy())
+            }
             appendLine("Para respuestas normales usa Markdown simple y limpio: títulos breves, listas con guion, negrita para conceptos clave y párrafos separados. Evita tablas salvo que sean imprescindibles.")
             appendLine("No abuses de comillas, asteriscos ni encabezados. La respuesta debe verse como apuntes bien editados, no como texto técnico del modelo.")
-            appendLine()
-            appendLine(TuNotCatholicSourcePolicy.promptPolicy())
             if (pedagogicalMode) {
                 appendLine("MODO PEDAGOGO ACADÉMICO ACTIVADO.")
                 appendLine("Ayuda a aprender, planificar, priorizar y elegir técnicas de estudio. Sé práctico y ajusta el plan a la carga del estudiante.")
@@ -324,7 +330,14 @@ class NotCanAiService(private val context: Context) {
         }
 
         return try {
-            markEngine("Mistral · online", sendToMistral(prompt))
+            val remotePrompt = if (preferences.protectPersonalDataRemote) {
+                TuNotPrivacyGuard.sanitizeForRemote(prompt)
+            } else prompt
+            val rawAnswer = sendToMistral(remotePrompt)
+            val groundedAnswer = if (wantsWeb) {
+                TuNotCitationGuard.enforceRetrievedUrls(rawAnswer, webResults.map { it.url }.toSet())
+            } else rawAnswer
+            markEngine("Mistral · online", groundedAnswer)
         } catch (_: Throwable) {
             localFallback(allowGemma = TuNotEngine.GEMMA in executionPlan.fallbackChain)
         }
