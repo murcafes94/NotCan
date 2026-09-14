@@ -9,9 +9,9 @@ import java.util.Locale
 /**
  * Native orchestration core for TuNot.
  *
- * The goal is to keep model selection, tool availability and policy decisions outside the UI and
- * outside individual provider implementations. New model adapters or tools can be registered without
- * turning NotCanAiService into a monolithic router.
+ * Model selection, academic adaptation, tool availability and policy decisions live here instead of
+ * being scattered across the UI or provider implementations. New adapters and tools can be registered
+ * without turning NotCanAiService into a monolithic router.
  */
 enum class TuNotEngine {
     MISTRAL,
@@ -33,7 +33,9 @@ enum class TuNotPolicy {
     CONNECTIVITY,
     SOURCE_ONLY,
     CATHOLIC_ACADEMIC,
-    LOCAL_PRIVACY
+    LOCAL_PRIVACY,
+    ACADEMIC_ADAPTATION,
+    CITATION_GROUNDING
 }
 
 enum class TuNotPromptProfile {
@@ -87,7 +89,9 @@ data class TuNotExecutionPlan(
     val enabledTools: Set<TuNotTool>,
     val policies: Set<TuNotPolicy>,
     val promptProfile: TuNotPromptProfile,
-    val internetValidated: Boolean
+    val internetValidated: Boolean,
+    val academicContext: TuNotAcademicContext,
+    val routingReason: String
 ) {
     val connectivityLabel: String
         get() = if (internetValidated) "online" else "offline"
@@ -128,10 +132,13 @@ class TuNotHarness(context: Context) {
         strictSources: Boolean,
         question: String,
         webRequested: Boolean,
-        artifactRequest: Boolean
+        artifactRequest: Boolean,
+        academicProfile: String = "Universidad",
+        subjectName: String? = null
     ): TuNotExecutionPlan {
         val internet = internetValidated()
         val hasLocalMaterial = hasNotes || hasTranscript || hasVocabulary
+        val academicContext = AcademicContextResolver.resolve(academicProfile, subjectName, question)
 
         val enabledTools = linkedSetOf<TuNotTool>()
         if (hasNotes) enabledTools += TuNotTool.NOTES
@@ -151,10 +158,23 @@ class TuNotHarness(context: Context) {
                 else TuNotEngine.LOCAL_BASIC
             }
             else -> {
-                if (mistralConfigured && internet) TuNotEngine.MISTRAL
-                else if (gemmaAvailable) TuNotEngine.GEMMA
-                else TuNotEngine.LOCAL_BASIC
+                when {
+                    webRequested && mistralConfigured && internet -> TuNotEngine.MISTRAL
+                    strictSources && hasLocalMaterial && gemmaAvailable -> TuNotEngine.GEMMA
+                    mistralConfigured && internet -> TuNotEngine.MISTRAL
+                    gemmaAvailable -> TuNotEngine.GEMMA
+                    else -> TuNotEngine.LOCAL_BASIC
+                }
             }
+        }
+
+        val routingReason = when {
+            preference != "Automático" -> "motor forzado por el usuario"
+            webRequested && primary == TuNotEngine.MISTRAL -> "consulta web con proveedor online"
+            strictSources && hasLocalMaterial && primary == TuNotEngine.GEMMA -> "fuentes locales y privacidad"
+            primary == TuNotEngine.MISTRAL -> "online disponible y Mistral configurado"
+            primary == TuNotEngine.GEMMA -> "modelo local disponible"
+            else -> "respaldo local básico"
         }
 
         val fallbackChain = when (primary) {
@@ -166,9 +186,16 @@ class TuNotHarness(context: Context) {
             TuNotEngine.LOCAL_BASIC -> emptyList()
         }
 
-        val policies = linkedSetOf(TuNotPolicy.CONNECTIVITY, TuNotPolicy.LOCAL_PRIVACY)
+        val policies = linkedSetOf(
+            TuNotPolicy.CONNECTIVITY,
+            TuNotPolicy.LOCAL_PRIVACY,
+            TuNotPolicy.ACADEMIC_ADAPTATION
+        )
         if (strictSources) policies += TuNotPolicy.SOURCE_ONLY
-        if (isCatholicAcademicQuestion(question)) policies += TuNotPolicy.CATHOLIC_ACADEMIC
+        if (academicContext.domain == SubjectDomain.THEOLOGY || isCatholicAcademicQuestion(question)) {
+            policies += TuNotPolicy.CATHOLIC_ACADEMIC
+        }
+        if (TuNotTool.WEB_RESEARCH in enabledTools) policies += TuNotPolicy.CITATION_GROUNDING
 
         val promptProfile = when {
             strictSources -> TuNotPromptProfile.SOURCE_ONLY
@@ -183,7 +210,9 @@ class TuNotHarness(context: Context) {
             enabledTools = enabledTools,
             policies = policies,
             promptProfile = promptProfile,
-            internetValidated = internet
+            internetValidated = internet,
+            academicContext = academicContext,
+            routingReason = routingReason
         )
     }
 
