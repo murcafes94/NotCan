@@ -16,8 +16,112 @@ import java.util.concurrent.ConcurrentHashMap
 enum class ModelProviderId {
     MISTRAL_AGENT,
     GEMMA_LOCAL,
+    MINICPM5_LOCAL,
+    MINICPM_V_LOCAL,
     LOCAL_BASIC,
     OPENAI_COMPATIBLE
+}
+
+enum class ProviderCapability {
+    TEXT_GENERATION,
+    REASONING,
+    TOOL_CALLING,
+    STREAMING,
+    VISION,
+    VIDEO,
+    LOCAL_EXECUTION
+}
+
+data class ModelProviderDescriptor(
+    val id: ModelProviderId,
+    val label: String,
+    val local: Boolean,
+    val experimental: Boolean,
+    val capabilities: Set<ProviderCapability>
+)
+
+/**
+ * Capability catalogue used by the Harness to evolve from provider-name routing toward capability
+ * routing. MiniCPM entries are experimental until their Android runtimes pass NotCan Bench.
+ */
+object ModelProviderCatalog {
+    val providers: List<ModelProviderDescriptor> = listOf(
+        ModelProviderDescriptor(
+            id = ModelProviderId.MISTRAL_AGENT,
+            label = "Mistral Agent",
+            local = false,
+            experimental = false,
+            capabilities = setOf(
+                ProviderCapability.TEXT_GENERATION,
+                ProviderCapability.REASONING,
+                ProviderCapability.TOOL_CALLING
+            )
+        ),
+        ModelProviderDescriptor(
+            id = ModelProviderId.GEMMA_LOCAL,
+            label = "Gemma 4 local",
+            local = true,
+            experimental = false,
+            capabilities = setOf(
+                ProviderCapability.TEXT_GENERATION,
+                ProviderCapability.REASONING,
+                ProviderCapability.STREAMING,
+                ProviderCapability.LOCAL_EXECUTION
+            )
+        ),
+        ModelProviderDescriptor(
+            id = ModelProviderId.MINICPM5_LOCAL,
+            label = "MiniCPM5 local",
+            local = true,
+            experimental = true,
+            capabilities = setOf(
+                ProviderCapability.TEXT_GENERATION,
+                ProviderCapability.REASONING,
+                ProviderCapability.TOOL_CALLING,
+                ProviderCapability.STREAMING,
+                ProviderCapability.LOCAL_EXECUTION
+            )
+        ),
+        ModelProviderDescriptor(
+            id = ModelProviderId.MINICPM_V_LOCAL,
+            label = "MiniCPM-V local",
+            local = true,
+            experimental = true,
+            capabilities = setOf(
+                ProviderCapability.TEXT_GENERATION,
+                ProviderCapability.VISION,
+                ProviderCapability.VIDEO,
+                ProviderCapability.STREAMING,
+                ProviderCapability.LOCAL_EXECUTION
+            )
+        ),
+        ModelProviderDescriptor(
+            id = ModelProviderId.LOCAL_BASIC,
+            label = "Local básico",
+            local = true,
+            experimental = false,
+            capabilities = setOf(
+                ProviderCapability.TEXT_GENERATION,
+                ProviderCapability.LOCAL_EXECUTION
+            )
+        ),
+        ModelProviderDescriptor(
+            id = ModelProviderId.OPENAI_COMPATIBLE,
+            label = "Endpoint OpenAI-compatible",
+            local = false,
+            experimental = true,
+            capabilities = setOf(
+                ProviderCapability.TEXT_GENERATION,
+                ProviderCapability.STREAMING
+            )
+        )
+    )
+
+    fun descriptor(id: ModelProviderId): ModelProviderDescriptor =
+        providers.first { it.id == id }
+
+    fun providersWith(capability: ProviderCapability): List<ModelProviderDescriptor> =
+        providers.filter { capability in it.capabilities }
 }
 
 enum class ProviderFailureKind {
