@@ -9,6 +9,7 @@ Cada clase mantiene unidos sus recursos: audio, transcripción, apuntes, documen
 ## Principios
 
 - **Local-first:** grabación, edición, maquetación, biblioteca y anotación deben seguir funcionando sin Internet.
+- **Núcleo sin pago obligatorio:** las funciones esenciales no deben depender de suscripciones, créditos ni APIs que puedan convertir el uso normal de NotCan en un servicio de pago. Los proveedores remotos solo pueden ser opcionales y sustituibles.
 - **IA híbrida:** la asistencia inteligente puede usar servicios online y, cuando el dispositivo lo permita, modelos locales opcionales.
 - **Grabación segura:** el audio local es la fuente principal; una transcripción en vivo nunca debe interrumpir ni comprometer la grabación.
 - **Tablet-first en Android:** interfaz optimizada para pantallas grandes y stylus/pencil.
@@ -48,6 +49,12 @@ Mientras el backend no esté configurado, la web continúa funcionando de forma 
 5. Implementar resolución explícita de conflictos para contenido editado en dos dispositivos.
 6. Extender sincronización a horarios, transcripciones, mapas, marcadores y anotaciones.
 7. Definir Storage para documentos y una política separada/opt-in para audios pesados.
+
+El backend hospedado no puede convertirse en condición para acceder a datos locales. Si un proveedor cambia cuotas o precios, NotCan debe conservar exportación, almacenamiento local y una ruta de migración/reemplazo.
+
+## Roadmap
+
+Las mejoras aceptadas y priorizadas —con énfasis en funciones locales, abiertas y sin coste obligatorio futuro— se mantienen en `docs/ROADMAP.md`.
 
 ## Licencias de terceros
 
