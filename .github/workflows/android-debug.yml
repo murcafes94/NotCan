@@ -62,6 +62,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Run release unit tests
+        run: gradle :app:testReleaseUnitTest -PnotcanArm64Only=true --stacktrace
+
       - name: Build optimized release APK
         run: gradle :app:assembleRelease -PnotcanArm64Only=true --stacktrace
 
@@ -86,7 +89,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v1.0.0-academic-platform-apk
+          name: notcan-v1.0.1-provider-gateway-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -97,12 +100,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v1.0.0-test"
+          TAG="v1.0.1-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v1.0.0.apk" \
+            "$APK#NotCan-v1.0.1.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan 1.0 · Plataforma académica adaptable" \
-            --notes "NotCan 1.0 amplía TuNot de un asistente centrado en seminario a una plataforma académica adaptable para Colegio, Universidad, Seminario y uso Personalizado. El TuNot Harness detecta dominios de estudio y aplica instrucciones específicas; el routing conserva Mistral, Gemma 4 local y Local básico con fallbacks. Se añade protección de datos antes de IA remota, control de URLs recuperadas para reducir citas inventadas y una base de evaluación de calidad inspirada en sistemas Arena sin ejecutar un segundo LLM en cada respuesta. Mantiene LiteRT-LM por GPU/CPU, RAG local, búsqueda web, transcripción Groq/Whisper, acceso de Configuración en teléfonos, caché persistente y Baseline/Startup Profiles."
+            --title "NotCan 1.0.1 · TuNot más resiliente" \
+            --notes "NotCan 1.0.1 inicia la modernización del Model Provider Gateway de TuNot. Mistral se ejecuta fuera del hilo principal, clasifica errores de red/autenticación/cuota, recupera conversaciones caducadas solo cuando corresponde y usa circuit breaker para caer más rápido a Gemma/local ante fallos repetidos. Se añaden pruebas unitarias del gateway y se conserva LiteRT-LM 0.11.0."
