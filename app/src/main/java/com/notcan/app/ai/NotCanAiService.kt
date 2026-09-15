@@ -1,20 +1,16 @@
 package com.notcan.app.ai
 
 import android.content.Context
+import android.text.Html
 import com.notcan.app.ai.harness.TuNotCitationGuard
 import com.notcan.app.ai.harness.TuNotEngine
 import com.notcan.app.ai.harness.TuNotHarness
 import com.notcan.app.ai.harness.TuNotPolicy
 import com.notcan.app.ai.harness.TuNotPrivacyGuard
 import com.notcan.app.ai.harness.TuNotTool
-import android.text.Html
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.flow.first
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Asistente académico online con fallback local. Si Mistral no está disponible,
@@ -23,15 +19,15 @@ import java.net.URL
 class NotCanAiService(private val context: Context) {
     private val appContext = context.applicationContext
     private val preferences = NotCanPreferences(appContext)
-    private val credentials = MistralCredentialsStore(appContext)
+    private val mistralClient = MistralAgentClient(appContext)
     private val webResearch = WebResearchService(appContext)
     private val localGemma = LiteRtGemmaTuNotEngine(appContext)
     private val harness = TuNotHarness(appContext)
 
-    fun isConfigured(): Boolean = credentials.hasApiKey() && preferences.mistralAgentId.isNotBlank()
+    fun isConfigured(): Boolean = mistralClient.isConfigured()
 
     fun startNewConversation() {
-        preferences.mistralConversationId = ""
+        mistralClient.startNewConversation()
     }
 
     suspend fun warmLocalGemmaIfSelected(): String? {
@@ -333,7 +329,7 @@ class NotCanAiService(private val context: Context) {
             val remotePrompt = if (preferences.protectPersonalDataRemote) {
                 TuNotPrivacyGuard.sanitizeForRemote(prompt)
             } else prompt
-            val rawAnswer = sendToMistral(remotePrompt)
+            val rawAnswer = mistralClient.send(remotePrompt)
             val groundedAnswer = if (wantsWeb) {
                 TuNotCitationGuard.enforceRetrievedUrls(rawAnswer, webResults.map { it.url }.toSet())
             } else rawAnswer
@@ -345,116 +341,6 @@ class NotCanAiService(private val context: Context) {
 
     private fun markEngine(engine: String, text: String): String =
         "<<<NOTCAN_ENGINE:${engine.replace(">", "")}>>>\n$text"
-
-    private fun sendToMistral(prompt: String): String {
-        val apiKey = credentials.apiKey()
-        val agentId = preferences.mistralAgentId.trim()
-        val existingConversation = preferences.mistralConversationId.trim()
-
-        val response = if (existingConversation.isBlank()) {
-            startConversation(apiKey, agentId, prompt)
-        } else {
-            runCatching { appendConversation(apiKey, existingConversation, prompt) }
-                .getOrElse {
-                    preferences.mistralConversationId = ""
-                    startConversation(apiKey, agentId, prompt)
-                }
-        }
-
-        response.optString("conversation_id").takeIf { it.isNotBlank() }?.let {
-            preferences.mistralConversationId = it
-        }
-
-        extractAssistantText(response)?.let { return it }
-        extractFunctionCall(response)?.let { call ->
-            return "El agente solicitó la función ${call.first}${call.second?.let { " con $it" } ?: ""}. La función fue detectada por NotCan, pero su ejecutor externo todavía no está conectado."
-        }
-        return "Mistral respondió sin contenido de texto. Vuelve a intentarlo o inicia una conversación nueva."
-    }
-
-    private fun startConversation(apiKey: String, agentId: String, prompt: String): JSONObject {
-        val body = JSONObject()
-            .put("agent_id", agentId)
-            .put("inputs", prompt)
-            .put("store", true)
-        return postJson("$BASE_URL/v1/conversations", apiKey, body)
-    }
-
-    private fun appendConversation(apiKey: String, conversationId: String, prompt: String): JSONObject {
-        val body = JSONObject()
-            .put("inputs", prompt)
-            .put("store", true)
-        return postJson("$BASE_URL/v1/conversations/$conversationId", apiKey, body)
-    }
-
-    private fun postJson(endpoint: String, apiKey: String, body: JSONObject): JSONObject {
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            doOutput = true
-            setRequestProperty("Authorization", "Bearer $apiKey")
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-        }
-
-        return try {
-            connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body.toString()) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val message = runCatching { JSONObject(text).optString("message") }.getOrNull()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: text.take(500).ifBlank { "HTTP $code" }
-                throw IllegalStateException("Mistral ($code): $message")
-            }
-            JSONObject(text)
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun extractAssistantText(root: JSONObject): String? {
-        val outputs = root.optJSONArray("outputs") ?: return null
-        val parts = mutableListOf<String>()
-        for (i in 0 until outputs.length()) {
-            val output = outputs.optJSONObject(i) ?: continue
-            val type = output.optString("type")
-            if (type.isNotBlank() && type != "message.output") continue
-            when (val content = output.opt("content")) {
-                is String -> if (content.isNotBlank()) parts += content
-                is JSONArray -> {
-                    for (j in 0 until content.length()) {
-                        when (val chunk = content.opt(j)) {
-                            is String -> if (chunk.isNotBlank()) parts += chunk
-                            is JSONObject -> {
-                                val text = chunk.optString("text").ifBlank { chunk.optString("content") }
-                                if (text.isNotBlank()) parts += text
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return parts.joinToString("\n").trim().ifBlank { null }
-    }
-
-    private fun extractFunctionCall(root: JSONObject): Pair<String, String?>? {
-        val outputs = root.optJSONArray("outputs") ?: return null
-        for (i in 0 until outputs.length()) {
-            val output = outputs.optJSONObject(i) ?: continue
-            val type = output.optString("type")
-            if (!type.contains("function", ignoreCase = true)) continue
-            val name = output.optString("name")
-                .ifBlank { output.optJSONObject("function")?.optString("name").orEmpty() }
-                .ifBlank { "función externa" }
-            val arguments = output.opt("arguments")?.toString()
-                ?: output.optJSONObject("function")?.opt("arguments")?.toString()
-            return name to arguments
-        }
-        return null
-    }
 
     private suspend fun loadVocabularyContext(subjectName: String?, requested: Boolean): String {
         val dao = NotCanDatabase.getInstance(appContext).dao()
@@ -539,10 +425,7 @@ class NotCanAiService(private val context: Context) {
         const val VOCABULARY_MARKER = "[VOCABULARIO_NOTCAN]"
         const val FLASHCARDS_MARKER = "[GENERAR_TARJETAS_NOTCAN]"
         const val QUIZ_MARKER = "[GENERAR_CUESTIONARIO_NOTCAN]"
-        private const val BASE_URL = "https://api.mistral.ai"
         private const val MAX_SOURCE_CHARS = 28_000
-        private const val CONNECT_TIMEOUT_MS = 20_000
-        private const val READ_TIMEOUT_MS = 90_000
         private const val MIN_USABLE_GEMMA_PARTIAL_CHARS = 120
     }
 }
