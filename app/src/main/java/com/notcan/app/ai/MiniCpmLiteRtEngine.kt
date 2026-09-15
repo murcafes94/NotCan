@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.SystemClock
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Capabilities
-import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -17,18 +16,15 @@ import com.notcan.app.localai.MiniCpmModelManager
 import com.notcan.app.localai.MiniCpmModelState
 import java.io.File
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.produceIn
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
  * Experimental MiniCPM5 LiteRT-LM runner.
  *
- * This is deliberately not wired into TuNot's production routing yet. It gives the test branch a
- * real, compile-checked inference path that can be exercised from a diagnostic/benchmark screen once
- * a model has been downloaded. The stable Gemma/local fallback remains untouched until MiniCPM has
- * passed device tests and NotCan Bench.
+ * Kept isolated from TuNot production routing until the branch has passed CI and device validation.
+ * Gemma remains the safe local fallback meanwhile.
  */
 class MiniCpmLiteRtEngine(context: Context) {
     private val appContext = context.applicationContext
@@ -88,11 +84,9 @@ class MiniCpmLiteRtEngine(context: Context) {
         require(timeoutMs > 0L) { "timeoutMs debe ser positivo" }
         check(isInstalled(modelId)) { "${MiniCpmLiteRtCatalog.spec(modelId).displayName} no está instalado" }
 
-        val spec = MiniCpmLiteRtCatalog.spec(modelId)
         val backend = chooseBackend(modelId, preferredBackend)
         val modelPath = modelManager.modelFile(modelId).absolutePath
-        val cacheDir = File(appContext.cacheDir, "minicpm-litert/${modelId.name.lowercase()}")
-            .apply { mkdirs() }
+        val cacheDir = File(appContext.cacheDir, "minicpm-litert/${modelId.name.lowercase()}").apply { mkdirs() }
 
         val engine = withContext(Dispatchers.IO) {
             Engine(
@@ -105,15 +99,10 @@ class MiniCpmLiteRtEngine(context: Context) {
         }
 
         try {
-            val capabilities = Capabilities(modelPath).use { it.supportsThinking() }
-            val effectiveThinking = thinkingEnabled && capabilities
+            val supportsThinking = Capabilities(modelPath).use { it.supportsThinking() }
+            val effectiveThinking = thinkingEnabled && supportsThinking
             val conversationConfig = ConversationConfig(
-                systemInstruction = systemInstruction.takeIf { it.isNotBlank() }?.let(Contents::of),
-                samplerConfig = SamplerConfig(
-                    topK = 40,
-                    topP = 0.95,
-                    temperature = 1.0
-                ),
+                samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 1.0),
                 maxOutputToken = maxOutputTokens,
                 thinkingConfig = ThinkingConfig(
                     enableThinking = effectiveThinking,
@@ -125,26 +114,24 @@ class MiniCpmLiteRtEngine(context: Context) {
             var firstTokenMs = 0L
             val output = StringBuilder()
             val thought = StringBuilder()
+            val effectivePrompt = if (systemInstruction.isBlank()) {
+                prompt
+            } else {
+                "$systemInstruction\n\nUsuario: $prompt"
+            }
 
-            coroutineScope {
-                withTimeout(timeoutMs) {
-                    engine.createConversation(conversationConfig).use { conversation ->
-                        val messages = conversation.sendMessageAsync(prompt).produceIn(this)
-                        try {
-                            for (message in messages) {
-                                val delta = message.toString()
-                                if (delta.isNotEmpty()) {
-                                    if (firstTokenMs == 0L) {
-                                        firstTokenMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
-                                    }
-                                    output.append(delta)
-                                    onPartial?.invoke(output.toString())
-                                }
-                                message.channels["thought"]?.takeIf { it.isNotEmpty() }?.let(thought::append)
+            withTimeout(timeoutMs) {
+                engine.createConversation(conversationConfig).use { conversation ->
+                    conversation.sendMessageAsync(effectivePrompt).collect { message ->
+                        val delta = message.toString()
+                        if (delta.isNotEmpty()) {
+                            if (firstTokenMs == 0L) {
+                                firstTokenMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
                             }
-                        } finally {
-                            messages.cancel()
+                            output.append(delta)
+                            onPartial?.invoke(output.toString())
                         }
+                        message.channels["thought"]?.takeIf { it.isNotEmpty() }?.let(thought::append)
                     }
                 }
             }
@@ -165,15 +152,10 @@ class MiniCpmLiteRtEngine(context: Context) {
         }
     }
 
-    private fun chooseBackend(
-        modelId: MiniCpmModelId,
-        preferredBackend: MiniCpmBackend?
-    ): MiniCpmBackend {
+    private fun chooseBackend(modelId: MiniCpmModelId, preferredBackend: MiniCpmBackend?): MiniCpmBackend {
         val spec = MiniCpmLiteRtCatalog.spec(modelId)
         if (preferredBackend != null) {
-            require(preferredBackend in spec.backends) {
-                "${spec.displayName} no admite backend ${preferredBackend.name}"
-            }
+            require(preferredBackend in spec.backends) { "${spec.displayName} no admite backend ${preferredBackend.name}" }
             return preferredBackend
         }
         return when {
