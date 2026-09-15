@@ -119,26 +119,41 @@ Condición económica: **ejecución local/CI con modelos ya disponibles; sin jue
 
 ## Prioridad media: implementar cuando el núcleo anterior esté estable
 
-### 8. Presentation Studio local y editable
+### 8. Presentation Studio local, editable e interactivo
 
-Inspiración: `presenton/presenton` (Apache-2.0). Presenton demuestra que es viable generar presentaciones de forma self-hosted, usar modelos locales como Ollama y exportar PPTX editable sin SaaS obligatorio.
+Inspiración principal: `presenton/presenton` (Apache-2.0). También se toman como referencia de diseño `MYZY-AI/dokie-ai-ppt` y `SkyworkAI/Skywork-Skills`, sin convertir sus servicios remotos en dependencia.
 
 Objetivo de NotCan:
 - generar esquema de presentación desde una materia, PDF, transcripción o apuntes;
-- editor de diapositivas basado en un modelo de documento propio de NotCan;
-- plantillas académicas locales;
-- exportación a PPTX y PDF sin depender de Gamma ni otra nube;
+- editor de diapositivas basado en un `PresentationDocument` propio de NotCan;
+- plantillas académicas locales y reutilizables;
+- importar una presentación existente como referencia de estilo sin destruir su contenido original;
+- operaciones locales de eliminar, reordenar, extraer y combinar diapositivas;
+- exportación a PPTX y PDF sin depender de Gamma, Dokie, Skywork ni otra nube;
+- exportación HTML interactiva opcional en PWA/PC, con gráficos, líneas de tiempo, diagramas y transiciones;
+- niveles de movimiento `mínimo`, `equilibrado` y `creativo`, con accesibilidad y reducción de movimiento;
 - generación del contenido con Gemma/local cuando sea suficiente;
 - imágenes opcionales: usar recursos locales o proveedores configurables, nunca bloquear la presentación si no hay un generador de imágenes;
 - poder corregir manualmente títulos, bloques, orden y notas del expositor;
-- reutilizar el mismo documento entre Android y PWA.
+- reutilizar el mismo documento entre Android y PWA;
+- vista previa local antes de exportar.
+
+Control de calidad antes de exportar:
+- detectar texto/elementos fuera de los límites;
+- comprobar consistencia de tipografía, márgenes, colores y plantilla;
+- detectar recursos faltantes;
+- comprobar que gráficos y tablas tengan datos válidos;
+- no fabricar datos de gráficos ni URLs de imágenes;
+- avisar cuando una diapositiva tenga densidad excesiva y proponer dividirla.
 
 Arquitectura:
 - **no** incrustar Electron/Python/Docker de Presenton dentro del APK;
-- crear `PresentationDocument` + `PresentationProvider` propios;
+- **no** depender de `dokie-cli`, Dokie Cloud ni Skywork API para crear o editar una presentación;
+- crear `PresentationDocument` + `PresentationExporter` + `PresentationProvider` propios;
+- empaquetar localmente los recursos necesarios para una exportación HTML cuando sea viable, evitando CDNs obligatorios;
 - opcionalmente permitir en PC/PWA conectar a una instancia self-hosted de Presenton, pero la exportación básica de NotCan debe seguir funcionando sin ella.
 
-Condición económica: **núcleo local; software de referencia Apache-2.0; sin SaaS requerido**.
+Condición económica: **núcleo local y exportadores propios; cualquier proveedor externo es opcional**.
 
 ### 9. Investigación académica abierta
 
@@ -157,22 +172,23 @@ Condición económica: **ninguna fuente remota será imprescindible**. Si una AP
 
 ### 10. TuNot Skills: habilidades modulares con carga progresiva
 
-Inspiración: `Simpleyyt/ai-manus` (MIT) y el estándar de Agent Skills.
+Inspiración: `Simpleyyt/ai-manus` y `SkyworkAI/Skywork-Skills` (MIT), además del estándar de Agent Skills.
 
 Objetivo:
 - dividir capacidades complejas de TuNot en skills independientes en lugar de agrandar el prompt global;
-- catálogo local de skills: estudio, investigación, documentos, presentaciones, citas, matemáticas, idiomas, teología, cuestionarios, flashcards, etc.;
+- catálogo local de skills: estudio, investigación, documentos, presentaciones, hojas de cálculo, citas, matemáticas, idiomas, teología, cuestionarios y flashcards;
 - cargar primero solo nombre + descripción y traer instrucciones completas únicamente cuando una tarea las necesite;
 - activar/desactivar skills desde Configuración;
 - versionar las skills y poder sustituirlas sin tocar el núcleo del Harness;
 - skills oficiales firmadas/validadas; no ejecutar scripts importados de terceros sin revisión;
-- no sincronizar paquetes arbitrarios a un shell del teléfono.
+- no sincronizar paquetes arbitrarios a un shell del teléfono;
+- separar claramente una skill local de un adaptador remoto: una skill nunca debe exigir una API solo por estar habilitada.
 
 Condición económica: **formato abierto y runtime propio de NotCan, completamente local**.
 
 ### 11. Academic Task Agent con plan-and-execute restringido
 
-Inspiración: `Simpleyyt/ai-manus` (MIT), pero adaptado a un entorno académico móvil seguro.
+Inspiración: `Simpleyyt/ai-manus` y los patrones componibles de `SkyworkAI/DeepResearchAgent`, adaptados a un entorno académico móvil seguro.
 
 Objetivo:
 - permitir tareas de varios pasos como `investiga -> compara fuentes -> crea resumen -> cuestionario -> presentación`;
@@ -180,7 +196,7 @@ Objetivo:
 - ejecutar únicamente herramientas registradas por NotCan;
 - permisos explícitos por herramienta y confirmación antes de acciones externas o destructivas;
 - poder detener, reanudar y revisar el plan;
-- registrar qué herramienta produjo cada artefacto;
+- registrar qué herramienta, modelo y versión de skill produjo cada artefacto;
 - evitar shell, Docker, navegador automatizado sin límites, MongoDB/Redis u otros componentes de servidor dentro del APK.
 
 Condición económica: **orquestación nativa/local; servicios externos solo como herramientas opcionales**.
@@ -199,7 +215,27 @@ Objetivo:
 
 Condición económica: **persistencia local, sin servidor**.
 
-### 13. Academic Integrity Assistant
+### 13. Versionado, trazabilidad y evolución segura del TuNot Harness
+
+Inspiración: `SkyworkAI/DeepResearchAgent` (MIT), especialmente su separación de recursos, lifecycle, versionado, trazas y ciclo proponer/evaluar/confirmar.
+
+Objetivo:
+- tratar prompts, perfiles académicos, skills, tools y configuraciones de modelos como recursos versionados;
+- estados claros como `draft`, `active`, `deprecated` y `rollback`;
+- registrar qué versiones participaron en una respuesta o benchmark para poder reproducir fallos;
+- permitir propuestas de mejora de prompts/routing sin aplicarlas directamente en producción;
+- ejecutar NotCan Bench antes de activar una revisión;
+- comparar calidad, latencia y consumo contra la versión anterior;
+- rollback inmediato cuando una revisión introduzca regresiones;
+- conservar un historial compacto y auditable de cambios.
+
+Regla de seguridad:
+- TuNot **no** se auto-modificará libremente en el dispositivo de un usuario;
+- cualquier "self-evolution" queda limitada a modo de desarrollo/experimentos, con evaluación, versión y aprobación explícita antes de promover cambios.
+
+Condición económica: **metadatos locales + CI/benchmarks; ningún servicio remoto obligatorio**.
+
+### 14. Academic Integrity Assistant
 
 No implementar un veredicto tipo "este texto es X% IA".
 
@@ -215,7 +251,7 @@ Objetivo:
 
 Condición económica: **análisis local y heurístico**.
 
-### 14. GraphRAG ligero para materias grandes
+### 15. GraphRAG ligero para materias grandes
 
 Objetivo:
 - extraer conceptos y relaciones de material local;
@@ -249,6 +285,16 @@ Solo se toman por ahora tres ideas verificadas:
 - plan-and-execute con herramientas estructuradas (`ai-manus`);
 - mastery checks / modo socrático (`Master-Pedagogy-Skill`).
 
+### DokeyAI
+
+La organización pública `DokeyAI` expone principalmente `dokeyai-data`, un catálogo de productos/categorías/directorios de herramientas de IA. No resuelve una necesidad central de estudio y no conviene convertir un directorio externo curado por terceros en dependencia o fuente de verdad de NotCan.
+
+Estado: **no integrar dataset ni servicio**.
+
+### SkyworkAI: modelos multimedia pesados
+
+SkyworkAI mantiene proyectos valiosos de vídeo, visión y generación multimedia, pero no se incorporan al núcleo móvil por coste de cómputo, tamaño y falta de necesidad académica inmediata. De ese ecosistema se priorizan únicamente los patrones útiles de `DeepResearchAgent` y `Skywork-Skills`.
+
 ## Integraciones que NO serán dependencia del núcleo
 
 ### Gamma API
@@ -264,6 +310,21 @@ Solo se considerará en el futuro como `PresentationProvider` opcional si:
 ### Napkin AI API
 
 Útil para generar visuales, pero no será dependencia del núcleo por sus términos/servicio remoto. El trabajo prioritario es el canvas nativo local.
+
+### Dokie / dokie-cli
+
+`MYZY-AI/dokie-ai-ppt` aporta buenas ideas de workflow, HTML interactivo, temas, gráficos y control de calidad. Sin embargo:
+- depende de `dokie-cli` para temas/previsualización;
+- el editor/compartición permanente pasa por Dokie;
+- el README declara MIT, pero en la revisión realizada no existe un archivo `LICENSE` en la raíz del repositorio.
+
+Por tanto, **no se copiará código ni se convertirá Dokie en dependencia del núcleo mientras la licencia no sea inequívoca**. Solo se adoptan patrones generales implementados de forma propia.
+
+### Skywork API / Skywork Skills remotas
+
+`SkyworkAI/Skywork-Skills` está bajo MIT y sirve como buena referencia de empaquetado de skills. Sin embargo, varias capacidades dependen de APIs de Skywork. En particular, `skywork-ppt` exige `SKYWORK_API_KEY` para generación/imitación/edición remota y contempla un error de "insufficient benefit" que requiere actualizar la membresía.
+
+NotCan puede reutilizar **patrones** y operaciones locales, pero no dependerá de Skywork API, una clave global ni una membresía para crear presentaciones, documentos o estudiar.
 
 ### Kimi K2 / Kimi K3
 
@@ -303,15 +364,16 @@ La sincronización hospedada puede tener cuotas en cualquier proveedor. Por ello
 3. TuNot Learning Memory.
 4. Tutor pedagógico adaptativo con comprobación de dominio.
 5. Canvas visual nativo editable.
-6. Presentation Studio local y exportación PPTX/PDF.
+6. Presentation Studio local con PPTX/PDF/HTML y validación de calidad.
 7. NotCan Bench y pruebas de regresión.
-8. OCR local.
-9. Investigación académica abierta + APA 7.
-10. TuNot Skills con carga progresiva.
-11. Academic Task Agent restringido.
-12. Planes persistentes de estudio/proyectos.
-13. Academic Integrity Assistant.
-14. GraphRAG ligero cuando los benchmarks demuestren que mejora el RAG normal.
+8. Versionado/trazabilidad y evolución segura del TuNot Harness.
+9. OCR local.
+10. Investigación académica abierta + APA 7.
+11. TuNot Skills con carga progresiva.
+12. Academic Task Agent restringido.
+13. Planes persistentes de estudio/proyectos.
+14. Academic Integrity Assistant.
+15. GraphRAG ligero cuando los benchmarks demuestren que mejora el RAG normal.
 
 ## Criterio para nuevos repositorios o servicios
 
