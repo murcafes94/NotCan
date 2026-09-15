@@ -1,0 +1,49 @@
+name: Apply 1.0.2 query-aware source context
+
+on:
+  push:
+    branches: [ "feature/notcan-1.0.2-document-intelligence" ]
+    paths:
+      - ".github/workflows/apply-0102-query-context.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/notcan-1.0.2-document-intelligence
+          fetch-depth: 0
+      - name: Wire query-aware context into TuNot
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("app/src/main/java/com/notcan/app/ui/NotCanViewModel.kt")
+          text = path.read_text(encoding="utf-8")
+          old = "val externalSources = sourceStore.combinedContext(scopeKey)"
+          new = "val externalSources = sourceStore.contextForQuery(scopeKey, question)"
+          if old not in text:
+              if new in text:
+                  print("Already patched")
+              else:
+                  raise SystemExit("Expected source context call not found")
+          else:
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding="utf-8")
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/notcan/app/ui/NotCanViewModel.kt
+          git commit -m "feat: send only relevant document chunks to TuNot"
+          git push origin HEAD:feature/notcan-1.0.2-document-intelligence
