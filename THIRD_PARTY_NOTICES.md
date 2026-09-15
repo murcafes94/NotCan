@@ -79,6 +79,55 @@ NotCan se desarrolla con una política explícita de procedencia y licencias. La
 - Licencia del repositorio principal: MIT.
 - Uso actual: referencia arquitectónica para audio, streaming, memoria, transcripción y herramientas; no se ha incorporado código de Omi en v0.7.5.
 
+### Presenton
+- Repositorio: `presenton/presenton`.
+- Licencia: Apache-2.0.
+- Uso previsto: referencia para generación local/self-hosted de presentaciones, plantillas, edición y exportación PPTX/PDF.
+- Estado de código incorporado: **ninguno**.
+- Nota: no se incrustará su stack Electron/Python/Docker dentro del APK; NotCan mantendrá un modelo de documento y exportación propios, con posible conector opcional a una instancia self-hosted.
+
+### AI Manus
+- Repositorio: `Simpleyyt/ai-manus`.
+- Licencia: MIT.
+- Uso previsto: referencia para plan-and-execute, tool calling estructurado, catálogo de tools y skills con carga progresiva.
+- Estado de código incorporado: **ninguno**.
+- Nota: no se incorporarán Docker, MongoDB, Redis ni un shell/browser irrestricto al APK; las ideas se adaptarán al TuNot Harness nativo con permisos explícitos.
+
+### Master Pedagogy Skill
+- Repositorio: `XenogenesisXtreme/Master-Pedagogy-Skill`.
+- Licencia: MIT.
+- Uso previsto: referencia para comprobación de prerrequisitos, mastery checks, modo socrático, rutas de profundidad y recuperación de conceptos fallados.
+- Estado de código incorporado: **ninguno**.
+- Nota: la gamificación se tratará como opcional y la implementación no dependerá de Claude ni Manus.
+
+### Planning with Files
+- Repositorio: `OthmanAdi/planning-with-files`.
+- Licencia: MIT.
+- Uso previsto: referencia para persistir objetivos, fases, hallazgos y progreso fuera del contexto del LLM y reanudar tareas largas sin perder el estado.
+- Estado de código incorporado: **ninguno**.
+- Nota: en NotCan se trasladará el patrón a Room/archivos locales en lugar de hooks propios de agentes de desarrollo.
+
+### Frappe Builder
+- Repositorio: `frappe/builder`.
+- Licencia: MIT.
+- Uso actual: referencia únicamente para edición visual responsive, cambios reversibles y edición asistida por IA sobre estado real.
+- Estado de código incorporado: **ninguno**.
+- Nota: NotCan no añadirá un constructor de sitios web; solo se consideran patrones útiles para la PWA/editor.
+
+### Kimi K2
+- Repositorio: `MoonshotAI/Kimi-K2`.
+- Licencia: Modified MIT License.
+- Uso actual: referencia de arquitectura/benchmark para modelos agentic y tool use.
+- Estado de código/modelo incorporado: **ninguno**.
+- Nota: su tamaño (1T parámetros totales, 32B activos) lo descarta como modelo local Android.
+
+### Kimi K3
+- Repositorio: `MoonshotAI/Kimi-K3`.
+- Licencia: Kimi K3 License, con condiciones específicas para ciertos usos comerciales y de Model-as-a-Service.
+- Uso actual: referencia de arquitectura/benchmark para multimodalidad, contexto largo y agentes.
+- Estado de código/modelo incorporado: **ninguno**.
+- Nota: su tamaño (2.8T parámetros totales, 104B activos) lo descarta como modelo local Android; cualquier uso futuro sería mediante endpoint externo opcional y tras volver a revisar su licencia.
+
 ## Política
 
 Antes de copiar o adaptar código externo se debe:
