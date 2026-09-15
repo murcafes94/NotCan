@@ -24,6 +24,7 @@ class NotCanAiService(private val context: Context) {
     private val appContext = context.applicationContext
     private val preferences = NotCanPreferences(appContext)
     private val credentials = MistralCredentialsStore(appContext)
+    private val mistralClient = MistralAgentClient(appContext)
     private val webResearch = WebResearchService(appContext)
     private val localGemma = LiteRtGemmaTuNotEngine(appContext)
     private val harness = TuNotHarness(appContext)
@@ -333,7 +334,7 @@ class NotCanAiService(private val context: Context) {
             val remotePrompt = if (preferences.protectPersonalDataRemote) {
                 TuNotPrivacyGuard.sanitizeForRemote(prompt)
             } else prompt
-            val rawAnswer = sendToMistral(remotePrompt)
+            val rawAnswer = mistralClient.send(remotePrompt)
             val groundedAnswer = if (wantsWeb) {
                 TuNotCitationGuard.enforceRetrievedUrls(rawAnswer, webResults.map { it.url }.toSet())
             } else rawAnswer
