@@ -29,6 +29,7 @@ class ClassSourceStore(private val context: Context) {
         val indexed: Boolean,
         val enabled: Boolean = true,
         val indexChars: Int = 0,
+        val indexPages: Int = 0,
         val sourceUrl: String? = null,
         val sourceUri: String? = null
     )
@@ -38,7 +39,14 @@ class ClassSourceStore(private val context: Context) {
         val sourceName: String,
         val sourceType: String,
         val excerpt: String,
-        val offset: Int
+        val offset: Int,
+        val pageNumber: Int? = null
+    )
+
+    private data class ContextCandidate(
+        val item: SourceItem,
+        val chunk: SourceRetrieval.Chunk,
+        val score: Double
     )
 
     fun scopeKey(subjectName: String?, classTitle: String?): String {
@@ -81,7 +89,8 @@ class ClassSourceStore(private val context: Context) {
             localPath = file.absolutePath,
             createdAtEpochMs = System.currentTimeMillis(),
             indexed = indexFile?.exists() == true,
-            indexChars = indexFile?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
+            indexChars = indexFile?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0,
+            indexPages = SourceTextIndexer.indexedPageCount(indexFile)
         )
         saveItem(item)
         return item
@@ -126,7 +135,8 @@ class ClassSourceStore(private val context: Context) {
         val indexed = reindexReference(item)
         val finalItem = item.copy(
             indexed = indexed?.exists() == true,
-            indexChars = indexed?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
+            indexChars = indexed?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0,
+            indexPages = SourceTextIndexer.indexedPageCount(indexed)
         )
         saveItem(finalItem)
         return finalItem
@@ -166,6 +176,7 @@ class ClassSourceStore(private val context: Context) {
             indexed = true,
             enabled = true,
             indexChars = indexedText.length,
+            indexPages = 0,
             sourceUrl = url
         )
         saveItem(item)
@@ -183,7 +194,8 @@ class ClassSourceStore(private val context: Context) {
         }
         val updated = item.copy(
             indexed = index?.exists() == true,
-            indexChars = index?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
+            indexChars = index?.length()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0,
+            indexPages = SourceTextIndexer.indexedPageCount(index)
         )
         saveItem(updated)
         return updated
@@ -235,34 +247,114 @@ class ClassSourceStore(private val context: Context) {
         return dir.deleteRecursively()
     }
 
+    /**
+     * Search is local and page-aware. It ranks chunks using the phrase and meaningful query terms
+     * instead of scanning only for the exact literal string.
+     */
     fun search(scopeKey: String, query: String, maxHits: Int = 24): List<SearchHit> {
-        val needle = query.trim()
-        if (needle.length < 2) return emptyList()
-        val result = mutableListOf<SearchHit>()
+        val cleanQuery = query.trim()
+        if (cleanQuery.length < 2 || maxHits <= 0) return emptyList()
+
+        val ranked = mutableListOf<Pair<SearchHit, Double>>()
         for (item in list(scopeKey).filter { it.enabled && it.indexed }) {
-            val text = SourceTextIndexer.readIndex(File(item.localPath), 500_000)
+            val text = SourceTextIndexer.readIndex(File(item.localPath), MAX_INDEX_READ_CHARS)
             if (text.isBlank()) continue
-            var start = 0
-            while (result.size < maxHits) {
-                val found = text.indexOf(needle, startIndex = start, ignoreCase = true)
-                if (found < 0) break
-                val from = (found - 110).coerceAtLeast(0)
-                val to = (found + needle.length + 170).coerceAtMost(text.length)
-                result += SearchHit(
+            SourceRetrieval.retrieve(
+                indexedText = text,
+                query = cleanQuery,
+                sourceName = item.displayName,
+                maxHits = minOf(maxHits, 8),
+                chunkChars = 900
+            ).forEach { hit ->
+                ranked += SearchHit(
                     sourceId = item.id,
                     sourceName = item.displayName,
                     sourceType = item.type,
-                    excerpt = text.substring(from, to).replace(Regex("\\s+"), " ").trim(),
-                    offset = found
-                )
-                start = found + needle.length
+                    excerpt = hit.chunk.text,
+                    offset = hit.chunk.offset,
+                    pageNumber = hit.chunk.pageNumber
+                ) to hit.score
             }
-            if (result.size >= maxHits) break
         }
-        return result
+        return ranked
+            .sortedWith(compareByDescending<Pair<SearchHit, Double>> { it.second }.thenBy { it.first.offset })
+            .take(maxHits)
+            .map { it.first }
     }
 
-    /** Context sent to TuNot. Capped per file and globally to avoid flooding the provider context. */
+    /**
+     * Query-aware context for TuNot. Only the most useful chunks are sent to the model; broad
+     * requests receive a spread sample across each document. This substantially reduces prefill,
+     * RAM and hallucination pressure compared with concatenating the beginning of every source.
+     */
+    fun contextForQuery(
+        scopeKey: String,
+        query: String,
+        totalChars: Int = 20_000,
+        maxChunks: Int = 12
+    ): String {
+        if (totalChars <= 0 || maxChunks <= 0) return ""
+        val items = list(scopeKey).filter { it.enabled && it.indexed }
+        if (items.isEmpty()) return ""
+
+        val broad = SourceRetrieval.isBroadSourceRequest(query)
+        val candidates = mutableListOf<ContextCandidate>()
+        items.forEach { item ->
+            val text = SourceTextIndexer.readIndex(File(item.localPath), MAX_INDEX_READ_CHARS)
+            if (text.isBlank()) return@forEach
+            if (broad) {
+                SourceRetrieval.sample(text, maxChunks = 2).forEachIndexed { index, chunk ->
+                    candidates += ContextCandidate(item, chunk, 1.0 - index * 0.01)
+                }
+            } else {
+                SourceRetrieval.retrieve(
+                    indexedText = text,
+                    query = query,
+                    sourceName = item.displayName,
+                    maxHits = 5
+                ).forEach { ranked ->
+                    candidates += ContextCandidate(item, ranked.chunk, ranked.score)
+                }
+            }
+        }
+
+        // If the wording is too generic to score, still provide one bounded sample per source.
+        if (candidates.isEmpty()) {
+            items.forEach { item ->
+                val text = SourceTextIndexer.readIndex(File(item.localPath), MAX_INDEX_READ_CHARS)
+                SourceRetrieval.sample(text, maxChunks = 1).firstOrNull()?.let { chunk ->
+                    candidates += ContextCandidate(item, chunk, 0.1)
+                }
+            }
+        }
+
+        val ordered = if (broad) candidates else candidates.sortedByDescending { it.score }
+        val perSourceCount = mutableMapOf<String, Int>()
+        val selected = mutableListOf<ContextCandidate>()
+        for (candidate in ordered) {
+            if (selected.size >= maxChunks) break
+            val used = perSourceCount[candidate.item.id] ?: 0
+            if (used >= 3) continue
+            selected += candidate
+            perSourceCount[candidate.item.id] = used + 1
+        }
+
+        val out = StringBuilder()
+        for (candidate in selected) {
+            if (out.length >= totalChars) break
+            val item = candidate.item
+            val pageSuffix = candidate.chunk.pageNumber?.let { " | PÁGINA: $it" }.orEmpty()
+            val header = "[FUENTE EXTERNA: ${item.displayName} | TIPO: ${item.type}$pageSuffix]"
+            val urlLine = item.sourceUrl?.takeIf { it.isNotBlank() }?.let { "URL: $it\n" }.orEmpty()
+            val block = "$header\n$urlLine${candidate.chunk.text}\n\n"
+            val remaining = totalChars - out.length
+            if (remaining <= 0) break
+            out.append(block.take(remaining))
+        }
+        return out.toString().trim()
+    }
+
+    /** Context fallback retained for compatibility and explicit full-source operations. */
     fun combinedContext(scopeKey: String, perSourceChars: Int = 32_000, totalChars: Int = 96_000): String {
         val out = StringBuilder()
         for (item in list(scopeKey).filter { it.enabled && it.indexed }) {
@@ -311,6 +403,7 @@ class ClassSourceStore(private val context: Context) {
         .put("indexed", indexed)
         .put("enabled", enabled)
         .put("indexChars", indexChars)
+        .put("indexPages", indexPages)
         .put("sourceUrl", sourceUrl)
         .put("sourceUri", sourceUri)
 
@@ -326,6 +419,7 @@ class ClassSourceStore(private val context: Context) {
             indexed = optBoolean("indexed", false),
             enabled = optBoolean("enabled", true),
             indexChars = optInt("indexChars", 0),
+            indexPages = optInt("indexPages", 0),
             sourceUrl = optString("sourceUrl").takeIf { it.isNotBlank() && it != "null" },
             sourceUri = optString("sourceUri").takeIf { it.isNotBlank() && it != "null" }
         )
@@ -359,5 +453,6 @@ class ClassSourceStore(private val context: Context) {
             "application/epub+zip"
         )
         private val SUPPORTED_TYPES = setOf("PDF", "DOCX", "EPUB")
+        private const val MAX_INDEX_READ_CHARS = 600_000
     }
 }
