@@ -5,6 +5,7 @@ import com.notcan.app.ai.harness.ModelProviderHealthRegistry
 import com.notcan.app.ai.harness.ModelProviderId
 import com.notcan.app.ai.harness.ProviderException
 import com.notcan.app.ai.harness.ProviderFailureClassifier
+import com.notcan.app.ai.harness.ProviderFailureKind
 import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,7 +53,7 @@ class MistralAgentClient(context: Context) {
         if (apiKey.isBlank() || agentId.isBlank()) {
             throw ProviderException(
                 provider = ModelProviderId.MISTRAL_AGENT,
-                kind = com.notcan.app.ai.harness.ProviderFailureKind.AUTHENTICATION,
+                kind = ProviderFailureKind.AUTHENTICATION,
                 message = "Mistral no está configurado.",
                 retryable = false
             )
@@ -84,7 +85,7 @@ class MistralAgentClient(context: Context) {
     }
 
     private fun isStaleConversation(error: ProviderException): Boolean =
-        error.statusCode in setOf(404, 409, 410, 422)
+        error.statusCode?.let { it in setOf(404, 409, 410, 422) } == true
 
     private fun startConversation(apiKey: String, agentId: String, prompt: String): JSONObject {
         val body = JSONObject()
