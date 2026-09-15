@@ -12,7 +12,8 @@ import java.util.zip.ZipFile
  * Local text extraction for TuNot sources.
  *
  * The original file remains the canonical source. Extracted text is written to a sidecar
- * `<source>.index.txt` and is never shown as an editable note.
+ * `<source>.index.txt` and is never shown as an editable note. PDF indexes preserve page markers so
+ * retrieval can cite and open the exact source page without a cloud service.
  */
 object SourceTextIndexer {
 
@@ -48,15 +49,38 @@ object SourceTextIndexer {
         }
     }
 
+    fun indexedPageCount(indexFile: File?): Int {
+        if (indexFile == null || !indexFile.exists()) return 0
+        return runCatching {
+            indexFile.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.mapNotNull { line ->
+                    PAGE_MARKER.matchEntire(line.trim())?.groupValues?.getOrNull(1)?.toIntOrNull()
+                }.maxOrNull() ?: 0
+            }
+        }.getOrDefault(0)
+    }
+
     private fun extractPdf(context: Context, file: File): String {
         PDFBoxResourceLoader.init(context.applicationContext)
         return PDDocument.load(file).use { document ->
-            PDFTextStripper().apply {
+            if (document.numberOfPages <= 0) return@use ""
+            val stripper = PDFTextStripper().apply {
                 sortByPosition = true
                 lineSeparator = "\n"
                 paragraphStart = ""
                 paragraphEnd = "\n"
-            }.getText(document)
+            }
+            buildString {
+                for (page in 1..document.numberOfPages) {
+                    stripper.startPage = page
+                    stripper.endPage = page
+                    val pageText = stripper.getText(document).trim()
+                    if (pageText.isBlank()) continue
+                    appendLine("[[NOTCAN_PAGE:$page]]")
+                    appendLine(pageText)
+                    appendLine()
+                }
+            }
         }
     }
 
@@ -99,4 +123,6 @@ object SourceTextIndexer {
             .replace(Regex("[\\t ]+"), " ")
             .replace(Regex("\\n{3,}"), "\n\n")
             .trim()
+
+    private val PAGE_MARKER = Regex("\\[\\[NOTCAN_PAGE:(\\d+)]]")
 }
