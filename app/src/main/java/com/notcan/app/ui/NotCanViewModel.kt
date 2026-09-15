@@ -468,7 +468,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
                 } else baseNotes
                 val classTitle = classes.value.firstOrNull { it.id == _selectedClassId.value }?.title
                 val scopeKey = sourceStore.scopeKey(subjectName, classTitle)
-                val externalSources = sourceStore.combinedContext(scopeKey)
+                val externalSources = sourceStore.contextForQuery(scopeKey, question)
                 val transcriptText = buildString {
                     append(TranscriptionSelection.preferredForAi(transcripts.value).joinToString("\n\n") { it.body })
                     if (externalSources.isNotBlank()) {
