@@ -152,6 +152,22 @@ NotCan se desarrolla con una política explícita de procedencia y licencias. La
 - Estado de código incorporado: **ninguno**.
 - Nota: varias skills dependen de servicios remotos. `skywork-ppt` requiere `SKYWORK_API_KEY` para generación/imitación/edición y contempla casos que exigen mejorar la membresía; esas rutas no serán dependencia del núcleo de NotCan.
 
+### chatLLM (knowusuboaky)
+- Repositorio: `knowusuboaky/chatLLM`.
+- Commit revisado: `d2b7d8b2f525875f764106e7014de024102996cb`.
+- Licencia: MIT + archivo LICENSE, declarada en `DESCRIPTION` del paquete R.
+- Uso previsto: referencia para una interfaz uniforme entre proveedores, descubrimiento de modelos, endpoints personalizados, contexto multi-mensaje y manejo de timeout/retry/backoff.
+- Estado de código incorporado: **ninguno**.
+- Nota: no se incorpora su runtime R. Los patrones se adaptarán a Kotlin/Android mediante `ModelProviderAdapter`/`ModelProviderRegistry`; ningún proveedor remoto será requisito del núcleo.
+
+### ChatLLM (GiulioRusso)
+- Repositorio: `GiulioRusso/ChatLLM`.
+- Commit revisado: `f6b441091d41176e2769c3a5b52271e6e897dc47`.
+- Licencia: **no hay una licencia explícita vigente en la rama principal**. El commit revisado eliminó del README la afirmación de licencia MIT y la raíz actual no contiene un archivo `LICENSE`.
+- Uso previsto: solo referencia conceptual para soporte multi-modelo, streaming y prompts separados.
+- Estado de código incorporado: **ninguno**.
+- Nota: no se copiará ni adaptará código de este repositorio salvo que el autor publique una licencia inequívoca.
+
 ## Política
 
 Antes de copiar o adaptar código externo se debe:
