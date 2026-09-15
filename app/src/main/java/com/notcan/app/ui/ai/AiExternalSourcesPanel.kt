@@ -98,7 +98,7 @@ internal fun AiExternalSourcesPanel(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Fuentes externas", color = NotCanOffWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("PDF, DOCX, EPUB y web · se indexan para buscar y para TuNot", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
+                Text("PDF, DOCX, EPUB y web · búsqueda local y citas por página en PDF", color = NotCanGray, style = MaterialTheme.typography.bodySmall)
             }
             Button(
                 onClick = { launcher.launch(ClassSourceStore.SUPPORTED_MIME_TYPES) },
@@ -157,17 +157,18 @@ internal fun AiExternalSourcesPanel(
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 label = { Text("Buscar dentro de las fuentes") },
-                placeholder = { Text("Palabra o frase…") }
+                placeholder = { Text("Palabra, frase o concepto…") }
             )
             if (query.trim().length >= 2) {
                 if (hits.isEmpty()) Text("Sin coincidencias", color = NotCanGray)
                 else {
-                    Text("${hits.size} coincidencia(s)", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
-                    LazyColumn(modifier = Modifier.height((hits.size.coerceAtMost(4) * 88).dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${hits.size} resultado(s) relevante(s)", color = NotCanGray, style = MaterialTheme.typography.labelMedium)
+                    LazyColumn(modifier = Modifier.height((hits.size.coerceAtMost(4) * 94).dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(hits, key = { "${it.sourceId}:${it.offset}" }) { hit ->
                             Surface(color = NotCanSurface.copy(alpha = 0.66f), shape = RoundedCornerShape(12.dp)) {
                                 Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                                    Text("${hit.sourceName} · ${hit.sourceType}", color = NotCanBlue, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                    val pageLabel = hit.pageNumber?.let { " · p. $it" }.orEmpty()
+                                    Text("${hit.sourceName} · ${hit.sourceType}$pageLabel", color = NotCanBlue, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                                     Text(hit.excerpt, color = NotCanOffWhite, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                 }
                             }
@@ -202,6 +203,14 @@ private fun SourceFileCard(
     onReindex: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val needsPageUpgrade = item.type == "PDF" && item.indexed && item.indexPages == 0
+    val pageLabel = if (item.type == "PDF" && item.indexPages > 0) " · ${item.indexPages} pág." else ""
+    val indexLabel = when {
+        !item.indexed -> "Sin índice"
+        needsPageUpgrade -> "Indexada · actualizar para páginas"
+        else -> "Indexada"
+    }
+
     Card(colors = CardDefaults.cardColors(containerColor = NotCanSurface), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(color = NotCanBlue.copy(alpha = 0.13f), shape = RoundedCornerShape(10.dp)) {
@@ -211,13 +220,21 @@ private fun SourceFileCard(
             Column(Modifier.weight(1f)) {
                 Text(item.displayName, color = NotCanOffWhite, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${item.type} · ${if (item.indexed) "Indexada" else "Sin índice"}${if (!item.enabled) " · pausada" else ""}",
+                    "${item.type}$pageLabel · $indexLabel${if (!item.enabled) " · pausada" else ""}",
                     color = if (item.indexed) NotCanGray else MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.labelMedium
                 )
             }
             Checkbox(checked = item.enabled, onCheckedChange = onEnabledChange)
-            if (!item.indexed) IconButton(onClick = onReindex) { Icon(Icons.Default.Refresh, "Reintentar indexación", tint = NotCanBlue) }
+            if (!item.indexed || needsPageUpgrade) {
+                IconButton(onClick = onReindex) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        if (needsPageUpgrade) "Actualizar índice con páginas" else "Reintentar indexación",
+                        tint = NotCanBlue
+                    )
+                }
+            }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Eliminar fuente", tint = NotCanRed) }
         }
     }
