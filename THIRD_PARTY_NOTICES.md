@@ -128,6 +128,30 @@ NotCan se desarrolla con una política explícita de procedencia y licencias. La
 - Estado de código/modelo incorporado: **ninguno**.
 - Nota: su tamaño (2.8T parámetros totales, 104B activos) lo descarta como modelo local Android; cualquier uso futuro sería mediante endpoint externo opcional y tras volver a revisar su licencia.
 
+### Dokie AI PPT Skill
+- Repositorio: `MYZY-AI/dokie-ai-ppt`.
+- Commit revisado: `3e7010c865d07049480eb34d680db31722af75c9`.
+- Licencia: el README declara MIT, pero en el commit revisado **no existe un archivo LICENSE en la raíz del repositorio**.
+- Uso previsto: referencia conceptual para workflow de presentaciones, temas, HTML interactivo, gráficos, animaciones y validación posterior de calidad.
+- Estado de código incorporado: **ninguno**.
+- Nota: no se copiará código hasta que la licencia quede inequívocamente documentada; NotCan no dependerá de `dokie-cli` ni de Dokie Cloud.
+
+### Skywork DeepResearchAgent
+- Repositorio: `SkyworkAI/DeepResearchAgent`.
+- Commit revisado: `5e3c95d14266f8c4aa6a5deae1fe165c7cd1b87b`.
+- Licencia: MIT.
+- Uso previsto: referencia para recursos versionados, lifecycle, tracing, memoria, herramientas componibles y ciclo seguro de proponer/evaluar/confirmar cambios con rollback.
+- Estado de código incorporado: **ninguno**.
+- Nota: NotCan no permitirá auto-modificación libre del agente en producción; cualquier evolución automática deberá pasar por benchmark, versionado y aprobación explícita.
+
+### Skywork Skills
+- Repositorio: `SkyworkAI/Skywork-Skills`.
+- Commit revisado: `c8c6aeb742c3d6a2b728992142796702464b6fce`.
+- Licencia: MIT.
+- Uso previsto: referencia para organización de skills de documentos, presentaciones, hojas de cálculo e investigación, y para operaciones locales de PPTX.
+- Estado de código incorporado: **ninguno**.
+- Nota: varias skills dependen de servicios remotos. `skywork-ppt` requiere `SKYWORK_API_KEY` para generación/imitación/edición y contempla casos que exigen mejorar la membresía; esas rutas no serán dependencia del núcleo de NotCan.
+
 ## Política
 
 Antes de copiar o adaptar código externo se debe:
