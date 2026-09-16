@@ -143,7 +143,10 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.0")
+    // 0.17.0 final is compiled against Kotlin 2.4.0. Keep the 0.17 API on the
+    // alpha1 artifact while NotCan remains on the Android/Kotlin 2.2.21 toolchain.
+    // This avoids forcing an AGP/Kotlin migration solely for the experimental engine.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.0-alpha1")
 
     testImplementation("junit:junit:4.13.2")
 
