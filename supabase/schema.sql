@@ -1,11 +1,11 @@
 -- NotCan sync foundation
 -- Run this file in a Supabase SQL editor for the first shared backend.
--- Client UUIDs are preserved so Android Room and NotCan Web refer to the same records.
+-- Client-generated opaque string IDs are preserved so Android Room and NotCan Web refer to the same records.\n-- Some local records use semantic prefixes (for example transcript-note-<uuid>), so entity IDs are text.\n-- Only auth.users identifiers remain PostgreSQL uuid values.
 
 create extension if not exists pgcrypto;
 
 create table if not exists public.study_cycles (
-  id uuid primary key,
+  id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   is_active boolean not null default true,
@@ -19,9 +19,9 @@ create table if not exists public.study_cycles (
 );
 
 create table if not exists public.subjects (
-  id uuid primary key,
+  id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  cycle_id uuid not null references public.study_cycles(id) on delete cascade,
+  cycle_id text not null references public.study_cycles(id) on delete cascade,
   name text not null,
   color_hex text,
   revision bigint not null default 1,
@@ -32,9 +32,9 @@ create table if not exists public.subjects (
 );
 
 create table if not exists public.class_sessions (
-  id uuid primary key,
+  id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  subject_id uuid not null references public.subjects(id) on delete cascade,
+  subject_id text not null references public.subjects(id) on delete cascade,
   title text not null,
   started_at_epoch_ms bigint not null,
   ended_at_epoch_ms bigint,
@@ -46,9 +46,9 @@ create table if not exists public.class_sessions (
 );
 
 create table if not exists public.note_pages (
-  id uuid primary key,
+  id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  class_session_id uuid not null references public.class_sessions(id) on delete cascade,
+  class_session_id text not null references public.class_sessions(id) on delete cascade,
   title text not null,
   body text not null default '',
   revision bigint not null default 1,
@@ -59,9 +59,9 @@ create table if not exists public.note_pages (
 );
 
 create table if not exists public.grade_items (
-  id uuid primary key,
+  id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  subject_id uuid not null references public.subjects(id) on delete cascade,
+  subject_id text not null references public.subjects(id) on delete cascade,
   title text not null,
   score double precision not null,
   max_score double precision not null,
