@@ -102,7 +102,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {\n        compilerOptions {\n            jvmTarget.set(JvmTarget.JVM_17)\n        }\n    }
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
 
     buildFeatures {
         compose = true
@@ -144,7 +148,8 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.0.0-rc10")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
-    // MiniCPM 5 deployment requires the LiteRT-LM 0.17 API.\n    implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.0")
+    // MiniCPM 5 deployment requires the LiteRT-LM 0.17 API.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.0")
 
     testImplementation("junit:junit:4.13.2")
 
