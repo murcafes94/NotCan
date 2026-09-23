@@ -53,8 +53,7 @@ class SupabaseSyncManager(context: Context) {
             for (id in localIds(table)) {
                 if (id !in remoteIds.getValue(table) && (table to id) !in pendingKeys) {
                     localRow(table, id, session.userId)?.let { row ->
-                        upsert(table, row, session.accessToken)
-                        pushed++
+                        pushed += upsertWithParents(table, row, session.userId, session.accessToken)
                     }
                 }
             }
@@ -75,9 +74,9 @@ class SupabaseSyncManager(context: Context) {
             if (row == null) {
                 softDelete(change.entity, change.entityId, session.accessToken)
             } else {
-                upsert(change.entity, row, session.accessToken)
+                pushed += upsertWithParents(change.entity, row, session.userId, session.accessToken)
             }
-            pushed++
+            if (row == null) pushed++
             changes.clear(change.entity, change.entityId)
         }
 
@@ -244,6 +243,35 @@ class SupabaseSyncManager(context: Context) {
         return buildList {
             for (i in 0 until array.length()) array.optJSONObject(i)?.let(::add)
         }
+    }
+
+    private suspend fun upsertWithParents(
+        table: String,
+        row: JSONObject,
+        userId: String,
+        accessToken: String,
+        visiting: MutableSet<Pair<String, String>> = mutableSetOf()
+    ): Int {
+        val id = row.optString("id")
+        val key = table to id
+        if (id.isBlank() || !visiting.add(key)) return 0
+        var count = 0
+        val dependency = when (table) {
+            "subjects" -> "study_cycles" to row.optString("cycle_id")
+            "class_sessions" -> "subjects" to row.optString("subject_id")
+            "note_pages" -> "class_sessions" to row.optString("class_session_id")
+            "grade_items" -> "subjects" to row.optString("subject_id")
+            else -> null
+        }
+        if (dependency != null && dependency.second.isNotBlank()) {
+            val dependencyRow = localRow(dependency.first, dependency.second, userId)
+                ?: error("No se puede sincronizar " + table + ": falta " + dependency.first + " local " + dependency.second + ".")
+            count += upsertWithParents(dependency.first, dependencyRow, userId, accessToken, visiting)
+        }
+        upsert(table, row, accessToken)
+        count++
+        visiting.remove(key)
+        return count
     }
 
     private fun upsert(table: String, row: JSONObject, accessToken: String) {
