@@ -234,6 +234,7 @@ class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
     suspend fun documentReferenceCount(path: String): Int = dao.countDocumentsByPath(path)
 
     suspend fun deleteClassData(classId: String) {
+        dao.getTranscriptsForClass(classId).forEach { markDelete("transcripts", it.id) }
         dao.getNotesForClass(classId).forEach { markDelete("note_pages", it.id) }
         markDelete("class_sessions", classId)
         dao.deleteClassSession(classId)
@@ -245,9 +246,12 @@ class StudyRepository(private val dao: NotCanDao, context: Context? = null) {
         (dao.getAudioPathsForCycle(cycleId) + dao.getDocumentPathsForCycle(cycleId)).distinct()
     suspend fun cycleCalendarEventIds(cycleId: String): List<Long> = dao.getCalendarEventIdsForCycle(cycleId)
     suspend fun deleteCycleData(cycleId: String) {
+        dao.getTasksForCycle(cycleId).forEach { markDelete("task_items", it.id) }
+        dao.getTranscriptsForCycle(cycleId).forEach { markDelete("transcripts", it.id) }
         dao.getNotesForCycle(cycleId).forEach { markDelete("note_pages", it.id) }
         dao.getGradesForCycle(cycleId).forEach { markDelete("grade_items", it.id) }
         dao.getClassesForCycle(cycleId).forEach { markDelete("class_sessions", it.id) }
+        dao.getSchedulesForCycle(cycleId).forEach { markDelete("subject_schedules", it.id) }
         dao.getSubjectsForCycle(cycleId).forEach { markDelete("subjects", it.id) }
         markDelete("study_cycles", cycleId)
         dao.deleteCycleData(cycleId)
