@@ -16,6 +16,7 @@ import com.notcan.app.data.local.SubjectEntity
 import com.notcan.app.data.local.SubjectScheduleEntity
 import com.notcan.app.data.local.TaskItemEntity
 import com.notcan.app.data.local.TranscriptEntity
+import com.notcan.app.settings.NotCanPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -29,6 +30,7 @@ class SupabaseSyncManager(context: Context) {
     private val dao: NotCanDao = NotCanDatabase.getInstance(app).dao()
     private val auth = SupabaseAuthClient(app)
     private val changes = SyncChangeStore(app)
+    private val preferences = NotCanPreferences(app)
 
     data class Result(val pushed: Int, val pulled: Int, val message: String)
 
@@ -244,7 +246,7 @@ class SupabaseSyncManager(context: Context) {
                         id = id,
                         cycleId = cycleId,
                         name = row.optString("name").ifBlank { "Materia" },
-                        colorHex = row.optString("color_hex").takeIf { it.isNotBlank() },
+                        colorHex = row.optStringOrNull("color_hex"),
                         createdAtEpochMs = createdAt
                     )
                 )
@@ -272,9 +274,18 @@ class SupabaseSyncManager(context: Context) {
                 val changed = existing == null || existing.copy(calendarEventId = null) != schedule.copy(calendarEventId = null)
                 dao.upsertSchedule(schedule)
                 if (hasCalendarPermission() && (changed || schedule.calendarEventId == null)) {
-                    runCatching { CalendarSync.syncSchedule(app, cycle, subject, schedule) }
-                        .getOrNull()
-                        ?.let { dao.setScheduleCalendarEvent(id, it.eventId) }
+                    runCatching {
+                        CalendarSync.syncSchedule(
+                            app,
+                            cycle,
+                            subject,
+                            schedule,
+                            preferences.calendarId.takeIf { it > 0L }
+                        )
+                    }.getOrNull()?.let { result ->
+                        preferences.calendarId = result.calendar.id
+                        dao.setScheduleCalendarEvent(id, result.eventId)
+                    }
                 }
             }
             "class_sessions" -> {
@@ -288,7 +299,7 @@ class SupabaseSyncManager(context: Context) {
                         startedAtEpochMs = row.optLong("started_at_epoch_ms", createdAt),
                         endedAtEpochMs = row.optLongOrNull("ended_at_epoch_ms"),
                         createdAtEpochMs = createdAt,
-                        scheduleId = row.optString("schedule_id").takeIf { it.isNotBlank() },
+                        scheduleId = row.optStringOrNull("schedule_id"),
                         plannedStartEpochMs = row.optLongOrNull("planned_start_epoch_ms"),
                         plannedEndEpochMs = row.optLongOrNull("planned_end_epoch_ms")
                     )
@@ -315,10 +326,10 @@ class SupabaseSyncManager(context: Context) {
                     TranscriptEntity(
                         id = id,
                         classSessionId = classId,
-                        audioId = row.optString("audio_id").takeIf { it.isNotBlank() },
+                        audioId = row.optStringOrNull("audio_id"),
                         body = row.optString("body"),
                         status = row.optString("status").ifBlank { "FINAL" },
-                        modelName = row.optString("model_name").takeIf { it.isNotBlank() },
+                        modelName = row.optStringOrNull("model_name"),
                         createdAtEpochMs = createdAt,
                         updatedAtEpochMs = parseInstant(row.optString("updated_at")).takeIf { it > 0L } ?: createdAt
                     )
@@ -342,7 +353,7 @@ class SupabaseSyncManager(context: Context) {
             "task_items" -> {
                 val cycleId = row.optString("cycle_id")
                 if (dao.getCycle(cycleId) == null) return
-                val remoteSubjectId = row.optString("subject_id").takeIf { it.isNotBlank() && dao.getSubject(it) != null }
+                val remoteSubjectId = row.optStringOrNull("subject_id")?.takeIf { dao.getSubject(it) != null }
                 dao.upsertTask(
                     TaskItemEntity(
                         id = id,
@@ -429,6 +440,9 @@ class SupabaseSyncManager(context: Context) {
 
     private fun JSONObject.optLongOrNull(name: String): Long? =
         if (!has(name) || isNull(name)) null else optLong(name)
+
+    private fun JSONObject.optStringOrNull(name: String): String? =
+        if (!has(name) || isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 
     private fun hasCalendarPermission(): Boolean =
         ContextCompat.checkSelfPermission(app, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
