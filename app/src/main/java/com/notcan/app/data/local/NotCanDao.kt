@@ -72,6 +72,12 @@ interface NotCanDao {
 
     @Query("SELECT * FROM grade_items WHERE id = :itemId LIMIT 1")
     suspend fun getGradeItem(itemId: String): GradeItemEntity?
+    @Query("SELECT * FROM subject_schedules WHERE id = :scheduleId LIMIT 1")
+    suspend fun getSchedule(scheduleId: String): SubjectScheduleEntity?
+    @Query("SELECT * FROM task_items WHERE id = :taskId LIMIT 1")
+    suspend fun getTask(taskId: String): TaskItemEntity?
+    @Query("SELECT * FROM transcripts WHERE id = :transcriptId LIMIT 1")
+    suspend fun getTranscript(transcriptId: String): TranscriptEntity?
 
     @Query("SELECT * FROM study_cycles")
     suspend fun getAllCycles(): List<StudyCycleEntity>
@@ -83,6 +89,12 @@ interface NotCanDao {
     suspend fun getAllNotePages(): List<NotePageEntity>
     @Query("SELECT * FROM grade_items")
     suspend fun getAllGradeItems(): List<GradeItemEntity>
+    @Query("SELECT * FROM subject_schedules")
+    suspend fun getAllSchedules(): List<SubjectScheduleEntity>
+    @Query("SELECT * FROM task_items")
+    suspend fun getAllTasks(): List<TaskItemEntity>
+    @Query("SELECT * FROM transcripts")
+    suspend fun getAllTranscripts(): List<TranscriptEntity>
 
     @Query("SELECT * FROM subjects WHERE cycleId = :cycleId")
     suspend fun getSubjectsForCycle(cycleId: String): List<SubjectEntity>
@@ -156,6 +168,12 @@ interface NotCanDao {
     suspend fun upsertNotePage(notePage: NotePageEntity)
     @Upsert
     suspend fun upsertGradeItem(item: GradeItemEntity)
+    @Upsert
+    suspend fun upsertSchedule(schedule: SubjectScheduleEntity)
+    @Upsert
+    suspend fun upsertTask(item: TaskItemEntity)
+    @Upsert
+    suspend fun upsertTranscript(transcript: TranscriptEntity)
 
     @Query("UPDATE study_cycles SET isActive = 0")
     suspend fun deactivateAllCycles()
