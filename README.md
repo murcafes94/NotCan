@@ -1,61 +1,52 @@
 # NotCan
 
-NotCan es un ecosistema académico personal con una aplicación Android local-first y una PWA web sincronizable.
+NotCan es una aplicación Android académica **local-first**. La app funciona sin conexión y, cuando el usuario inicia sesión, usa Supabase únicamente como backend para sincronizar sus datos entre sus propios dispositivos.
 
 ## Idea central
 
-Cada clase mantiene unidos sus recursos: audio, transcripción, apuntes, documentos, anotaciones, marcadores y mapas mentales. Las clases de una misma materia forman un continuo para permitir un estudio global al finalizar el semestre.
+Cada clase mantiene unidos sus recursos: audio, transcripción, apuntes, documentos, anotaciones, marcadores, mapas, tarjetas y cuestionarios. Las clases de una misma materia forman un continuo para estudiar y repasar el ciclo académico completo.
 
 ## Principios
 
-- **Local-first:** grabación, edición, maquetación, biblioteca y anotación deben seguir funcionando sin Internet.
-- **Núcleo sin pago obligatorio:** las funciones esenciales no deben depender de suscripciones, créditos ni APIs que puedan convertir el uso normal de NotCan en un servicio de pago. Los proveedores remotos solo pueden ser opcionales y sustituibles.
-- **IA híbrida:** la asistencia inteligente puede usar servicios online y, cuando el dispositivo lo permita, modelos locales opcionales.
-- **Grabación segura:** el audio local es la fuente principal; una transcripción en vivo nunca debe interrumpir ni comprometer la grabación.
-- **Tablet-first en Android:** interfaz optimizada para pantallas grandes y stylus/pencil.
-- **Web/PWA:** la versión de navegador sirve como espacio amplio para organizar, redactar, estudiar, administrar documentos y usar IA desde cualquier PC.
-- **Documentos:** arquitectura preparada para PDF, EPUB y DOC/DOCX.
-- **Respaldo separado:** audios y material de estudio se respaldan con una política distinta a la sincronización cotidiana de datos.
-- **Sincronización por registros:** Android y Web conservan UUID estables y sincronizan cambios; nunca comparten una base SQLite/IndexedDB viva.
+- **App Android únicamente:** no se mantiene una versión web/PWA de NotCan.
+- **Local-first:** grabación, edición, biblioteca, calendario, repaso y material ya descargado deben seguir funcionando sin Internet.
+- **Cuenta opcional:** iniciar sesión habilita sincronización entre dispositivos; no bloquea el uso local.
+- **Sincronización por registros:** Room conserva los datos locales y Supabase intercambia cambios usando los mismos UUID.
+- **Calendario del dispositivo:** el horario académico puede publicarse en un calendario Android editable y se identifica con IDs estables de NotCan para evitar duplicados entre dispositivos.
+- **Núcleo sin pago obligatorio:** las funciones esenciales no dependen de una suscripción.
+- **IA híbrida:** los proveedores remotos son sustituibles y el procesamiento local se utiliza cuando el dispositivo lo permite.
+- **Archivos pesados local-first:** audios y documentos no se suben automáticamente.
 
-## Arquitectura de datos
+## Arquitectura
 
-La estructura base compartida es:
+```text
+NotCan Android (dispositivo A)
+          │
+          │ cuenta + sincronización
+          ▼
+       Supabase
+   Auth + PostgreSQL
+          ▲
+          │
+NotCan Android (dispositivo B)
+```
 
-`Ciclo -> Materia -> Clase -> Recursos`
+Supabase sincroniza actualmente los datos académicos pequeños: ciclos, materias, horario semanal, clases, apuntes, transcripciones, tareas y calificaciones. Los eventos del calendario del sistema son específicos de cada dispositivo, pero se reconstruyen desde el horario sincronizado.
 
-Android usa Room como almacenamiento local. NotCan Web usa IndexedDB. Un backend común será la fuente de intercambio entre dispositivos, preservando los mismos UUID.
+## Datos y privacidad
 
-## NotCan Web
+Las sesiones de Supabase se guardan cifradas mediante Android Keystore. Las tablas remotas usan Row Level Security (RLS), de modo que cada cuenta solo puede acceder a sus propios registros.
 
-La primera base de la PWA vive en `web/` e incluye:
+El audio y los documentos pesados permanecen locales hasta que exista una política explícita de respaldo opt-in y cuotas seguras.
 
-- React + TypeScript + Vite;
-- instalación como PWA;
-- almacenamiento offline con IndexedDB/Dexie;
-- cola local (`outbox`) para cambios todavía no enviados;
-- modelo de datos alineado con las entidades Android;
-- adaptador inicial para sincronización con Supabase;
-- esquema SQL con Row Level Security en `supabase/schema.sql`.
+## Backend
 
-Mientras el backend no esté configurado, la web continúa funcionando de forma local y conserva los cambios pendientes.
-
-## Próximos pasos de sincronización
-
-1. Crear el backend Supabase de NotCan y aplicar `supabase/schema.sql`.
-2. Añadir inicio de sesión a la PWA.
-3. Probar sincronización real Web <-> nube con ciclos, materias, clases, apuntes y calificaciones.
-4. Añadir el cliente de sincronización Android sobre Room sin reemplazar la base local.
-5. Implementar resolución explícita de conflictos para contenido editado en dos dispositivos.
-6. Extender sincronización a horarios, transcripciones, mapas, marcadores y anotaciones.
-7. Definir Storage para documentos y una política separada/opt-in para audios pesados.
-
-El backend hospedado no puede convertirse en condición para acceder a datos locales. Si un proveedor cambia cuotas o precios, NotCan debe conservar exportación, almacenamiento local y una ruta de migración/reemplazo.
+El esquema base está documentado en `supabase/schema.sql`. El backend no sustituye la base Room: si no hay red o Supabase no está disponible, NotCan sigue trabajando con la copia local y sincroniza después.
 
 ## Roadmap
 
-Las mejoras aceptadas y priorizadas —con énfasis en funciones locales, abiertas y sin coste obligatorio futuro— se mantienen en `docs/ROADMAP.md`.
+Las mejoras priorizadas se mantienen en `docs/ROADMAP.md`.
 
 ## Licencias de terceros
 
-El proyecto mantiene un registro explícito de cualquier código o componente reutilizado. Consulta `THIRD_PARTY_NOTICES.md` antes de incorporar código externo.
+Consulta `THIRD_PARTY_NOTICES.md` antes de incorporar código externo.
