@@ -89,7 +89,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: notcan-v1.0.1-provider-gateway-apk
+          name: notcan-v1.0.2-app-sync-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 3
@@ -100,12 +100,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          TAG="v1.0.1-test"
+          TAG="v1.0.2-test"
           APK="app/build/outputs/apk/release/app-release.apk"
           gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "$APK#NotCan-v1.0.1.apk" \
+            "$APK#NotCan-v1.0.2.apk" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "NotCan 1.0.1 · TuNot más resiliente" \
-            --notes "NotCan 1.0.1 inicia la modernización del Model Provider Gateway de TuNot. Mistral se ejecuta fuera del hilo principal, clasifica errores de red/autenticación/cuota, recupera conversaciones caducadas solo cuando corresponde y usa circuit breaker para caer más rápido a Gemma/local ante fallos repetidos. Se añaden pruebas unitarias del gateway y se conserva LiteRT-LM 0.11.0."
+            --title "NotCan 1.0.2 · sincronización entre dispositivos" \
+            --notes "NotCan 1.0.2 retira la web y concentra el proyecto en Android. Amplía la cuenta Supabase para sincronizar ciclos, materias, horario, clases, apuntes, transcripciones, tareas y calificaciones entre dispositivos; añade sincronización automática en segundo plano y corrige la publicación del horario en el calendario del dispositivo con identificadores estables para evitar duplicados."

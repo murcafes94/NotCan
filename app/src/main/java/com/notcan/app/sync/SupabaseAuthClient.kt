@@ -1,10 +1,12 @@
 package com.notcan.app.sync
 
 import android.content.Context
+import android.net.Uri
 import com.notcan.app.BuildConfig
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLDecoder
 import java.net.URLEncoder
 
 class SupabaseAuthClient(context: Context) {
@@ -21,12 +23,41 @@ class SupabaseAuthClient(context: Context) {
     }
 
     fun signUp(email: String, password: String): SignUpResult {
-        val redirect = URLEncoder.encode("https://murcafes94.github.io/NotCan/", Charsets.UTF_8.name())
+        val redirect = URLEncoder.encode(AUTH_REDIRECT_URI, Charsets.UTF_8.name())
         val body = JSONObject().put("email", email.trim()).put("password", password)
         val response = request("POST", "/auth/v1/signup?redirect_to=$redirect", body)
         val access = response.optString("access_token")
         if (access.isBlank()) return SignUpResult(null, confirmationRequired = true)
         return SignUpResult(parseAndSaveSession(response, email.trim()), confirmationRequired = false)
+    }
+
+    fun completeAuthRedirect(uri: Uri): SupabaseSession? {
+        if (!uri.scheme.equals("notcan", ignoreCase = true) || !uri.host.equals("auth", ignoreCase = true)) return null
+        val params = mutableMapOf<String, String>()
+        sequenceOf(uri.query.orEmpty(), uri.fragment.orEmpty())
+            .filter { it.isNotBlank() }
+            .flatMap { it.split("&").asSequence() }
+            .forEach { pair ->
+                val parts = pair.split("=", limit = 2)
+                if (parts.size == 2) {
+                    params[URLDecoder.decode(parts[0], Charsets.UTF_8.name())] =
+                        URLDecoder.decode(parts[1], Charsets.UTF_8.name())
+                }
+            }
+        val access = params["access_token"].orEmpty()
+        val refresh = params["refresh_token"].orEmpty()
+        if (access.isBlank() || refresh.isBlank()) return null
+
+        val user = request("GET", "/auth/v1/user", null, access)
+        val now = System.currentTimeMillis() / 1000L
+        val expiresAt = params["expires_at"]?.toLongOrNull()
+            ?: (now + (params["expires_in"]?.toLongOrNull() ?: 3600L))
+        val root = JSONObject()
+            .put("access_token", access)
+            .put("refresh_token", refresh)
+            .put("expires_at", expiresAt)
+            .put("user", user)
+        return parseAndSaveSession(root, user.optString("email"))
     }
 
     fun ensureSession(): SupabaseSession? {
@@ -105,5 +136,9 @@ class SupabaseAuthClient(context: Context) {
         } finally {
             connection.disconnect()
         }
+    }
+
+    companion object {
+        const val AUTH_REDIRECT_URI = "notcan://auth/callback"
     }
 }

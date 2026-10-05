@@ -60,8 +60,8 @@ android {
         applicationId = "com.notcan.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 62
-        versionName = "1.0.1"
+        versionCode = 63
+        versionName = "1.0.2"
         if (notcanArm64Only) {
             ndk { abiFilters += listOf("arm64-v8a") }
         }
