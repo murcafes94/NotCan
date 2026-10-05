@@ -212,8 +212,9 @@ class SupabaseSyncManager(context: Context) {
                 "note_pages" -> dao.deleteNotePage(id)
                 "class_sessions" -> dao.deleteClassSession(id)
                 "subject_schedules" -> {
-                    dao.getSchedule(id)?.calendarEventId?.let { eventId ->
-                        if (hasCalendarPermission()) runCatching { CalendarSync.removeEvent(app, eventId) }
+                    val localEventId = dao.getSchedule(id)?.calendarEventId
+                    if (hasCalendarPermission()) {
+                        runCatching { CalendarSync.removeScheduleEvent(app, id, localEventId) }
                     }
                     dao.deleteSchedule(id)
                 }
