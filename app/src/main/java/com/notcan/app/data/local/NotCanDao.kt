@@ -108,6 +108,18 @@ interface NotCanDao {
     @Query("SELECT g.* FROM grade_items g INNER JOIN subjects s ON g.subjectId = s.id WHERE s.cycleId = :cycleId")
     suspend fun getGradesForCycle(cycleId: String): List<GradeItemEntity>
 
+    @Query("SELECT * FROM subject_schedules WHERE cycleId = :cycleId")
+    suspend fun getSchedulesForCycle(cycleId: String): List<SubjectScheduleEntity>
+
+    @Query("SELECT * FROM task_items WHERE cycleId = :cycleId")
+    suspend fun getTasksForCycle(cycleId: String): List<TaskItemEntity>
+
+    @Query("SELECT t.* FROM transcripts t INNER JOIN class_sessions c ON t.classSessionId = c.id INNER JOIN subjects s ON c.subjectId = s.id WHERE s.cycleId = :cycleId")
+    suspend fun getTranscriptsForCycle(cycleId: String): List<TranscriptEntity>
+
+    @Query("SELECT * FROM transcripts WHERE classSessionId = :classId")
+    suspend fun getTranscriptsForClass(classId: String): List<TranscriptEntity>
+
     @Query("SELECT COUNT(*) FROM class_sessions WHERE subjectId = :subjectId")
     suspend fun countClassesForSubject(subjectId: String): Int
 
