@@ -38,6 +38,8 @@ import com.notcan.app.recording.RecordingService
 import com.notcan.app.recording.RecordingState
 import com.notcan.app.settings.NotCanPreferences
 import com.notcan.app.storage.StorageMaintenance
+import com.notcan.app.sync.SupabaseAuthClient
+import com.notcan.app.sync.SupabaseSyncWorker
 import com.notcan.app.ui.AcademicExtrasViewModel
 import com.notcan.app.ui.NotCanViewModel
 import com.notcan.app.ui.ai.NotCanAiScreen
@@ -53,6 +55,7 @@ import com.notcan.app.ui.theme.NotCanTheme
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -61,10 +64,12 @@ class MainActivity : ComponentActivity() {
     private val preferences by lazy { NotCanPreferences(this) }
     private val mistralCredentials by lazy { MistralCredentialsStore(this) }
     private val recordingRepository by lazy { StudyRepository(NotCanDatabase.getInstance(this).dao(), this) }
+    private val supabaseAuth by lazy { SupabaseAuthClient(this) }
     private var pendingRecording: PendingRecording? = null
     private var pendingDocumentClassId: String? = null
     private var pendingNoteClassId: String? = null
     private var pendingCalendarScheduleId: String? = null
+    private var pendingCalendarSyncAll: Boolean = false
     private var previousInterruptionFilter = NotificationManager.INTERRUPTION_FILTER_ALL
     private var notCanDndEnabled = false
 
@@ -78,11 +83,19 @@ class MainActivity : ComponentActivity() {
 
     private val calendarPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val scheduleId = pendingCalendarScheduleId
+        val syncAll = pendingCalendarSyncAll
         pendingCalendarScheduleId = null
+        pendingCalendarSyncAll = false
         val readGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
         val writeGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-        if (readGranted && writeGranted && scheduleId != null) performCalendarSync(scheduleId)
-        else if (scheduleId != null) Toast.makeText(this, "NotCan necesita acceso al calendario para sincronizar el horario", Toast.LENGTH_LONG).show()
+        if (readGranted && writeGranted) {
+            when {
+                scheduleId != null -> performCalendarSync(scheduleId)
+                syncAll -> performCalendarSyncAll()
+            }
+        } else if (scheduleId != null || syncAll) {
+            Toast.makeText(this, "NotCan necesita acceso al calendario para sincronizar el horario", Toast.LENGTH_LONG).show()
+        }
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -101,6 +114,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleAuthIntent(intent)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         lifecycleScope.launch(Dispatchers.IO) { StorageMaintenance.runStartupMaintenance(this@MainActivity) }
 
@@ -307,11 +321,14 @@ class MainActivity : ComponentActivity() {
                             selectedSubjectId = selectedSubjectId,
                             onSaveCycleDates = studyViewModel::updateCycleDates,
                             onAddSchedule = { subjectId, weekday, startMinute, endMinute, mode, grace ->
-                                studyViewModel.addSchedule(subjectId, weekday, startMinute, endMinute, mode, grace)
+                                studyViewModel.addSchedule(subjectId, weekday, startMinute, endMinute, mode, grace) { schedule ->
+                                    requestCalendarSync(schedule.id)
+                                }
                                 requestNotificationPermissionIfNeeded()
                             },
-                            onDeleteSchedule = studyViewModel::deleteSchedule,
+                            onDeleteSchedule = ::deleteScheduleAndCalendar,
                             onSyncScheduleToCalendar = ::requestCalendarSync,
+                            onSyncAllToCalendar = ::requestCalendarSyncAll,
                             onOpenOccurrence = { occurrence -> studyViewModel.materializeOccurrence(occurrence) },
                             onRecordOccurrence = { occurrence ->
                                 studyViewModel.materializeOccurrence(occurrence) { session ->
@@ -469,6 +486,30 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(intent, "Compartir audio"))
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthIntent(intent)
+    }
+
+    private fun handleAuthIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (!uri.scheme.equals("notcan", ignoreCase = true) || !uri.host.equals("auth", ignoreCase = true)) return
+        lifecycleScope.launch {
+            val completed = withContext(Dispatchers.IO) {
+                runCatching { supabaseAuth.completeAuthRedirect(uri) }
+            }
+            completed.onSuccess { session ->
+                if (session != null) {
+                    SupabaseSyncWorker.enqueueNow(this@MainActivity)
+                    Toast.makeText(this@MainActivity, "Cuenta confirmada. Sincronizando NotCan…", Toast.LENGTH_LONG).show()
+                }
+            }.onFailure { error ->
+                Toast.makeText(this@MainActivity, error.message ?: "No se pudo completar el acceso", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun requestCalendarSync(scheduleId: String) {
         pendingCalendarScheduleId = scheduleId
         val readGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
@@ -477,6 +518,62 @@ class MainActivity : ComponentActivity() {
             pendingCalendarScheduleId = null
             performCalendarSync(scheduleId)
         } else calendarPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
+    }
+
+    private fun requestCalendarSyncAll() {
+        pendingCalendarScheduleId = null
+        pendingCalendarSyncAll = true
+        val readGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        val writeGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        if (readGranted && writeGranted) {
+            pendingCalendarSyncAll = false
+            performCalendarSyncAll()
+        } else {
+            calendarPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
+        }
+    }
+
+    private fun performCalendarSyncAll() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            var synced = 0
+            var calendarLabel: String? = null
+            studyViewModel.schedules.value.forEach { schedule ->
+                val cycle = studyViewModel.cycles.value.firstOrNull { it.id == schedule.cycleId } ?: return@forEach
+                val subject = studyViewModel.subjects.value.firstOrNull { it.id == schedule.subjectId } ?: return@forEach
+                val result = runCatching {
+                    CalendarSync.syncSchedule(
+                        this@MainActivity,
+                        cycle,
+                        subject,
+                        schedule,
+                        preferences.calendarId.takeIf { it > 0L }
+                    )
+                }.getOrNull()
+                if (result != null) {
+                    preferences.calendarId = result.calendar.id
+                    calendarLabel = result.calendar.label
+                    studyViewModel.setScheduleCalendarEvent(schedule.id, result.eventId)
+                    synced++
+                }
+            }
+            withContext(Dispatchers.Main) {
+                val message = if (synced > 0) {
+                    "$synced clase(s) sincronizadas · ${calendarLabel ?: "calendario del dispositivo"}"
+                } else {
+                    "No encontré clases o un calendario editable para sincronizar"
+                }
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun deleteScheduleAndCalendar(scheduleId: String) {
+        val schedule = studyViewModel.schedules.value.firstOrNull { it.id == scheduleId }
+        val canWrite = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+        if (canWrite) {
+            runCatching { CalendarSync.removeScheduleEvent(this, scheduleId, schedule?.calendarEventId) }
+        }
+        studyViewModel.deleteSchedule(scheduleId)
     }
 
     private fun performCalendarSync(scheduleId: String) {
