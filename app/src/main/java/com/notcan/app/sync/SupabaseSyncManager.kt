@@ -1,7 +1,11 @@
 package com.notcan.app.sync
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.notcan.app.BuildConfig
+import com.notcan.app.calendar.CalendarSync
 import com.notcan.app.data.local.ClassSessionEntity
 import com.notcan.app.data.local.GradeItemEntity
 import com.notcan.app.data.local.NotePageEntity
@@ -9,6 +13,9 @@ import com.notcan.app.data.local.NotCanDao
 import com.notcan.app.data.local.NotCanDatabase
 import com.notcan.app.data.local.StudyCycleEntity
 import com.notcan.app.data.local.SubjectEntity
+import com.notcan.app.data.local.SubjectScheduleEntity
+import com.notcan.app.data.local.TaskItemEntity
+import com.notcan.app.data.local.TranscriptEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -96,9 +103,12 @@ class SupabaseSyncManager(context: Context) {
     private suspend fun localIds(table: String): List<String> = when (table) {
         "study_cycles" -> dao.getAllCycles().map { it.id }
         "subjects" -> dao.getAllSubjects().map { it.id }
+        "subject_schedules" -> dao.getAllSchedules().map { it.id }
         "class_sessions" -> dao.getAllClassSessions().map { it.id }
         "note_pages" -> dao.getAllNotePages().map { it.id }
+        "transcripts" -> dao.getAllTranscripts().map { it.id }
         "grade_items" -> dao.getAllGradeItems().map { it.id }
+        "task_items" -> dao.getAllTasks().map { it.id }
         else -> emptyList()
     }
 
@@ -126,17 +136,42 @@ class SupabaseSyncManager(context: Context) {
                     .put("color_hex", item.colorHex ?: JSONObject.NULL)
                     .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
             }
+            "subject_schedules" -> dao.getSchedule(id)?.let { item ->
+                common.put("subject_id", item.subjectId)
+                    .put("cycle_id", item.cycleId)
+                    .put("weekday_iso", item.weekdayIso)
+                    .put("start_minute_of_day", item.startMinuteOfDay)
+                    .put("end_minute_of_day", item.endMinuteOfDay)
+                    .put("reminder_minutes_before", item.reminderMinutesBefore)
+                    .put("preview_minutes_before", item.previewMinutesBefore)
+                    .put("auto_stop_mode", item.autoStopMode)
+                    .put("auto_stop_grace_minutes", item.autoStopGraceMinutes)
+                    .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
+            }
             "class_sessions" -> dao.getClassSession(id)?.let { item ->
                 common.put("subject_id", item.subjectId)
                     .put("title", item.title)
                     .put("started_at_epoch_ms", item.startedAtEpochMs)
                     .put("ended_at_epoch_ms", item.endedAtEpochMs ?: JSONObject.NULL)
+                    .put("schedule_id", item.scheduleId ?: JSONObject.NULL)
+                    .put("planned_start_epoch_ms", item.plannedStartEpochMs ?: JSONObject.NULL)
+                    .put("planned_end_epoch_ms", item.plannedEndEpochMs ?: JSONObject.NULL)
                     .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
             }
             "note_pages" -> dao.getNotePage(id)?.let { item ->
                 common.put("class_session_id", item.classSessionId)
                     .put("title", item.title)
                     .put("body", item.body)
+                    .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
+                    .put("updated_at", Instant.ofEpochMilli(item.updatedAtEpochMs).toString())
+                    .put("revision", item.updatedAtEpochMs)
+            }
+            "transcripts" -> dao.getTranscript(id)?.let { item ->
+                common.put("class_session_id", item.classSessionId)
+                    .put("audio_id", item.audioId ?: JSONObject.NULL)
+                    .put("body", item.body)
+                    .put("status", item.status)
+                    .put("model_name", item.modelName ?: JSONObject.NULL)
                     .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
                     .put("updated_at", Instant.ofEpochMilli(item.updatedAtEpochMs).toString())
                     .put("revision", item.updatedAtEpochMs)
@@ -149,6 +184,19 @@ class SupabaseSyncManager(context: Context) {
                     .put("weight_percent", item.weightPercent)
                     .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
             }
+            "task_items" -> dao.getTask(id)?.let { item ->
+                common.put("cycle_id", item.cycleId)
+                    .put("subject_id", item.subjectId ?: JSONObject.NULL)
+                    .put("title", item.title)
+                    .put("type", item.type)
+                    .put("due_at_epoch_ms", item.dueAtEpochMs ?: JSONObject.NULL)
+                    .put("priority", item.priority)
+                    .put("notes", item.notes)
+                    .put("is_completed", item.isCompleted)
+                    .put("created_at", Instant.ofEpochMilli(item.createdAtEpochMs).toString())
+                    .put("updated_at", Instant.ofEpochMilli(item.updatedAtEpochMs).toString())
+                    .put("revision", item.updatedAtEpochMs)
+            }
             else -> null
         }
     }
@@ -158,9 +206,17 @@ class SupabaseSyncManager(context: Context) {
         if (id.isBlank()) return
         if (!row.isNull("deleted_at")) {
             when (table) {
+                "task_items" -> dao.deleteTask(id)
                 "grade_items" -> dao.deleteGradeItem(id)
+                "transcripts" -> dao.deleteTranscript(id)
                 "note_pages" -> dao.deleteNotePage(id)
                 "class_sessions" -> dao.deleteClassSession(id)
+                "subject_schedules" -> {
+                    dao.getSchedule(id)?.calendarEventId?.let { eventId ->
+                        if (hasCalendarPermission()) runCatching { CalendarSync.removeEvent(app, eventId) }
+                    }
+                    dao.deleteSchedule(id)
+                }
                 "subjects" -> dao.deleteSubject(id)
                 "study_cycles" -> dao.deleteCycleRecord(id)
             }
@@ -192,6 +248,34 @@ class SupabaseSyncManager(context: Context) {
                     )
                 )
             }
+            "subject_schedules" -> {
+                val subjectId = row.optString("subject_id")
+                val cycleId = row.optString("cycle_id")
+                val subject = dao.getSubject(subjectId) ?: return
+                val cycle = dao.getCycle(cycleId) ?: return
+                val existing = dao.getSchedule(id)
+                val schedule = SubjectScheduleEntity(
+                    id = id,
+                    subjectId = subjectId,
+                    cycleId = cycleId,
+                    weekdayIso = row.optInt("weekday_iso", 1).coerceIn(1, 7),
+                    startMinuteOfDay = row.optInt("start_minute_of_day", 0).coerceIn(0, 1439),
+                    endMinuteOfDay = row.optInt("end_minute_of_day", 1).coerceIn(1, 1440),
+                    reminderMinutesBefore = row.optInt("reminder_minutes_before", 1440),
+                    previewMinutesBefore = row.optInt("preview_minutes_before", 10),
+                    autoStopMode = row.optString("auto_stop_mode").ifBlank { "ASK" },
+                    autoStopGraceMinutes = row.optInt("auto_stop_grace_minutes", 5),
+                    calendarEventId = existing?.calendarEventId,
+                    createdAtEpochMs = createdAt
+                )
+                val changed = existing == null || existing.copy(calendarEventId = null) != schedule.copy(calendarEventId = null)
+                dao.upsertSchedule(schedule)
+                if (hasCalendarPermission() && (changed || schedule.calendarEventId == null)) {
+                    runCatching { CalendarSync.syncSchedule(app, cycle, subject, schedule) }
+                        .getOrNull()
+                        ?.let { dao.setScheduleCalendarEvent(id, it.eventId) }
+                }
+            }
             "class_sessions" -> {
                 val subjectId = row.optString("subject_id")
                 if (dao.getSubject(subjectId) == null) return
@@ -202,7 +286,10 @@ class SupabaseSyncManager(context: Context) {
                         title = row.optString("title").ifBlank { "Clase" },
                         startedAtEpochMs = row.optLong("started_at_epoch_ms", createdAt),
                         endedAtEpochMs = row.optLongOrNull("ended_at_epoch_ms"),
-                        createdAtEpochMs = createdAt
+                        createdAtEpochMs = createdAt,
+                        scheduleId = row.optString("schedule_id").takeIf { it.isNotBlank() },
+                        plannedStartEpochMs = row.optLongOrNull("planned_start_epoch_ms"),
+                        plannedEndEpochMs = row.optLongOrNull("planned_end_epoch_ms")
                     )
                 )
             }
@@ -220,6 +307,22 @@ class SupabaseSyncManager(context: Context) {
                     )
                 )
             }
+            "transcripts" -> {
+                val classId = row.optString("class_session_id")
+                if (dao.getClassSession(classId) == null) return
+                dao.upsertTranscript(
+                    TranscriptEntity(
+                        id = id,
+                        classSessionId = classId,
+                        audioId = row.optString("audio_id").takeIf { it.isNotBlank() },
+                        body = row.optString("body"),
+                        status = row.optString("status").ifBlank { "FINAL" },
+                        modelName = row.optString("model_name").takeIf { it.isNotBlank() },
+                        createdAtEpochMs = createdAt,
+                        updatedAtEpochMs = parseInstant(row.optString("updated_at")).takeIf { it > 0L } ?: createdAt
+                    )
+                )
+            }
             "grade_items" -> {
                 val subjectId = row.optString("subject_id")
                 if (dao.getSubject(subjectId) == null) return
@@ -232,6 +335,26 @@ class SupabaseSyncManager(context: Context) {
                         maxScore = row.optDouble("max_score", 100.0),
                         weightPercent = row.optDouble("weight_percent", 0.0),
                         createdAtEpochMs = createdAt
+                    )
+                )
+            }
+            "task_items" -> {
+                val cycleId = row.optString("cycle_id")
+                if (dao.getCycle(cycleId) == null) return
+                val remoteSubjectId = row.optString("subject_id").takeIf { it.isNotBlank() && dao.getSubject(it) != null }
+                dao.upsertTask(
+                    TaskItemEntity(
+                        id = id,
+                        cycleId = cycleId,
+                        subjectId = remoteSubjectId,
+                        title = row.optString("title").ifBlank { "Pendiente" },
+                        type = row.optString("type").ifBlank { "Tarea" },
+                        dueAtEpochMs = row.optLongOrNull("due_at_epoch_ms"),
+                        priority = row.optString("priority").ifBlank { "Normal" },
+                        notes = row.optString("notes"),
+                        isCompleted = row.optBoolean("is_completed", false),
+                        createdAtEpochMs = createdAt,
+                        updatedAtEpochMs = parseInstant(row.optString("updated_at")).takeIf { it > 0L } ?: createdAt
                     )
                 )
             }
@@ -306,7 +429,20 @@ class SupabaseSyncManager(context: Context) {
     private fun JSONObject.optLongOrNull(name: String): Long? =
         if (!has(name) || isNull(name)) null else optLong(name)
 
+    private fun hasCalendarPermission(): Boolean =
+        ContextCompat.checkSelfPermission(app, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(app, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+
     companion object {
-        internal val TABLES = listOf("study_cycles", "subjects", "class_sessions", "note_pages", "grade_items")
+        internal val TABLES = listOf(
+            "study_cycles",
+            "subjects",
+            "subject_schedules",
+            "class_sessions",
+            "note_pages",
+            "transcripts",
+            "grade_items",
+            "task_items"
+        )
     }
 }
