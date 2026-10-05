@@ -25,6 +25,7 @@ import com.notcan.app.localai.TranscriptionTraceStore
 import com.notcan.app.sources.ClassSourceStore
 import com.notcan.app.ui.home.NoteDocxImporter
 import com.notcan.app.sync.SupabaseSyncManager
+import com.notcan.app.sync.SupabaseSyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -97,6 +98,7 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
+        SupabaseSyncWorker.schedule(application)
         viewModelScope.launch(Dispatchers.IO) {
             if (syncManager.isSignedIn()) runCatching { syncManager.syncNow() }
         }
@@ -232,10 +234,29 @@ class NotCanViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun addSchedule(subjectId: String, weekdayIso: Int, startMinuteOfDay: Int, endMinuteOfDay: Int, autoStopMode: String, autoStopGraceMinutes: Int) {
+    fun addSchedule(
+        subjectId: String,
+        weekdayIso: Int,
+        startMinuteOfDay: Int,
+        endMinuteOfDay: Int,
+        autoStopMode: String,
+        autoStopGraceMinutes: Int,
+        onCreated: (com.notcan.app.data.local.SubjectScheduleEntity) -> Unit = {}
+    ) {
         val cycleId = _selectedCycleId.value ?: return
         viewModelScope.launch {
-            repository.addSchedule(cycleId, subjectId, weekdayIso, startMinuteOfDay, endMinuteOfDay, 1440, 10, autoStopMode, autoStopGraceMinutes)
+            val schedule = repository.addSchedule(
+                cycleId,
+                subjectId,
+                weekdayIso,
+                startMinuteOfDay,
+                endMinuteOfDay,
+                1440,
+                10,
+                autoStopMode,
+                autoStopGraceMinutes
+            )
+            onCreated(schedule)
         }
     }
 
