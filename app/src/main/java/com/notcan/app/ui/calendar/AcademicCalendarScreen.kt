@@ -69,6 +69,7 @@ fun AcademicCalendarScreen(
     onAddSchedule: (subjectId: String, weekdayIso: Int, startMinute: Int, endMinute: Int, autoStopMode: String, graceMinutes: Int) -> Unit,
     onDeleteSchedule: (String) -> Unit,
     onSyncScheduleToCalendar: (String) -> Unit,
+    onSyncAllToCalendar: () -> Unit,
     onOpenOccurrence: (PlannedClassOccurrence) -> Unit,
     onRecordOccurrence: (PlannedClassOccurrence) -> Unit
 ) {
@@ -103,7 +104,7 @@ fun AcademicCalendarScreen(
                     Modifier.weight(if (editorOpen) 1.55f else 1f).fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    item { CalendarHero(cycle?.name, schedules.size, todayOccurrences.size, onAdd = { editorOpen = !editorOpen }) }
+                    item { CalendarHero(cycle?.name, schedules.size, todayOccurrences.size, onAdd = { editorOpen = !editorOpen }, onSyncAll = onSyncAllToCalendar) }
                     item { WeeklyScheduleBoard(subjects, schedules, true, onDeleteSchedule, onSyncScheduleToCalendar) }
                     item { TodaySection(todayOccurrences, onOpenOccurrence, onRecordOccurrence) }
                     item { UpcomingSection(upcoming) }
@@ -137,7 +138,7 @@ fun AcademicCalendarScreen(
                 Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                item { CalendarHero(cycle?.name, schedules.size, todayOccurrences.size, onAdd = { editorOpen = !editorOpen }) }
+                item { CalendarHero(cycle?.name, schedules.size, todayOccurrences.size, onAdd = { editorOpen = !editorOpen }, onSyncAll = onSyncAllToCalendar) }
                 item { WeeklyScheduleBoard(subjects, schedules, false, onDeleteSchedule, onSyncScheduleToCalendar) }
                 item { TodaySection(todayOccurrences, onOpenOccurrence, onRecordOccurrence) }
                 item { UpcomingSection(upcoming) }
@@ -171,7 +172,13 @@ fun AcademicCalendarScreen(
 }
 
 @Composable
-private fun CalendarHero(cycleName: String?, schedules: Int, todayCount: Int, onAdd: () -> Unit) {
+private fun CalendarHero(
+    cycleName: String?,
+    schedules: Int,
+    todayCount: Int,
+    onAdd: () -> Unit,
+    onSyncAll: () -> Unit
+) {
     Card(colors = CardDefaults.cardColors(containerColor = NotCanSurfaceHigh), shape = RoundedCornerShape(22.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(18.dp),
@@ -184,6 +191,9 @@ private fun CalendarHero(cycleName: String?, schedules: Int, todayCount: Int, on
             Column(Modifier.weight(1f)) {
                 Text(cycleName ?: "Calendario académico", color = NotCanOffWhite, style = MaterialTheme.typography.titleLarge)
                 Text("$todayCount clase(s) hoy · $schedules clase(s) semanales", color = NotCanGray)
+            }
+            IconButton(onClick = onSyncAll) {
+                Icon(Icons.Default.Sync, "Sincronizar todo el horario con el calendario", tint = NotCanBlue)
             }
             Button(onClick = onAdd) {
                 Icon(Icons.Default.Add, null)
