@@ -85,7 +85,7 @@ internal fun SupabaseAccountSection() {
 
             if (session == null) {
                 Text(
-                    "Inicia sesión con la misma cuenta de la web para compartir ciclos, materias, clases, apuntes y calificaciones. Tus audios y documentos pesados siguen locales por ahora.",
+                    "Inicia sesión con la misma cuenta de NotCan en tus otros dispositivos. Se sincronizan ciclos, materias, horario, clases, apuntes, transcripciones, tareas y calificaciones. Audios y documentos pesados siguen locales por ahora.",
                     color = NotCanGray,
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall
                 )
@@ -145,7 +145,7 @@ internal fun SupabaseAccountSection() {
                                     session = signUp.session
                                     password = ""
                                     message = if (signUp.confirmationRequired) {
-                                        "Cuenta creada. Confirma el correo y luego inicia sesión en NotCan."
+                                        "Cuenta creada. Confirma el correo; el enlace intentará volver a NotCan y luego sincronizará tus datos."
                                     } else {
                                         "Cuenta creada y sesión iniciada."
                                     }
